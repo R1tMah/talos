@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, StatusPill } from "@/components/ui";
@@ -30,7 +31,7 @@ export default function ApplicationsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Applications" back="/tabs" />
+      <ScreenHeader title="Applications" back="/tabs" right={<ExportButton tab="applications" />} />
       <SummaryStrip items={[{ label: "Total", value: rows.length }, ...statuses.map((s) => ({ label: s, value: counts[s] ?? 0 }))]} />
       <DataTable
         rows={rows}

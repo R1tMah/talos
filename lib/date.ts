@@ -12,6 +12,9 @@ export function fromISO(s: string) {
 
 export const todayISO = () => toISO(new Date());
 
+/** The 4am rule: anything before 04:00 belongs to the previous day. Use for every stored date. */
+export const logicalToday = () => toISO(new Date(Date.now() - 4 * 3600_000));
+
 export const toHM = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 export const nowHM = () => toHM(new Date());
 

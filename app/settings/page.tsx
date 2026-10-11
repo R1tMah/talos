@@ -37,7 +37,10 @@ function reviewPacket(db: DB) {
   );
 
   const lc = inWeek(live(db.leetcode)).sort(newestFirst);
-  out.push("", "## LeetCode this week", ...lc.map((l) => `- ${fmtDay(l.date)} ${l.problem} (${l.difficulty}, ${l.result}, ${l.minutes} min)`));
+  out.push(
+    "", "## LeetCode this week",
+    ...lc.map((l) => `- ${fmtDay(l.date)} ${l.problem} (${l.difficulty}, ${l.result}, ${l.minutes} min)${l.notes ? `\n  ${l.notes.replace(/\n/g, "\n  ")}` : ""}`),
+  );
   out.push(`- Redo queue: ${live(db.leetcode).filter((l) => l.redo).length}`);
 
   const apps = countBy(live(db.applications), (a) => a.status);

@@ -7,6 +7,7 @@ import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
 import { SwipeRow } from "./DataTable";
 import { FullScreenEditor } from "./Editor";
+import { ExportButton } from "./ExportButton";
 import { EmptyState, Fab, ScreenHeader } from "./ui";
 
 /** Dated plain-text entries. Tap to edit, swipe to delete. */
@@ -29,7 +30,7 @@ export function NotepadScreen({ coll, title }: { coll: "content" | "journal" | "
 
   return (
     <main className="screen">
-      <ScreenHeader title={title} back="/tabs" />
+      <ScreenHeader title={title} back="/tabs" right={<ExportButton tab={coll} />} />
       {rows.length === 0 ? (
         <div className="card">
           <EmptyState text="No entries." onAdd={create} />

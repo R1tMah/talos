@@ -55,6 +55,7 @@ export interface LeetEntry extends Dated {
   minutes: number;
   redo: boolean;
   inferred?: string[];
+  notes?: string;
 }
 
 export interface Application extends Dated {
@@ -105,6 +106,15 @@ export interface Phase {
   end: string;
 }
 
+/** A span when tracking wasn't normal (trip, holiday). Mirrors Supabase: start_date, end_date, label. */
+export interface Break {
+  id: ID;
+  start: string;
+  end: string | null; // null = ongoing
+  label: string;
+  deleted?: boolean;
+}
+
 export interface Alias {
   from: string;
   to: string;
@@ -142,6 +152,7 @@ export interface Collections {
   content: Note[];
   journal: Note[];
   notes: Note[];
+  breaks: Break[];
 }
 
 export type Coll = keyof Collections;

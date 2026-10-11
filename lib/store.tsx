@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { makeSeed } from "./seed";
+import { makeSeed, migrateBreaks, migratePlanNames } from "./seed";
 import type { Coll, DB, Item } from "./types";
 import { PageSkeleton } from "@/components/Skeleton";
 
@@ -28,7 +28,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const parsed = raw ? JSON.parse(raw) : null;
       if (parsed?.v === 1) saved = parsed;
     } catch {}
-    setDb(saved ?? makeSeed());
+    setDb(saved ? migrateBreaks(migratePlanNames(saved)) : makeSeed());
   }, []);
 
   useEffect(() => {

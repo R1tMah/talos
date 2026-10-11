@@ -15,6 +15,10 @@ export interface Field {
   full?: boolean;
   /** Small badge next to the label, e.g. "inferred". */
   badge?: string;
+  /** Text is stored trimmed unless this is false (keep exactly as typed). */
+  trim?: boolean;
+  /** Number fields: an empty input becomes null instead of 0 (missing is not zero). */
+  optional?: boolean;
 }
 
 type Values = Record<string, unknown>;
@@ -55,7 +59,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
  * old to new values and waits for Confirm.
  */
 export function FormSheet({
-  title, fields, initial, onSubmit, onClose, onDelete, submitLabel = "Save", confirm = false,
+  title, fields, initial, onSubmit, onClose, onDelete, submitLabel = "Save", confirm = false, validate,
 }: {
   title: string;
   fields: Field[];
@@ -64,26 +68,35 @@ export function FormSheet({
   onClose: () => void;
   onDelete?: () => void;
   submitLabel?: string;
+  /** With `confirm`, deleting also shows a confirm step. */
   confirm?: boolean;
+  /** Return a message to block saving. */
+  validate?: (values: Values) => string | null;
 }) {
   const init = initial as Values;
   const [vals, setVals] = useState<Record<string, string | boolean>>(() =>
     Object.fromEntries(fields.map((f) => [f.name, f.type === "toggle" ? Boolean(init[f.name]) : show(f, init[f.name])])),
   );
   const [changes, setChanges] = useState<Change[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const parsed = (): Values =>
     Object.fromEntries(
       fields.map((f) => {
         const v = vals[f.name];
-        if (f.type === "number") return [f.name, v === "" ? 0 : Number(v)];
+        if (f.type === "number") return [f.name, v === "" ? (f.optional ? null : 0) : Number(v)];
         if (f.type === "toggle") return [f.name, Boolean(v)];
-        return [f.name, typeof v === "string" ? v.trim() : v];
+        return [f.name, typeof v === "string" && f.trim !== false ? v.trim() : v];
       }),
     );
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (deleting) return onDelete?.();
+    const problem = validate?.(parsed()) ?? null;
+    setError(problem);
+    if (problem) return;
     if (confirm && !changes) {
       const p = parsed();
       const diff = fields
@@ -96,8 +109,19 @@ export function FormSheet({
     onSubmit(parsed());
   };
 
+  const startDelete = () => {
+    if (!confirm) return onDelete?.();
+    const summary = fields
+      .filter((f) => f.type !== "toggle" && f.type !== "textarea")
+      .map((f) => show(f, init[f.name]))
+      .filter(Boolean)
+      .join(" · ");
+    setDeleting(true);
+    setChanges([{ field: "Entry", from: summary, to: "Deleted" }]);
+  };
+
   return (
-    <Sheet title={changes ? "Confirm changes" : title} onClose={onClose}>
+    <Sheet title={deleting ? "Confirm delete" : changes ? "Confirm changes" : title} onClose={onClose}>
       <form onSubmit={submit}>
         {changes ? (
           <ChangeList changes={changes} />
@@ -148,10 +172,22 @@ export function FormSheet({
             ))}
           </div>
         )}
+        {error && !changes && (
+          <p role="alert" style={{ color: "var(--danger)", fontSize: "var(--t-sm)", margin: "var(--s-3) 0 0" }}>
+            {error}
+          </p>
+        )}
         <div className="sheet-actions">
           {changes ? (
             <>
-              <button type="button" className="btn" onClick={() => setChanges(null)}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setChanges(null);
+                  setDeleting(false);
+                }}
+              >
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary">
@@ -161,7 +197,7 @@ export function FormSheet({
           ) : (
             <>
               {onDelete && (
-                <button type="button" className="btn btn-ghost" style={{ color: "var(--danger)", flex: "none" }} onClick={onDelete}>
+                <button type="button" className="btn btn-ghost" style={{ color: "var(--danger)", flex: "none" }} onClick={startDelete}>
                   Delete
                 </button>
               )}

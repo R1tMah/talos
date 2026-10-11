@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { ExportButton } from "@/components/ExportButton";
 import { FormSheet } from "@/components/FormSheet";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, StatusPill } from "@/components/ui";
@@ -22,7 +23,7 @@ export default function CallbacksPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Callbacks" back="/tabs" />
+      <ScreenHeader title="Callbacks" back="/tabs" right={<ExportButton tab="callbacks" />} />
       <SummaryStrip
         items={[
           { label: "Interviews", value: c.Interview ?? 0 },

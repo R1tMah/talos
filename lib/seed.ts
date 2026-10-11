@@ -11,11 +11,47 @@ function rng(seed: number) {
   };
 }
 
-const PLANS = [
-  { id: "plan-a", name: "Upper A", exercises: ["Bench press", "Barbell row", "Overhead press", "Lat pulldown", "Lateral raise"] },
+export const PLANS = [
+  { id: "plan-a", name: "Push", exercises: ["Bench press", "Overhead press", "Incline DB press", "Dip", "Lateral raise"] },
+  { id: "plan-c", name: "Pull", exercises: ["Pull-up", "Barbell row", "Lat pulldown", "Seated cable row", "Curl"] },
   { id: "plan-b", name: "Lower", exercises: ["Back squat", "Romanian deadlift", "Leg press", "Leg curl", "Calf raise"] },
-  { id: "plan-c", name: "Upper B", exercises: ["Incline DB press", "Pull-up", "Seated cable row", "Dip", "Curl"] },
 ];
+
+/**
+ * Older saved data used "Upper A"/"Upper B". Rename them (and the history that
+ * refers to them) to Push/Pull. Exercise lists are only replaced if untouched.
+ */
+const OLD_PLANS: Record<string, { to: string; exercises: string }> = {
+  "Upper A": { to: "Push", exercises: "Bench press|Barbell row|Overhead press|Lat pulldown|Lateral raise" },
+  "Upper B": { to: "Pull", exercises: "Incline DB press|Pull-up|Seated cable row|Dip|Curl" },
+};
+
+/** Data saved before breaks existed gets the collection, plus the example so it shows in dev. */
+export function migrateBreaks(db: DB): DB {
+  if (Array.isArray(db.breaks)) return db;
+  const today = todayISO();
+  return { ...db, breaks: [{ id: uid(), start: addDays(today, -38), end: addDays(today, -36), label: "NY Trip where we ate like a fatass" }] };
+}
+
+export function migratePlanNames(db: DB): DB {
+  if (!db.plans.some((p) => OLD_PLANS[p.name])) return db;
+  const rename = (n: string) => OLD_PLANS[n]?.to ?? n;
+  const order = (n: string) => ["Push", "Pull"].indexOf(n) + 1 || 9;
+  const plans = db.plans
+    .map((p) => {
+      const old = OLD_PLANS[p.name];
+      if (!old) return p;
+      const fresh = PLANS.find((x) => x.name === old.to)!;
+      return { ...p, name: old.to, exercises: p.exercises.join("|") === old.exercises ? fresh.exercises : p.exercises };
+    })
+    .sort((a, b) => order(a.name) - order(b.name));
+  return {
+    ...db,
+    plans,
+    workouts: db.workouts.map((w) => ({ ...w, plan: rename(w.plan) })),
+    session: db.session && { ...db.session, plan: rename(db.session.plan) },
+  };
+}
 
 /** Sample data relative to today so every screen has something to show. */
 export function makeSeed(): DB {
@@ -25,10 +61,14 @@ export function makeSeed(): DB {
   const hm = (h0: number, h1: number) =>
     `${String(h0 + Math.floor(r() * (h1 - h0))).padStart(2, "0")}:${String(Math.floor(r() * 60)).padStart(2, "0")}`;
 
+  // Example break, mid-week so it shows sub-week positioning. No weigh-ins logged during it.
+  const exampleBreak = { id: uid(), start: addDays(today, -38), end: addDays(today, -36), label: "NY Trip where we ate like a fatass" };
+
   const weight: WeightEntry[] = [];
   const notes: Record<number, string> = { 9: "Late salty dinner", 23: "Travel day", 40: "Poor sleep", 61: "Refeed" };
   for (let i = 83; i >= 0; i--) {
     if (i > 0 && r() < 0.16) continue;
+    if (i <= 38 && i >= 36) continue;
     const trend = 176.4 - (83 - i) * 0.095;
     const lb = Math.round((trend + (r() - 0.5) * 1.6) * 10) / 10;
     const time = hm(6, 8);
@@ -136,6 +176,7 @@ export function makeSeed(): DB {
       note(7, "Shipped the export endpoint."),
     ],
     notes: [note(4, "Look into a standing desk")],
+    breaks: [exampleBreak],
     settings: {
       calories: 2200, protein: 180, carbs: 220, fat: 65, restSec: 120,
       aliases: [
@@ -144,7 +185,7 @@ export function makeSeed(): DB {
         { from: "bowl", to: "Rice bowl" },
       ],
       statuses,
-      context: "Software engineer job hunting. Cutting from 176 lb. Lifting 3x/week on an upper/lower split.",
+      context: "Software engineer job hunting. Cutting from 176 lb. Lifting 3x/week on a push/pull/legs split.",
     },
     chat: [],
     session: null,

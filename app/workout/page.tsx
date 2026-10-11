@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ActiveWorkout } from "@/components/ActiveWorkout";
 import { DataTable } from "@/components/DataTable";
+import { ExportButton } from "@/components/ExportButton";
 import { FormSheet } from "@/components/FormSheet";
 import { LiftCalendar } from "@/components/LiftCalendar";
 import { ScreenHeader, SectionTitle } from "@/components/ui";
@@ -24,7 +25,7 @@ export default function WorkoutPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Workout" />
+      <ScreenHeader title="Workout" right={<ExportButton tab="workouts" />} />
 
       {plans.map((p) => {
         const last = history.find((w) => w.plan === p.name);

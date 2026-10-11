@@ -7,18 +7,22 @@ export interface StatRow {
 }
 
 export function StatCard({
-  title, href, value, unit, rows = [], span, accent,
+  title, href, value, unit, rows = [], span, accent, compact,
 }: {
   title: string;
-  href: string;
+  /** Omit for a display-only card that doesn't navigate. */
+  href?: string;
   value: ReactNode;
   unit?: string;
   rows?: StatRow[];
   span?: 2;
   accent?: boolean;
+  /** Shorter card for secondary screens. */
+  compact?: boolean;
 }) {
-  return (
-    <Link href={href} className={`card stat${span === 2 ? " span-2" : ""}`}>
+  const className = `card stat${span === 2 ? " span-2" : ""}${compact ? " compact" : ""}${href ? "" : " static"}`;
+  const body = (
+    <>
       <span className="label">{title}</span>
       <span className={`stat-value num${accent ? " accent" : ""}`}>
         {value}
@@ -34,7 +38,14 @@ export function StatCard({
           ))}
         </span>
       )}
+    </>
+  );
+  return href ? (
+    <Link href={href} className={className}>
+      {body}
     </Link>
+  ) : (
+    <div className={className}>{body}</div>
   );
 }
 

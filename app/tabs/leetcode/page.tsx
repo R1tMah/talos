@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, SectionTitle, Tag } from "@/components/ui";
@@ -22,8 +23,11 @@ function fields(inferred: string[] = []): Field[] {
     { name: "date", label: "Date", type: "date" },
     { name: "time", label: "Time", type: "time" },
     { name: "redo", label: "In redo queue", type: "toggle" },
+    { name: "notes", label: "Notes", type: "textarea", placeholder: "Approach, where you got stuck, what to remember" },
   ];
 }
+
+const firstLine = (s: string) => s.split("\n").find((l) => l.trim()) ?? "";
 
 const Inf = ({ on }: { on?: boolean }) => (on ? <span className="inf">inf</span> : null);
 
@@ -37,7 +41,7 @@ export default function LeetCodePage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="LeetCode" back="/tabs" />
+      <ScreenHeader title="LeetCode" back="/tabs" right={<ExportButton tab="leetcode" />} />
 
       <SummaryStrip
         items={[
@@ -60,6 +64,7 @@ export default function LeetCodePage() {
                 <div className="cell-sub num">
                   {fmtDay(r.date)}, {r.result}
                 </div>
+                {r.notes && <div className="cell-sub">{firstLine(r.notes)}</div>}
               </button>
               <Tag>{r.difficulty}</Tag>
               <button type="button" className="btn btn-sm" onClick={() => update("leetcode", r.id, { redo: false })}>
@@ -89,7 +94,15 @@ export default function LeetCodePage() {
         onDelete={(r) => remove("leetcode", r.id)}
         columns={[
           { key: "date", label: "Date", width: "46px", render: (r) => <span className="faint">{fmtDay(r.date)}</span> },
-          { key: "problem", label: "Problem", width: "1fr", render: (r) => <div className="cell-main">{r.problem}</div> },
+          {
+            key: "problem", label: "Problem", width: "1fr",
+            render: (r) => (
+              <>
+                <div className="cell-main">{r.problem}</div>
+                {r.notes && <div className="cell-sub">{firstLine(r.notes)}</div>}
+              </>
+            ),
+          },
           {
             key: "difficulty", label: "Level", width: "auto",
             render: (r) => (
@@ -129,13 +142,13 @@ export default function LeetCodePage() {
           confirm={sheet !== "new"}
           initial={
             sheet === "new"
-              ? { date: todayISO(), time: nowHM(), difficulty: "Medium", result: "Solved", minutes: 30, redo: false }
+              ? { date: todayISO(), time: nowHM(), difficulty: "Medium", result: "Solved", minutes: 30, redo: false, notes: "" }
               : sheet
           }
           onClose={() => setSheet(null)}
           onDelete={sheet !== "new" ? () => (remove("leetcode", sheet.id), setSheet(null)) : undefined}
           onSubmit={(v) => {
-            const data = v as Omit<LeetEntry, "id">;
+            const data = { ...(v as Omit<LeetEntry, "id">), notes: (v.notes as string) || undefined };
             if (sheet === "new") add("leetcode", { id: uid(), ...data });
             else {
               // A field the owner touched is no longer model-inferred.

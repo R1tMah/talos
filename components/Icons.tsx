@@ -104,3 +104,9 @@ export const IconDumbbell = (p: P) => (
     <path d="M7 8v8M17 8v8M4.5 10v4M19.5 10v4M7 12h10" />
   </Base>
 );
+
+export const IconShare = (p: P) => (
+  <Base {...p}>
+    <path d="M12 15V4M8 8l4-4 4 4M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13" />
+  </Base>
+);

@@ -222,7 +222,9 @@ function unsure(text: string): Interpretation {
   return { kind: "unsure", options, note: { op: "add", coll: "notes", item: note(text) } };
 }
 
-function parseLeet(body: string): LeetEntry {
+function parseLeet(input: string): LeetEntry {
+  const [body, ...rest] = input.split(/\s*\bnotes?\s*:\s*/i);
+  const notes = rest.join(" ").trim() || undefined;
   const inferred: string[] = [];
   const diff = body.match(/\b(easy|medium|hard)\b/i)?.[1];
   const res = body.match(/\b(solved|hint|failed|fail)\b/i)?.[1];
@@ -244,6 +246,7 @@ function parseLeet(body: string): LeetEntry {
     minutes: min ? Number(min) : 30,
     redo: result !== "Solved" || /\bredo\b/i.test(body),
     inferred: inferred.length ? inferred : undefined,
+    notes,
   };
 }
 

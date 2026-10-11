@@ -31,6 +31,8 @@ export function TabBar() {
   const session = useOptionalStore()?.db.session;
   const elapsed = useElapsed(session?.startedAt);
 
+  if (path === "/login") return null;
+
   return (
     <nav className="tabbar" aria-label="Main">
       {ITEMS.map(({ href, label, Icon, match, primary }) => {

@@ -14,6 +14,29 @@ export interface Column<T> {
 
 const OPEN = -88;
 
+/** A non-data row (e.g. a break marker): spans the table, no swipe, not a record. */
+export interface DividerRow {
+  id: string;
+  divider: true;
+  content: ReactNode;
+  label?: string;
+  onClick?: () => void;
+}
+
+const isDivider = (r: object): r is DividerRow => (r as DividerRow).divider === true;
+
+function Divider({ row }: { row: DividerRow }) {
+  return (
+    <div className="swipe">
+      <button type="button" className="tr divider-row" onClick={row.onClick} aria-label={row.label}>
+        <span className="divider-line" />
+        <span className="divider-text">{row.content}</span>
+        <span className="divider-line" />
+      </button>
+    </div>
+  );
+}
+
 /** Row that reveals a Delete action on left swipe. */
 function SwipeRow({
   children, onClick, onDelete, cols,
@@ -95,7 +118,7 @@ export function DataTable<T extends { id: string }>({
   columns, rows, onRowClick, onDelete, empty = "Nothing logged yet.", onAdd, head = true,
 }: {
   columns: Column<T>[];
-  rows: T[];
+  rows: (T | DividerRow)[];
   onRowClick?: (row: T) => void;
   onDelete?: (row: T) => void;
   empty?: string;
@@ -103,7 +126,7 @@ export function DataTable<T extends { id: string }>({
   head?: boolean;
 }) {
   const cols = columns.map((c) => c.width ?? "auto").join(" ");
-  if (!rows.length) {
+  if (!rows.some((r) => !isDivider(r))) {
     return (
       <div className="card">
         <EmptyState text={empty} onAdd={onAdd} />
@@ -121,20 +144,24 @@ export function DataTable<T extends { id: string }>({
           ))}
         </div>
       )}
-      {rows.map((row) => (
-        <SwipeRow
-          key={row.id}
-          cols={cols}
-          onClick={onRowClick && (() => onRowClick(row))}
-          onDelete={onDelete && (() => onDelete(row))}
-        >
-          {columns.map((c) => (
-            <div key={c.key} className={c.align === "right" ? "right num" : "num"}>
-              {c.render(row)}
-            </div>
-          ))}
-        </SwipeRow>
-      ))}
+      {rows.map((row) =>
+        isDivider(row) ? (
+          <Divider key={row.id} row={row} />
+        ) : (
+          <SwipeRow
+            key={row.id}
+            cols={cols}
+            onClick={onRowClick && (() => onRowClick(row))}
+            onDelete={onDelete && (() => onDelete(row))}
+          >
+            {columns.map((c) => (
+              <div key={c.key} className={c.align === "right" ? "right num" : "num"}>
+                {c.render(row)}
+              </div>
+            ))}
+          </SwipeRow>
+        ),
+      )}
     </div>
   );
 }

@@ -1,18 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { addDays, daysBetween, fmtDay } from "@/lib/date";
+import { breakEnd, fmtRange } from "@/lib/breaks";
+import { addDays, daysBetween, fmtDay, todayISO } from "@/lib/date";
 import type { WeekRow } from "@/lib/stats";
-import type { Phase } from "@/lib/types";
+import type { Break, Phase } from "@/lib/types";
 
 const H = 200;
 const PAD = { t: 18, r: 34, b: 26, l: 4 };
 
-/** Weekly averages over phase bands. Days with a note get a dot on the baseline. */
-export function WeightChart({ weeks, phases, noteDays }: { weeks: WeekRow[]; phases: Phase[]; noteDays: string[] }) {
+/**
+ * Weekly averages over phase bands. Breaks are thinner bands on top, placed by
+ * day. Days with a note get a dot on the baseline.
+ */
+export function WeightChart({
+  weeks, phases, breaks, noteDays,
+}: {
+  weeks: WeekRow[];
+  phases: Phase[];
+  breaks: Break[];
+  noteDays: string[];
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(340);
   const [sel, setSel] = useState<number | null>(null);
+  const [brk, setBrk] = useState<Break | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -49,9 +61,21 @@ export function WeightChart({ weeks, phases, noteDays }: { weeks: WeekRow[]; pha
   const active = sel ?? px.length - 1;
   const a = px[active];
 
+  // Break bands in pixels, clipped to the chart's date range.
+  const today = todayISO();
+  const bands = breaks
+    .map((b) => {
+      const s = b.start < d0 ? d0 : b.start;
+      const e = breakEnd(b, today) > d1 ? d1 : breakEnd(b, today);
+      return s > e ? null : { b, x0: x(s), x1: x(addDays(e, 1)) };
+    })
+    .filter((v): v is { b: Break; x0: number; x1: number } => v !== null);
+  const breakAt = (mx: number) => bands.find((v) => mx >= v.x0 - 4 && mx <= v.x1 + 4)?.b ?? null;
+
   const pick = (e: React.PointerEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
+    setBrk(breakAt(mx));
     let best = 0;
     px.forEach((p, i) => {
       if (Math.abs(p.cx - mx) < Math.abs(px[best].cx - mx)) best = i;
@@ -74,7 +98,13 @@ export function WeightChart({ weeks, phases, noteDays }: { weeks: WeekRow[]; pha
         height={H}
         viewBox={`0 0 ${w} ${H}`}
         onPointerDown={pick}
-        onPointerMove={(e) => e.buttons && pick(e)}
+        // Mouse: hover selects. Touch: tap or drag (a finger has no hover).
+        onPointerMove={(e) => (e.pointerType === "mouse" || e.buttons) && pick(e)}
+        onPointerLeave={(e) => {
+          if (e.pointerType !== "mouse") return;
+          setSel(null); // back to the latest week
+          setBrk(null);
+        }}
         role="img"
         aria-label="Weekly average weight chart"
       >
@@ -93,6 +123,15 @@ export function WeightChart({ weeks, phases, noteDays }: { weeks: WeekRow[]; pha
             </g>
           );
         })}
+
+        {bands.map(({ b, x0, x1 }) => (
+          <g key={b.id} className={`break-band${brk?.id === b.id ? " active" : ""}`}>
+            <rect x={x0} y={PAD.t - 4} width={Math.max(2, x1 - x0)} height={H - PAD.b - PAD.t + 4} />
+            <line x1={x0} x2={x0} y1={PAD.t - 4} y2={H - PAD.b} />
+            <line x1={x1} x2={x1} y1={PAD.t - 4} y2={H - PAD.b} />
+            <title>{`${b.label} · ${fmtRange(b)}`}</title>
+          </g>
+        ))}
 
         {ticks.map((t) => (
           <g key={t}>
@@ -139,6 +178,15 @@ export function WeightChart({ weeks, phases, noteDays }: { weeks: WeekRow[]; pha
           </text>
         ))}
       </svg>
+      <div className="chart-break" aria-live="polite">
+        {brk && (
+          <>
+            <span className="break-swatch" />
+            <span className="chart-break-label">{brk.label}</span>
+            <span className="faint num">{fmtRange(brk)}</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }

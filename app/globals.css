@@ -22,6 +22,8 @@
   --danger-soft: rgba(239, 107, 115, 0.12);
   --band-a: rgba(255, 255, 255, 0.025);
   --band-b: rgba(90, 216, 236, 0.045);
+  --break-fill: rgba(255, 255, 255, 0.07);
+  --break-edge: rgba(255, 255, 255, 0.22);
   --scrim: rgba(0, 0, 0, 0.6);
 
   /* Neutral data tags: hue for identification, never for judgment */
@@ -96,6 +98,8 @@
     --danger-soft: rgba(201, 52, 62, 0.08);
     --band-a: rgba(0, 0, 0, 0.025);
     --band-b: rgba(10, 143, 168, 0.06);
+    --break-fill: rgba(0, 0, 0, 0.05);
+    --break-edge: rgba(0, 0, 0, 0.2);
     --scrim: rgba(10, 12, 16, 0.35);
     --tag-1: #2f7383;
     --tag-1-bg: rgba(47, 115, 131, 0.1);
@@ -127,6 +131,8 @@
   --danger-soft: rgba(201, 52, 62, 0.08);
   --band-a: rgba(0, 0, 0, 0.025);
   --band-b: rgba(10, 143, 168, 0.06);
+  --break-fill: rgba(0, 0, 0, 0.05);
+  --break-edge: rgba(0, 0, 0, 0.2);
   --scrim: rgba(10, 12, 16, 0.35);
   --tag-1: #2f7383;
   --tag-1-bg: rgba(47, 115, 131, 0.1);
@@ -573,9 +579,18 @@ html.kb-open .tabbar {
   transition: border-color var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 
-.stat:active {
+.stat:not(.static):active {
   transform: scale(0.985);
   border-color: var(--border-strong);
+}
+
+.stat.compact {
+  min-height: 0;
+  gap: var(--s-2);
+}
+
+.stat.compact .stat-value {
+  font-size: var(--t-2xl);
 }
 
 .stat.span-2 {
@@ -1375,6 +1390,7 @@ html.kb-open .composer {
 }
 
 .chart svg {
+  cursor: crosshair;
   display: block;
   width: 100%;
   overflow: visible;
@@ -1384,6 +1400,111 @@ html.kb-open .composer {
 .chart text {
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
+}
+
+/* Breaks: neutral gray, never a good/bad color */
+.break-band rect {
+  fill: var(--break-fill);
+}
+
+.break-band line {
+  stroke: var(--break-edge);
+  stroke-dasharray: 2 3;
+}
+
+.break-band.active rect {
+  fill: var(--break-edge);
+  opacity: 0.6;
+}
+
+.chart-break {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 22px;
+  margin-top: var(--s-2);
+  font-size: var(--t-sm);
+}
+
+.chart-break-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.break-swatch {
+  flex: none;
+  width: 10px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--break-fill);
+  border: 1px dashed var(--break-edge);
+}
+
+.week-tags {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.week-tags .tag {
+  flex: none;
+}
+
+.week-tags .tag-break {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.tag-break {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  display: inline-block;
+  line-height: 20px;
+  border: 1px dashed var(--break-edge);
+  background: var(--break-fill);
+  color: var(--text-2);
+}
+
+.divider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  width: 100%;
+  font-size: var(--t-xs);
+  color: var(--text-2);
+}
+
+.divider-row:active {
+  background: var(--surface-2);
+}
+
+.divider-line {
+  flex: 1 1 16px;
+  min-width: 16px;
+  border-top: 1px dashed var(--break-edge);
+}
+
+.divider-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.break-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: calc(-1 * var(--s-2));
 }
 
 /* ============================================================

@@ -751,6 +751,13 @@ export type Database = {
       }
     }
     Views: {
+      callback_counts: {
+        Row: {
+          kind: string | null
+          n: number | null
+        }
+        Relationships: []
+      }
       daily_totals: {
         Row: {
           calorie_target: number | null
@@ -764,6 +771,33 @@ export type Database = {
         }
         Relationships: []
       }
+      redo_queue: {
+        Row: {
+          catalog_id: string | null
+          created_at: string | null
+          deleted_at: string | null
+          difficulty: string | null
+          hints: string | null
+          id: string | null
+          inferred: boolean | null
+          logical_date: string | null
+          minutes: number | null
+          notes: string | null
+          redo: boolean | null
+          result: string | null
+          title: string | null
+          topic: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leetcode_log_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "lc_catalog"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weekly_weights: {
         Row: {
           avg_lb: number | null
@@ -774,14 +808,64 @@ export type Database = {
       }
     }
     Functions: {
+      application_for: { Args: { p_company: string }; Returns: string }
+      delete_application: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_break: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_callback: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_food_entry: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      delete_leetcode: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
       delete_meal: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_weight: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       is_owner: { Args: never; Returns: boolean }
+      lc_lookup: {
+        Args: { p_title: string }
+        Returns: {
+          aliases: string[]
+          created_at: string
+          difficulty: string
+          id: string
+          title: string
+          topic: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "lc_catalog"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      leetcode_counts: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          dimension: string
+          key: string
+          n: number
+        }[]
+      }
+      log_callback: {
+        Args: {
+          p_company: string
+          p_date: string
+          p_debrief?: string
+          p_kind: string
+          p_outcome?: string
+          p_score?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       log_food: {
         Args: {
           p_calories: number
@@ -795,11 +879,38 @@ export type Database = {
         }
         Returns: Json
       }
+      log_leetcode: {
+        Args: {
+          p_date: string
+          p_difficulty?: string
+          p_hints?: string
+          p_inferred?: boolean
+          p_minutes?: number
+          p_notes?: string
+          p_redo?: boolean
+          p_result?: string
+          p_title: string
+          p_tool?: string
+          p_topic?: string
+        }
+        Returns: Json
+      }
       log_saved_meal: {
         Args: {
           p_date: string
           p_meal_id: string
           p_portions?: number
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      save_application: {
+        Args: {
+          p_applied_date: string
+          p_company: string
+          p_position: string
+          p_resume_name?: string
+          p_status: string
           p_tool?: string
         }
         Returns: Json
@@ -835,6 +946,10 @@ export type Database = {
         }
         Returns: Json
       }
+      set_debrief: {
+        Args: { p_debrief: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
       set_food_portions: {
         Args: {
           p_date: string
@@ -844,6 +959,10 @@ export type Database = {
         }
         Returns: Json
       }
+      set_leetcode_redo: {
+        Args: { p_id: string; p_redo: boolean; p_tool?: string }
+        Returns: Json
+      }
       targets_for: {
         Args: { p_date: string }
         Returns: {
@@ -851,12 +970,36 @@ export type Database = {
           protein_target_g: number
         }[]
       }
+      update_application: {
+        Args: {
+          p_applied_date: string
+          p_company: string
+          p_id: string
+          p_position: string
+          p_resume_name: string
+          p_status: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       update_break: {
         Args: {
           p_end: string
           p_id: string
           p_label: string
           p_start: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      update_callback: {
+        Args: {
+          p_company: string
+          p_date: string
+          p_id: string
+          p_kind: string
+          p_outcome: string
+          p_score: string
           p_tool?: string
         }
         Returns: Json
@@ -871,6 +1014,22 @@ export type Database = {
           p_id: string
           p_protein_g: number
           p_tool?: string
+        }
+        Returns: Json
+      }
+      update_leetcode: {
+        Args: {
+          p_date: string
+          p_difficulty: string
+          p_hints: string
+          p_id: string
+          p_minutes: number
+          p_notes: string
+          p_redo: boolean
+          p_result: string
+          p_title: string
+          p_tool?: string
+          p_topic: string
         }
         Returns: Json
       }

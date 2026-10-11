@@ -3,22 +3,26 @@
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
 import { fmtDay, fmtNum, newestFirst } from "@/lib/date";
+import { BASE_STATUSES } from "@/lib/applicationsData";
 import { useHomeStats } from "@/lib/homeStats";
-import { countBy, inWeek, live } from "@/lib/stats";
+import { inWeek, live } from "@/lib/stats";
 import { useStore } from "@/lib/store";
 import type { Note } from "@/lib/types";
 
 export default function TabsPage() {
   const { db } = useStore();
-  // Weight and Nutrition come from Supabase; the other cards still read local data.
+  // Weight, Nutrition and LeetCode come from Supabase; the other cards still read local data.
   const { data: stats, failed } = useHomeStats();
   const w = stats?.weight;
   const n = stats?.nutrition;
+  const lc = stats?.leetcode;
+  const ap = stats?.applications;
+  // Statuses actually in use, base order first, at most four rows on the card.
+  const apStatuses = ap
+    ? [...BASE_STATUSES, ...Object.keys(ap.byStatus).filter((s) => !BASE_STATUSES.includes(s))].filter((s) => ap.byStatus[s]).slice(0, 4)
+    : [];
   const pending = failed ? "Failed" : "–";
-
-  const lc = live(db.leetcode);
-  const apps = countBy(live(db.applications), (a) => a.status);
-  const cbs = countBy(live(db.callbacks), (c) => c.type);
+  const cbs = stats?.callbacks;
   const workouts = live(db.workouts).sort(newestFirst);
 
   return (
@@ -49,11 +53,12 @@ export default function TabsPage() {
         <StatCard
           title="LeetCode"
           href="/tabs/leetcode"
-          value={inWeek(lc).length}
-          unit="this wk"
+          value={lc ? lc.week : pending}
+          unit={lc ? "this wk" : undefined}
           rows={[
-            { label: "Redo queue", value: lc.filter((x) => x.redo).length },
-            { label: "Total", value: lc.length },
+            { label: "Days this wk", value: lc ? lc.days : "–" },
+            { label: "Redo queue", value: lc ? lc.redo : "–" },
+            { label: "Total", value: lc ? lc.total : "–" },
           ]}
         />
         <StatCard
@@ -68,18 +73,18 @@ export default function TabsPage() {
         <StatCard
           title="Applications"
           href="/tabs/applications"
-          value={live(db.applications).length}
-          unit="total"
-          rows={db.settings.statuses.slice(0, 4).map((st) => ({ label: st, value: apps[st] ?? 0 }))}
+          value={ap ? ap.total : pending}
+          unit={ap ? "total" : undefined}
+          rows={apStatuses.map((st) => ({ label: st, value: ap!.byStatus[st] }))}
         />
         <StatCard
           title="Callbacks"
           href="/tabs/callbacks"
-          value={cbs.Interview ?? 0}
-          unit="interviews"
+          value={cbs ? (cbs.Interview ?? 0) : pending}
+          unit={cbs ? "interviews" : undefined}
           rows={[
-            { label: "OAs", value: cbs.OA ?? 0 },
-            { label: "Recruiter", value: cbs.Recruiter ?? 0 },
+            { label: "OAs", value: cbs ? (cbs.OA ?? 0) : "–" },
+            { label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" },
           ]}
         />
       </div>

@@ -1,58 +1,99 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FullScreenEditor } from "@/components/Editor";
 import { FormSheet } from "@/components/FormSheet";
+import { PageSkeleton } from "@/components/Skeleton";
 import { fmtDay } from "@/lib/date";
-import { useStore } from "@/lib/store";
-import type { Callback } from "@/lib/types";
-import { CALLBACK_FIELDS } from "../fields";
+import { callbacksApi, useCallbackRow } from "@/lib/callbacksData";
+import { CALLBACK_FIELDS, callbackOf, validateCallback } from "../fields";
 
-/** Debrief: plain free text, saved as typed. */
+/**
+ * Debrief: plain free text, saved exactly as typed. Edits stay local while typing
+ * and save on Done or when the app goes to the background, not on every keystroke.
+ */
 export default function DebriefPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { db, update, remove } = useStore();
+  const { row, state, reload } = useCallbackRow(id);
+  const [text, setText] = useState<string | null>(null);
   const [details, setDetails] = useState(false);
-  const cb = db.callbacks.find((c) => c.id === id && !c.deleted);
+  const [error, setError] = useState(false);
+  const saved = useRef<string | null>(null);
 
-  if (!cb) {
+  // Start from the stored text once it loads.
+  useEffect(() => {
+    if (row && text === null) {
+      setText(row.debrief);
+      saved.current = row.debrief;
+    }
+  }, [row, text]);
+
+  const save = useCallback(async () => {
+    if (text === null || text === saved.current) return true;
+    const res = await callbacksApi.setDebrief(id, text);
+    if (res.status !== "saved") {
+      setError(true);
+      return false;
+    }
+    saved.current = text;
+    setError(false);
+    return true;
+  }, [id, text]);
+
+  // iOS fires visibilitychange when switching apps or locking the phone.
+  useEffect(() => {
+    const onHide = () => document.visibilityState === "hidden" && save();
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [save]);
+
+  if (state === "missing" || state === "failed") {
     return (
       <main className="screen">
-        <p className="faint">Not found.</p>
+        <p className="faint">{state === "missing" ? "Not found." : "Failed."}</p>
       </main>
     );
   }
+  if (!row || text === null) return <PageSkeleton />;
 
   return (
     <>
       <FullScreenEditor
-        title={`${cb.company}, ${cb.type}`}
-        value={cb.debrief}
-        placeholder={`Debrief, ${fmtDay(cb.date)}`}
-        onChange={(debrief) => update("callbacks", cb.id, { debrief })}
-        onDone={() => router.push("/tabs/callbacks")}
+        title={`${row.company}, ${row.kind}`}
+        value={text}
+        placeholder={`Debrief${row.date ? `, ${fmtDay(row.date)}` : ""}`}
+        onChange={setText}
+        onDone={async () => {
+          // Stay on the page if the save failed, so nothing typed is lost.
+          if (await save()) router.push("/tabs/callbacks");
+        }}
         left={
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDetails(true)}>
             Details
           </button>
         }
+        right={error ? <span style={{ color: "var(--danger)", fontSize: "var(--t-sm)", alignSelf: "center" }}>Failed</span> : undefined}
       />
       {details && (
         <FormSheet
           title="Callback details"
           fields={CALLBACK_FIELDS}
           confirm
-          initial={cb}
+          validate={validateCallback}
+          initial={row}
           onClose={() => setDetails(false)}
-          onDelete={() => {
-            remove("callbacks", cb.id);
-            router.push("/tabs/callbacks");
+          onDelete={async () => {
+            const res = await callbacksApi.remove(row.id);
+            if (res.status === "saved") router.push("/tabs/callbacks");
+            else setError(true);
           }}
-          onSubmit={(v) => {
-            update("callbacks", cb.id, v as Partial<Callback>);
+          onSubmit={async (v) => {
             setDetails(false);
+            const res = await callbacksApi.update(row.id, callbackOf(v));
+            setError(res.status !== "saved");
+            reload();
           }}
         />
       )}

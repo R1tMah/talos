@@ -78,6 +78,7 @@ export function Tag({ children, tone }: { children: ReactNode; tone?: string }) 
 const STATUS_DOTS: Record<string, string> = {
   Applied: "var(--text-3)",
   OA: "var(--tag-2)",
+  "OA Stage": "var(--tag-2)",
   Interview: "var(--accent)",
   Offer: "var(--tag-1)",
   Rejected: "var(--border-strong)",

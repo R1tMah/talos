@@ -4,40 +4,106 @@ import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
+import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, StatusPill } from "@/components/ui";
-import { fmtDay, newestFirst, nowHM, todayISO, uid } from "@/lib/date";
-import { countBy, live } from "@/lib/stats";
-import { useStore } from "@/lib/store";
-import type { Application } from "@/lib/types";
+import {
+  applicationsApi, BASE_STATUSES, useApplicationsData, type AppEntry, type AppInput, type WriteResult,
+} from "@/lib/applicationsData";
+import { fmtDay, logicalToday } from "@/lib/date";
+import type { TabExport } from "@/lib/exportTab";
+import { countBy } from "@/lib/stats";
+
+function validate(v: Record<string, unknown>) {
+  if (!String(v.company ?? "").trim()) return "Company is required.";
+  if (!String(v.position ?? "").trim()) return "Position is required.";
+  if (!v.date) return "Date is required.";
+  return null;
+}
+
+const toInput = (v: Record<string, unknown>): AppInput => ({
+  company: v.company as string,
+  position: v.position as string,
+  date: v.date as string,
+  status: v.status as string,
+  resume: (v.resume as string) || null,
+});
+
+function exportOf(rows: AppEntry[]): TabExport {
+  return {
+    title: "Applications",
+    columns: [
+      { key: "date", label: "Date" }, { key: "company", label: "Company" }, { key: "position", label: "Position" },
+      { key: "status", label: "Status" }, { key: "resume", label: "Resume" },
+    ],
+    rows: rows.map((a) => ({ date: a.date, company: a.company, position: a.position, status: a.status, resume: a.resume ?? "" })),
+  };
+}
 
 export default function ApplicationsPage() {
-  const { db, add, update, remove } = useStore();
-  const [sheet, setSheet] = useState<Application | "new" | null>(null);
+  const { data, failed, reload } = useApplicationsData();
+  const [sheet, setSheet] = useState<AppEntry | "new" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const rows = useMemo(() => live(db.applications).sort(newestFirst), [db.applications]);
+  const rows = useMemo(() => data ?? [], [data]);
   const counts = countBy(rows, (a) => a.status);
-  const statuses = db.settings.statuses;
+  // Base statuses first, then any other status already used, in first-seen order.
+  const statuses = [...BASE_STATUSES, ...Object.keys(counts).filter((s) => !BASE_STATUSES.includes(s))];
+
+  /** Runs a write, reloads, and turns anything but success into a plain message. */
+  const run = async (write: Promise<WriteResult>) => {
+    setNotice(null);
+    const r = await write;
+    if (r.status !== "saved") setNotice("Failed");
+    await reload();
+  };
+
+  if (!data) {
+    return failed ? (
+      <main className="screen">
+        <ScreenHeader title="Applications" back="/tabs" />
+        <p role="alert" className="muted">
+          Failed.{" "}
+          <button type="button" className="btn btn-sm" onClick={reload}>
+            Retry
+          </button>
+        </p>
+      </main>
+    ) : (
+      <PageSkeleton />
+    );
+  }
 
   const fields: Field[] = [
     { name: "company", label: "Company" },
-    { name: "role", label: "Role" },
+    { name: "position", label: "Position" },
     { name: "status", label: "Status", type: "select", options: statuses },
-    { name: "source", label: "Source" },
     { name: "date", label: "Date", type: "date" },
-    { name: "time", label: "Time", type: "time" },
-    { name: "link", label: "Link", placeholder: "Optional" },
+    { name: "resume", label: "Resume", placeholder: "Optional" },
   ];
 
   return (
     <main className="screen">
-      <ScreenHeader title="Applications" back="/tabs" right={<ExportButton tab="applications" />} />
-      <SummaryStrip items={[{ label: "Total", value: rows.length }, ...statuses.map((s) => ({ label: s, value: counts[s] ?? 0 }))]} />
+      <ScreenHeader title="Applications" back="/tabs" right={<ExportButton tab="applications" source={exportOf(rows)} />} />
+      <SummaryStrip
+        items={[
+          { label: "Total", value: rows.length },
+          ...statuses.filter((s) => BASE_STATUSES.includes(s) || counts[s]).map((s) => ({ label: s, value: counts[s] ?? 0 })),
+        ]}
+      />
+
+      {notice && (
+        <p role="alert" style={{ color: "var(--danger)", fontSize: "var(--t-sm)", margin: 0 }}>
+          {notice}
+        </p>
+      )}
+
       <DataTable
         rows={rows}
+        empty="No applications."
         onAdd={() => setSheet("new")}
         onRowClick={(r) => setSheet(r)}
-        onDelete={(r) => remove("applications", r.id)}
+        onDelete={(r) => run(applicationsApi.remove(r.id))}
         columns={[
           { key: "date", label: "Date", width: "46px", render: (r) => <span className="faint">{fmtDay(r.date)}</span> },
           {
@@ -45,7 +111,7 @@ export default function ApplicationsPage() {
             render: (r) => (
               <>
                 <div className="cell-main">{r.company}</div>
-                <div className="cell-sub">{r.role}</div>
+                <div className="cell-sub">{r.position}</div>
               </>
             ),
           },
@@ -58,13 +124,12 @@ export default function ApplicationsPage() {
           title={sheet === "new" ? "Add application" : "Edit application"}
           fields={fields}
           confirm={sheet !== "new"}
-          initial={sheet === "new" ? { date: todayISO(), time: nowHM(), status: statuses[0] } : sheet}
+          validate={validate}
+          initial={sheet === "new" ? { date: logicalToday(), status: BASE_STATUSES[0], resume: "" } : { ...sheet, resume: sheet.resume ?? "" }}
           onClose={() => setSheet(null)}
-          onDelete={sheet !== "new" ? () => (remove("applications", sheet.id), setSheet(null)) : undefined}
+          onDelete={sheet !== "new" ? () => (run(applicationsApi.remove(sheet.id)), setSheet(null)) : undefined}
           onSubmit={(v) => {
-            const data = v as Omit<Application, "id">;
-            if (sheet === "new") add("applications", { id: uid(), ...data });
-            else update("applications", sheet.id, data);
+            run(sheet === "new" ? applicationsApi.save(toInput(v)) : applicationsApi.update(sheet.id, toInput(v)));
             setSheet(null);
           }}
         />

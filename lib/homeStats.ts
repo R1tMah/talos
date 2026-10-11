@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { addDays, logicalToday, weekStart } from "./date";
+import { countBy } from "./stats";
 
 /**
- * Numbers for the Weight and Nutrition stat cards on the Tabs page. Same
- * sources as those tabs (latest weigh-in, weekly_weights, daily_totals,
- * targets_for) so the cards always match what the tabs show.
+ * Numbers for the Weight, Nutrition, LeetCode, Applications and Callbacks stat cards on the Tabs page.
+ * Same sources as those tabs (latest weigh-in, weekly_weights, daily_totals,
+ * targets_for, leetcode_counts, redo_queue) so the cards always match the tabs.
  */
 export interface HomeStats {
   weight: {
@@ -16,6 +17,12 @@ export interface HomeStats {
     lastWeek: { avg: number; n: number } | null;
   };
   nutrition: { cal: number; p: number; calTarget: number; pTarget: number };
+  /** Distinct problems this week and all time, days practiced this week, redo queue size. */
+  leetcode: { week: number; days: number; redo: number; total: number };
+  /** Live applications: total and count per status. */
+  applications: { total: number; byStatus: Record<string, number> };
+  /** Live callbacks per kind, from the callback_counts view: { OA: 3, Interview: 1 }. */
+  callbacks: Record<string, number>;
 }
 
 export function useHomeStats() {
@@ -35,9 +42,14 @@ export function useHomeStats() {
       db.from("weekly_weights").select("*").in("week_start", [thisWeek, lastWeek]),
       db.from("daily_totals").select("*").eq("logical_date", today).maybeSingle(),
       db.rpc("targets_for", { p_date: today }).single(),
-    ]).then(([w, wk, day, targets]) => {
+      db.rpc("leetcode_counts", { p_from: thisWeek, p_to: today }),
+      db.rpc("leetcode_counts", { p_from: "2000-01-01", p_to: today }),
+      db.from("redo_queue").select("id", { count: "exact", head: true }),
+      db.from("applications").select("status").is("deleted_at", null),
+      db.from("callback_counts").select("*"),
+    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs]) => {
       if (!live) return;
-      if (w.error || wk.error || day.error || targets.error) {
+      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error) {
         setFailed(true);
         return;
       }
@@ -45,6 +57,7 @@ export function useHomeStats() {
         const r = wk.data.find((x) => x.week_start === start);
         return r ? { avg: Number(r.avg_lb), n: Number(r.n) } : null;
       };
+      const count = (rows: { dimension: string; n: number }[], dim: string) => rows.find((r) => r.dimension === dim)?.n ?? 0;
       setFailed(false);
       setData({
         weight: {
@@ -58,6 +71,14 @@ export function useHomeStats() {
           calTarget: targets.data.calorie_target,
           pTarget: targets.data.protein_target_g,
         },
+        leetcode: {
+          week: count(lcWeek.data, "problems"),
+          days: count(lcWeek.data, "days"),
+          redo: redo.count ?? 0,
+          total: count(lcAll.data, "problems"),
+        },
+        applications: { total: apps.data.length, byStatus: countBy(apps.data, (a) => a.status) },
+        callbacks: Object.fromEntries(cbs.data.map((c) => [c.kind ?? "", c.n ?? 0])),
       });
     });
 

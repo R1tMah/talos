@@ -8,7 +8,7 @@ export type ExportTab =
 
 type Row = Record<string, string>;
 
-interface TabExport {
+export interface TabExport {
   title: string;
   columns: { key: string; label: string }[];
   rows: Row[];
@@ -111,8 +111,9 @@ function headPart(key: string, v: string) {
   return v;
 }
 
-export function tabMarkdown(tab: ExportTab, db: DB) {
-  const t = build(tab, db);
+export const tabMarkdown = (tab: ExportTab, db: DB) => toMarkdown(build(tab, db));
+
+export function toMarkdown(t: TabExport) {
   const head = `# ${t.title}, ${t.rows.length} entries`;
   if (!t.rows.length) return head;
 
@@ -139,8 +140,9 @@ export function tabMarkdown(tab: ExportTab, db: DB) {
 
 const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
-export function tabCsv(tab: ExportTab, db: DB) {
-  const t = build(tab, db);
+export const tabCsv = (tab: ExportTab, db: DB) => toCsv(build(tab, db));
+
+export function toCsv(t: TabExport) {
   return [t.columns.map((c) => csvCell(c.label)).join(","), ...t.rows.map((r) => t.columns.map((c) => csvCell(r[c.key])).join(","))].join("\n");
 }
 

@@ -2,22 +2,27 @@
 
 import { useState } from "react";
 import { todayISO } from "@/lib/date";
-import { tabCount, tabCsv, tabMarkdown, tabTitle, type ExportTab } from "@/lib/exportTab";
+import { tabCount, tabCsv, tabMarkdown, tabTitle, toCsv, toMarkdown, type ExportTab, type TabExport } from "@/lib/exportTab";
 import { useStore } from "@/lib/store";
 import { Sheet } from "./FormSheet";
 import { IconShare } from "./Icons";
 
-/** Header button that exports just this tab. */
-export function ExportButton({ tab }: { tab: ExportTab }) {
+/**
+ * Header button that exports just this tab. Tabs that load from Supabase pass
+ * their live rows as `source`; the rest export the local store.
+ */
+export function ExportButton({ tab, source }: { tab: ExportTab; source?: TabExport }) {
   const { db } = useStore();
   const [open, setOpen] = useState(false);
   const [copy, setCopy] = useState<"" | "Copied" | "Failed">("");
-  const title = tabTitle(tab, db);
-  const count = tabCount(tab, db);
+  const title = source?.title ?? tabTitle(tab, db);
+  const count = source?.rows.length ?? tabCount(tab, db);
+  const markdown = () => (source ? toMarkdown(source) : tabMarkdown(tab, db));
+  const csv = () => (source ? toCsv(source) : tabCsv(tab, db));
 
   const copyMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(tabMarkdown(tab, db));
+      await navigator.clipboard.writeText(markdown());
       setCopy("Copied");
     } catch {
       setCopy("Failed");
@@ -27,7 +32,7 @@ export function ExportButton({ tab }: { tab: ExportTab }) {
 
   const downloadCsv = () => {
     // Leading BOM so Excel and Numbers read non-ASCII text correctly.
-    const blob = new Blob(["﻿" + tabCsv(tab, db)], { type: "text/csv" });
+    const blob = new Blob(["﻿" + csv()], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `talos-${tab}-${todayISO()}.csv`;

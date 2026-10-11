@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { KeyboardInset } from "@/components/KeyboardInset";
 import { TabBar } from "@/components/TabBar";
 import { RestWatcher } from "@/components/RestWatcher";
+import { UndoToast } from "@/components/UndoToast";
 import { Ready, StoreProvider } from "@/lib/store";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Ready>{children}</Ready>
           <TabBar />
           <RestWatcher />
+          <UndoToast />
         </StoreProvider>
       </body>
     </html>

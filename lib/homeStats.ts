@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { addDays, logicalToday, weekStart } from "./date";
 import { countBy } from "./stats";
+import { useDataChanged } from "./undo";
 
 /**
  * Numbers for the Weight, Nutrition, LeetCode, Applications and Callbacks stat cards on the Tabs page.
@@ -23,11 +24,16 @@ export interface HomeStats {
   applications: { total: number; byStatus: Record<string, number> };
   /** Live callbacks per kind, from the callback_counts view: { OA: 3, Interview: 1 }. */
   callbacks: Record<string, number>;
+  /** Live notepad entries per kind: count and latest logical date. */
+  notes: Record<"content" | "journal", { n: number; last: string | null }>;
 }
 
 export function useHomeStats() {
   const [data, setData] = useState<HomeStats | null>(null);
   const [failed, setFailed] = useState(false);
+  // Bumped after an undo or redo anywhere, so the cards reload.
+  const [tick, setTick] = useState(0);
+  useDataChanged(useCallback(() => setTick((t) => t + 1), []));
 
   useEffect(() => {
     let live = true;
@@ -47,9 +53,10 @@ export function useHomeStats() {
       db.from("redo_queue").select("id", { count: "exact", head: true }),
       db.from("applications").select("status").is("deleted_at", null),
       db.from("callback_counts").select("*"),
-    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs]) => {
+      db.from("notes").select("kind, logical_date").is("deleted_at", null),
+    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs, notes]) => {
       if (!live) return;
-      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error) {
+      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error || notes.error) {
         setFailed(true);
         return;
       }
@@ -58,6 +65,10 @@ export function useHomeStats() {
         return r ? { avg: Number(r.avg_lb), n: Number(r.n) } : null;
       };
       const count = (rows: { dimension: string; n: number }[], dim: string) => rows.find((r) => r.dimension === dim)?.n ?? 0;
+      const pad = (rows: { kind: string; logical_date: string }[], kind: string) => {
+        const dates = rows.filter((r) => r.kind === kind).map((r) => r.logical_date).sort();
+        return { n: dates.length, last: dates.at(-1) ?? null };
+      };
       setFailed(false);
       setData({
         weight: {
@@ -79,13 +90,17 @@ export function useHomeStats() {
         },
         applications: { total: apps.data.length, byStatus: countBy(apps.data, (a) => a.status) },
         callbacks: Object.fromEntries(cbs.data.map((c) => [c.kind ?? "", c.n ?? 0])),
+        notes: {
+          content: pad(notes.data, "content"),
+          journal: pad(notes.data, "journal"),
+        },
       });
     });
 
     return () => {
       live = false;
     };
-  }, []);
+  }, [tick]);
 
   return { data, failed };
 }

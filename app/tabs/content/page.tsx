@@ -1,5 +1,5 @@
 import { NotepadScreen } from "@/components/Notepad";
 
 export default function Page() {
-  return <NotepadScreen coll="content" title="Content" />;
+  return <NotepadScreen kind="content" title="Content" />;
 }

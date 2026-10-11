@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 import { toHM } from "./date";
 
 type Tables = Database["public"]["Tables"];
@@ -112,6 +113,8 @@ export function useNutritionData(date: string) {
     });
   }, [date]);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -119,9 +122,10 @@ export function useNutritionData(date: string) {
   return { data, failed, reload };
 }
 
-function parse(res: { data: Json | null; error: unknown }): WriteResult {
+function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
   const out = res.data as { status?: string; existing?: MealRow } | null;
   if (res.error || !out) return { status: "failed" };
+  announceWrite(table, out as { row?: Json; action_id?: string | null });
   if (out.status === "conflict" && out.existing) return { status: "conflict", existing: toMeal(out.existing) };
   if (out.status === "saved" || out.status === "not_found") return { status: out.status };
   return { status: "failed" };
@@ -145,35 +149,35 @@ export interface MealInput extends Macros {
 /** Writes go through the database functions, which do all macro math and log an actions row. */
 export const nutritionApi = {
   logTyped: async (date: string, name: string, m: Macros) =>
-    parse(
+    parse("food_log", 
       await createClient().rpc("log_food", {
         p_date: date, p_description: name, p_calories: m.cal, p_protein_g: m.p,
       }),
     ),
   logMeal: async (date: string, mealId: string, portions: number) =>
-    parse(await createClient().rpc("log_saved_meal", { p_date: date, p_meal_id: mealId, p_portions: portions })),
+    parse("food_log", await createClient().rpc("log_saved_meal", { p_date: date, p_meal_id: mealId, p_portions: portions })),
   updateTyped: async (id: string, date: string, name: string, m: Macros) =>
-    parse(
+    parse("food_log", 
       await createClient().rpc("update_food_entry", {
         p_id: id, p_date: date, p_description: name, p_calories: m.cal, p_protein_g: m.p, p_carbs_g: untracked, p_fat_g: untracked,
       }),
     ),
   setPortions: async (id: string, date: string, portions: number) =>
-    parse(await createClient().rpc("set_food_portions", { p_id: id, p_date: date, p_portions: portions })),
-  removeEntry: async (id: string) => parse(await createClient().rpc("delete_food_entry", { p_id: id })),
+    parse("food_log", await createClient().rpc("set_food_portions", { p_id: id, p_date: date, p_portions: portions })),
+  removeEntry: async (id: string) => parse("food_log", await createClient().rpc("delete_food_entry", { p_id: id })),
 
   saveMeal: async (m: MealInput) =>
-    parse(
+    parse("saved_meals", 
       await createClient().rpc("save_meal", {
         p_name: m.name, p_aliases: m.aliases, p_portion_unit: m.unit, p_calories: m.cal, p_protein_g: m.p,
       }),
     ),
   updateMeal: async (id: string, m: MealInput) =>
-    parse(
+    parse("saved_meals", 
       await createClient().rpc("update_meal", {
         p_id: id, p_name: m.name, p_aliases: m.aliases, p_portion_unit: m.unit,
         p_calories: m.cal, p_protein_g: m.p, p_carbs_g: untracked, p_fat_g: untracked,
       }),
     ),
-  removeMeal: async (id: string) => parse(await createClient().rpc("delete_meal", { p_id: id })),
+  removeMeal: async (id: string) => parse("saved_meals", await createClient().rpc("delete_meal", { p_id: id })),
 };

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 import { logicalToday, weekStart } from "./date";
 
 type Row = Database["public"]["Tables"]["leetcode_log"]["Row"];
@@ -92,6 +93,8 @@ export function useLeetcodeData() {
     });
   }, []);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -99,9 +102,10 @@ export function useLeetcodeData() {
   return { data, failed, reload };
 }
 
-function parse(res: { data: Json | null; error: unknown }): WriteResult {
+function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
   const out = res.data as { status?: string; candidates?: { title: string }[] } | null;
   if (res.error || !out) return { status: "failed" };
+  announceWrite(table, out as { row?: Json; action_id?: string | null });
   if (out.status === "ambiguous") return { status: "ambiguous", candidates: (out.candidates ?? []).map((c) => c.title) };
   if (out.status === "saved" || out.status === "not_found") return { status: out.status };
   return { status: "failed" };
@@ -126,19 +130,19 @@ const n = <T,>(v: T | null) => v as T;
 /** Writes go through the database functions: catalog lookup, validation and the actions row. */
 export const leetcodeApi = {
   log: async (a: AttemptInput) =>
-    parse(
+    parse("leetcode_log", 
       await createClient().rpc("log_leetcode", {
         p_date: a.date, p_title: a.title, p_minutes: n(a.minutes), p_hints: n(a.hints), p_result: n(a.result),
         p_redo: a.redo, p_notes: n(a.notes), p_difficulty: n(a.difficulty), p_topic: n(a.topic),
       }),
     ),
   update: async (id: string, a: AttemptInput) =>
-    parse(
+    parse("leetcode_log", 
       await createClient().rpc("update_leetcode", {
         p_id: id, p_date: a.date, p_title: a.title, p_minutes: n(a.minutes), p_hints: n(a.hints), p_result: n(a.result),
         p_redo: a.redo, p_notes: n(a.notes), p_difficulty: n(a.difficulty), p_topic: n(a.topic),
       }),
     ),
-  setRedo: async (id: string, redo: boolean) => parse(await createClient().rpc("set_leetcode_redo", { p_id: id, p_redo: redo })),
-  remove: async (id: string) => parse(await createClient().rpc("delete_leetcode", { p_id: id })),
+  setRedo: async (id: string, redo: boolean) => parse("leetcode_log", await createClient().rpc("set_leetcode_redo", { p_id: id, p_redo: redo })),
+  remove: async (id: string) => parse("leetcode_log", await createClient().rpc("delete_leetcode", { p_id: id })),
 };

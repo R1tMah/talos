@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 import { toHM, logicalToday } from "./date";
 import type { WeekRow } from "./stats";
 import type { Break, Phase, WeightEntry } from "./types";
@@ -80,6 +81,8 @@ export function useWeightData() {
     });
   }, []);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -87,9 +90,10 @@ export function useWeightData() {
   return { data, failed, reload };
 }
 
-function parse(res: { data: Json | null; error: unknown }): WriteResult {
+function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
   const out = res.data as { status?: string; existing?: WeightRow } | null;
   if (res.error || !out) return { status: "failed" };
+  announceWrite(table, out as { row?: Json; action_id?: string | null });
   if (out.status === "conflict" && out.existing) return { status: "conflict", existing: toEntry(out.existing) };
   if (out.status === "saved" || out.status === "not_found") return { status: out.status };
   return { status: "failed" };
@@ -101,14 +105,14 @@ const orNull = (v: string | null | undefined) => (v ?? null) as string;
 /** Writes go through the database functions so each one also logs an actions row. */
 export const weightApi = {
   save: async (date: string, lb: number, note?: string) =>
-    parse(await createClient().rpc("save_weight", { p_date: date, p_weight_lb: lb, p_note: orNull(note) })),
+    parse("weights", await createClient().rpc("save_weight", { p_date: date, p_weight_lb: lb, p_note: orNull(note) })),
   update: async (id: string, date: string, lb: number, note?: string) =>
-    parse(await createClient().rpc("update_weight", { p_id: id, p_date: date, p_weight_lb: lb, p_note: orNull(note) })),
-  remove: async (id: string) => parse(await createClient().rpc("delete_weight", { p_id: id })),
+    parse("weights", await createClient().rpc("update_weight", { p_id: id, p_date: date, p_weight_lb: lb, p_note: orNull(note) })),
+  remove: async (id: string) => parse("weights", await createClient().rpc("delete_weight", { p_id: id })),
 
   saveBreak: async (start: string, end: string | null, label: string) =>
-    parse(await createClient().rpc("save_break", { p_start: start, p_end: orNull(end), p_label: label })),
+    parse("breaks", await createClient().rpc("save_break", { p_start: start, p_end: orNull(end), p_label: label })),
   updateBreak: async (id: string, start: string, end: string | null, label: string) =>
-    parse(await createClient().rpc("update_break", { p_id: id, p_start: start, p_end: orNull(end), p_label: label })),
-  removeBreak: async (id: string) => parse(await createClient().rpc("delete_break", { p_id: id })),
+    parse("breaks", await createClient().rpc("update_break", { p_id: id, p_start: start, p_end: orNull(end), p_label: label })),
+  removeBreak: async (id: string) => parse("breaks", await createClient().rpc("delete_break", { p_id: id })),
 };

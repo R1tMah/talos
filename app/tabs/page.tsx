@@ -7,7 +7,6 @@ import { BASE_STATUSES } from "@/lib/applicationsData";
 import { useHomeStats } from "@/lib/homeStats";
 import { inWeek, live } from "@/lib/stats";
 import { useStore } from "@/lib/store";
-import type { Note } from "@/lib/types";
 
 export default function TabsPage() {
   const { db } = useStore();
@@ -90,25 +89,22 @@ export default function TabsPage() {
       </div>
 
       <div className="grid-2">
-        <NoteCard title="Content" href="/tabs/content" notes={db.content} />
-        <NoteCard title="Work Journal" href="/tabs/journal" notes={db.journal} />
-        <NoteCard title="Unsorted notes" href="/tabs/notes" notes={db.notes} span />
+        <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />
+        <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />
       </div>
     </main>
   );
 }
 
-function NoteCard({ title, href, notes, span }: { title: string; href: string; notes: Note[]; span?: boolean }) {
-  const rows = live(notes).sort(newestFirst);
+function NoteCard({ title, href, pad, pending }: { title: string; href: string; pad?: { n: number; last: string | null }; pending: string }) {
   return (
     <StatCard
       compact
-      span={span ? 2 : undefined}
       title={title}
       href={href}
-      value={rows.length}
-      unit={rows.length === 1 ? "entry" : "entries"}
-      rows={[{ label: "Last", value: rows[0] ? fmtDay(rows[0].date) : "–" }]}
+      value={pad ? pad.n : pending}
+      unit={pad ? (pad.n === 1 ? "entry" : "entries") : undefined}
+      rows={[{ label: "Last", value: pad?.last ? fmtDay(pad.last) : "–" }]}
     />
   );
 }

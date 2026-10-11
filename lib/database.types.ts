@@ -45,6 +45,7 @@ export type Database = {
           before: Json | null
           created_at: string
           id: string
+          reverts: string | null
           row_id: string | null
           table_name: string
           tool: string
@@ -55,6 +56,7 @@ export type Database = {
           before?: Json | null
           created_at?: string
           id?: string
+          reverts?: string | null
           row_id?: string | null
           table_name: string
           tool: string
@@ -65,12 +67,21 @@ export type Database = {
           before?: Json | null
           created_at?: string
           id?: string
+          reverts?: string | null
           row_id?: string | null
           table_name?: string
           tool?: string
           undone_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "actions_reverts_fkey"
+            columns: ["reverts"]
+            isOneToOne: false
+            referencedRelation: "actions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       applications: {
         Row: {
@@ -393,6 +404,42 @@ export type Database = {
           },
         ]
       }
+      message_log: {
+        Row: {
+          client_msg_id: string
+          corrected: boolean
+          created_at: string
+          id: string
+          model: string | null
+          response: Json | null
+          route: string | null
+          text: string
+          tool_calls: Json | null
+        }
+        Insert: {
+          client_msg_id: string
+          corrected?: boolean
+          created_at?: string
+          id?: string
+          model?: string | null
+          response?: Json | null
+          route?: string | null
+          text: string
+          tool_calls?: Json | null
+        }
+        Update: {
+          client_msg_id?: string
+          corrected?: boolean
+          created_at?: string
+          id?: string
+          model?: string | null
+          response?: Json | null
+          route?: string | null
+          text?: string
+          tool_calls?: Json | null
+        }
+        Relationships: []
+      }
       notes: {
         Row: {
           body: string
@@ -419,6 +466,44 @@ export type Database = {
           logical_date?: string
         }
         Relationships: []
+      }
+      pending_proposals: {
+        Row: {
+          args: Json
+          created_at: string
+          expires_at: string
+          id: string
+          message_id: string | null
+          tool: string
+          used_at: string | null
+        }
+        Insert: {
+          args: Json
+          created_at?: string
+          expires_at?: string
+          id?: string
+          message_id?: string | null
+          tool: string
+          used_at?: string | null
+        }
+        Update: {
+          args?: Json
+          created_at?: string
+          expires_at?: string
+          id?: string
+          message_id?: string | null
+          tool?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_proposals_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "message_log"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       phases: {
         Row: {
@@ -808,6 +893,15 @@ export type Database = {
       }
     }
     Functions: {
+      add_note: {
+        Args: {
+          p_body: string
+          p_date: string
+          p_kind: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       application_for: { Args: { p_company: string }; Returns: string }
       delete_application: {
         Args: { p_id: string; p_tool?: string }
@@ -827,6 +921,7 @@ export type Database = {
         Returns: Json
       }
       delete_meal: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_weight: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       is_owner: { Args: never; Returns: boolean }
       lc_lookup: {
@@ -963,6 +1058,10 @@ export type Database = {
         Args: { p_id: string; p_redo: boolean; p_tool?: string }
         Returns: Json
       }
+      set_note_body: {
+        Args: { p_body: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
       targets_for: {
         Args: { p_date: string }
         Returns: {
@@ -970,6 +1069,8 @@ export type Database = {
           protein_target_g: number
         }[]
       }
+      undo_action: { Args: { p_action_id?: string }; Returns: Json }
+      undoable_table: { Args: { p_table: string }; Returns: boolean }
       update_application: {
         Args: {
           p_applied_date: string

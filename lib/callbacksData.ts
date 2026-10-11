@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 
 type Row = Database["public"]["Tables"]["callbacks"]["Row"];
 
@@ -58,6 +59,8 @@ export function useCallbacks() {
     });
   }, []);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -77,6 +80,8 @@ export function useCallbackRow(id: string) {
     setState(data ? "ready" : "missing");
   }, [id]);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -84,9 +89,10 @@ export function useCallbackRow(id: string) {
   return { row, state, reload };
 }
 
-function parse(res: { data: Json | null; error: unknown }): WriteResult {
+function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
   const out = res.data as { status?: string; has_application?: boolean } | null;
   if (res.error || !out) return { status: "failed" };
+  announceWrite(table, out as { row?: Json; action_id?: string | null });
   if (out.status === "saved") return { status: "saved", hasApplication: out.has_application };
   if (out.status === "not_found") return { status: "not_found" };
   return { status: "failed" };
@@ -106,18 +112,18 @@ const n = <T,>(v: T | null) => v as T;
 /** Writes go through the database functions, which also log an actions row. */
 export const callbacksApi = {
   log: async (c: CallbackInput) =>
-    parse(
+    parse("callbacks", 
       await createClient().rpc("log_callback", {
         p_date: n(c.date), p_company: c.company, p_kind: c.kind, p_score: n(c.score), p_outcome: n(c.outcome),
       }),
     ),
   update: async (id: string, c: CallbackInput) =>
-    parse(
+    parse("callbacks", 
       await createClient().rpc("update_callback", {
         p_id: id, p_date: n(c.date), p_company: c.company, p_kind: c.kind, p_score: n(c.score), p_outcome: n(c.outcome),
       }),
     ),
   /** Saved exactly as given. Unchanged text is a no-op in the database. */
-  setDebrief: async (id: string, debrief: string) => parse(await createClient().rpc("set_debrief", { p_id: id, p_debrief: debrief })),
-  remove: async (id: string) => parse(await createClient().rpc("delete_callback", { p_id: id })),
+  setDebrief: async (id: string, debrief: string) => parse("callbacks", await createClient().rpc("set_debrief", { p_id: id, p_debrief: debrief })),
+  remove: async (id: string) => parse("callbacks", await createClient().rpc("delete_callback", { p_id: id })),
 };

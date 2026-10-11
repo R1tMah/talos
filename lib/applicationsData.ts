@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 import { toHM } from "./date";
 
 type Row = Database["public"]["Tables"]["applications"]["Row"];
@@ -52,6 +53,8 @@ export function useApplicationsData() {
     setData(res.data.map(toEntry));
   }, []);
 
+  useDataChanged(reload);
+
   useEffect(() => {
     reload();
   }, [reload]);
@@ -59,9 +62,10 @@ export function useApplicationsData() {
   return { data, failed, reload };
 }
 
-function parse(res: { data: Json | null; error: unknown }): WriteResult {
+function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
   const out = res.data as { status?: string } | null;
   if (res.error || !out) return { status: "failed" };
+  announceWrite(table, out as { row?: Json; action_id?: string | null });
   if (out.status === "saved" || out.status === "not_found") return { status: out.status };
   return { status: "failed" };
 }
@@ -80,17 +84,17 @@ const orNull = (v: string | null) => (v || null) as string;
 /** Writes go through the database functions, which also log an actions row. */
 export const applicationsApi = {
   save: async (a: AppInput) =>
-    parse(
+    parse("applications", 
       await createClient().rpc("save_application", {
         p_company: a.company, p_position: a.position, p_applied_date: a.date, p_status: a.status, p_resume_name: orNull(a.resume),
       }),
     ),
   update: async (id: string, a: AppInput) =>
-    parse(
+    parse("applications", 
       await createClient().rpc("update_application", {
         p_id: id, p_company: a.company, p_position: a.position, p_applied_date: a.date, p_status: a.status,
         p_resume_name: orNull(a.resume),
       }),
     ),
-  remove: async (id: string) => parse(await createClient().rpc("delete_application", { p_id: id })),
+  remove: async (id: string) => parse("applications", await createClient().rpc("delete_application", { p_id: id })),
 };

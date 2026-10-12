@@ -1,12 +1,11 @@
-import type { Card } from "@/lib/types";
+import type { ChatCard } from "@/lib/agent/cards";
 import { ChangeList } from "./ChangeList";
 import { IconAlert, IconCheck, IconQuestion } from "./Icons";
-import { OptionChip, PlainChip } from "./OptionChip";
+import { OptionChip } from "./OptionChip";
 
 export interface CardHandlers {
   undo: () => void;
   choose: (i: number) => void;
-  saveNote: () => void;
   save: () => void;
   edit: () => void;
   confirm: () => void;
@@ -14,8 +13,14 @@ export interface CardHandlers {
   fill: () => void;
 }
 
-/** Every response in chat is one of these. No prose. */
-export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
+const Done = ({ children }: { children: string }) => (
+  <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
+    {children}
+  </span>
+);
+
+/** Every response in chat is one of these, built by code. No model prose. */
+export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
   switch (card.kind) {
     case "saved":
       return (
@@ -24,13 +29,11 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
             <span className="rc-icon">
               <IconCheck />
             </span>
-            <span className={`rc-text num${card.undone ? " rc-strike" : ""}`}>{card.label}</span>
+            <span className={`rc-text num${card.undone ? " rc-strike" : ""}`}>Saved: {card.label}</span>
             {card.undone ? (
-              <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
-                Undone
-              </span>
+              <Done>Undone</Done>
             ) : (
-              card.undo && (
+              card.actionId && (
                 <button type="button" className="btn btn-sm" onClick={on.undo}>
                   Undo
                 </button>
@@ -42,19 +45,22 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
 
     case "unsure":
       return (
-        <div className="rc">
+        <div className={`rc${card.resolved ? " resolved" : ""}`}>
           <div className="rc-line">
             <span className="rc-icon warn">
               <IconQuestion />
             </span>
-            <span className="rc-title">Where does this go?</span>
+            <span className="rc-title">{card.title ?? "Where does this go?"}</span>
           </div>
-          <div className="rc-chips">
-            {card.options.map((o, i) => (
-              <OptionChip key={o.tool} tool={o.tool} fields={o.fields} onClick={() => on.choose(i)} />
-            ))}
-            <PlainChip label="Save as note" onClick={on.saveNote} />
-          </div>
+          {card.resolved ? (
+            <Done>Picked</Done>
+          ) : (
+            <div className="rc-chips">
+              {card.options.map((o, i) => (
+                <OptionChip key={o.proposalId} tool={o.tool} fields={o.fields} onClick={() => on.choose(i)} />
+              ))}
+            </div>
+          )}
         </div>
       );
 
@@ -69,9 +75,7 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
           </div>
           <span className="rc-detail num">{card.detail}</span>
           {card.resolved ? (
-            <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
-              Editing
-            </span>
+            <Done>{card.resolved === "saved" ? "Saved" : "Editing"}</Done>
           ) : (
             <div className="rc-actions">
               <button type="button" className="btn btn-primary" onClick={on.save}>
@@ -91,9 +95,7 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
           <span className="label">{card.title}</span>
           <ChangeList changes={card.changes} />
           {card.resolved ? (
-            <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
-              Cancelled
-            </span>
+            <Done>{card.resolved === "confirmed" ? "Confirmed" : "Cancelled"}</Done>
           ) : (
             <div className="rc-actions">
               <button type="button" className="btn btn-primary" onClick={on.confirm}>
@@ -114,22 +116,18 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
             <span className="rc-icon warn">
               <IconAlert />
             </span>
-            <span className="rc-title">
-              {card.tool}: {card.draft.company}
-            </span>
+            <span className="rc-title">{card.title}</span>
           </div>
           <div className="missing-list">
             <span className="rc-detail">Missing</span>
             {card.missing.map((m) => (
-              <span key={m} className="tag tag-outline">
-                {m}
+              <span key={m.name} className="tag tag-outline">
+                {m.label}
               </span>
             ))}
           </div>
           {card.resolved ? (
-            <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
-              Cancelled
-            </span>
+            <Done>{card.resolved === "filled" ? "Filled in" : "Cancelled"}</Done>
           ) : (
             <div className="rc-actions">
               <button type="button" className="btn btn-primary" onClick={on.fill}>
@@ -143,39 +141,6 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
         </div>
       );
 
-    case "query":
-      return (
-        <div className="rc">
-          <span className="label">{card.title}</span>
-          {card.value != null && (
-            <span className="query-value num">
-              {card.value}
-              {card.unit && <small>{card.unit}</small>}
-            </span>
-          )}
-          {card.table && (
-            <table className="mini-table num">
-              <thead>
-                <tr>
-                  {card.table.cols.map((c, i) => (
-                    <th key={i}>{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {card.table.rows.map((r, i) => (
-                  <tr key={i}>
-                    {r.map((v, j) => (
-                      <td key={j}>{v}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      );
-
     case "failed":
       return (
         <div className="rc">
@@ -184,7 +149,7 @@ export function ResultCard({ card, on }: { card: Card; on: CardHandlers }) {
               <IconAlert />
             </span>
             <span className="rc-text" style={{ color: "var(--danger)" }}>
-              Failed
+              {card.detail ? `Failed: ${card.detail}` : "Failed"}
             </span>
           </div>
         </div>

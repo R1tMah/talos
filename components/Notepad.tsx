@@ -80,7 +80,7 @@ export function NotepadScreen({ kind, title }: { kind: NoteKind; title: string }
 
   return (
     <main className="screen">
-      <ScreenHeader title={title} back="/tabs" right={<ExportButton tab={kind} />} />
+      <ScreenHeader title={title} back="/tabs" right={<ExportButton tab={kind} live={kind} />} />
       {rows.length === 0 ? (
         <div className="card">
           <EmptyState text="No entries." onAdd={create} />

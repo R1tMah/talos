@@ -3,62 +3,59 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FormSheet } from "@/components/FormSheet";
-import { IconArrowUp, IconCamera, IconX } from "@/components/Icons";
+import { IconArrowUp } from "@/components/Icons";
 import { ResultCard, type CardHandlers } from "@/components/ResultCard";
-import { applyPending } from "@/lib/apply";
+import type { ChatCard, ChatResponse, ConfirmResponse } from "@/lib/agent/cards";
 import { unlockAudio } from "@/lib/chime";
-import { nowHM, todayISO, uid } from "@/lib/date";
-import { interpret, interpretPhoto } from "@/lib/interpret";
+import { uid } from "@/lib/date";
 import { useStore } from "@/lib/store";
-import type { Application, Card, ChatMsg, DB, Interpretation, Pending } from "@/lib/types";
+import { dataChanged, undo } from "@/lib/undo";
 import { matchStart, routeWorkoutChat, startSession } from "@/lib/workoutChat";
 
-/** Applies a pending write and turns it into a Saved card; any error becomes Failed. */
-function commit(db: DB, p: Pending): { db: DB; card: Card } {
+type Msg = { id: string; role: "user"; text: string; ts: number } | { id: string; role: "app"; card: ChatCard; ts: number };
+
+// The transcript is a per-device convenience; the data itself lives in Supabase.
+const KEY = "talos.chat.v2";
+const MAX_KEPT = 200;
+
+function loadChat(): Msg[] {
   try {
-    const r = applyPending(db, p);
-    return { db: r.db, card: { kind: "saved", label: r.label, undo: r.undo } };
+    const raw = localStorage.getItem(KEY);
+    return raw ? (JSON.parse(raw) as Msg[]) : [];
   } catch {
-    return { db, card: { kind: "failed" } };
+    return [];
   }
 }
 
-function resolve(db: DB, i: Interpretation): { db: DB; card: Card } {
-  return i.kind === "save" ? commit(db, i.pending) : { db, card: i };
-}
-
-/** Downscale a photo to a small thumbnail so it fits in local storage. */
-function thumbnail(file: File): Promise<string> {
-  return new Promise((ok, fail) => {
-    const img = new Image();
-    img.onload = () => {
-      const s = 280;
-      const c = document.createElement("canvas");
-      const k = Math.max(s / img.width, s / img.height);
-      c.width = s;
-      c.height = s;
-      c.getContext("2d")!.drawImage(img, (s - img.width * k) / 2, (s - img.height * k) / 2, img.width * k, img.height * k);
-      URL.revokeObjectURL(img.src);
-      ok(c.toDataURL("image/jpeg", 0.7));
-    };
-    img.onerror = fail;
-    img.src = URL.createObjectURL(file);
-  });
+async function post<T>(url: string, body: unknown): Promise<T | null> {
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function ChatPage() {
   const { db, mutate } = useStore();
   const router = useRouter();
+  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
-  const [image, setImage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [fillFor, setFillFor] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMsgs(loadChat()), []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(msgs.slice(-MAX_KEPT)));
+    } catch {}
+  }, [msgs]);
 
   useEffect(() => {
     window.scrollTo({ top: document.documentElement.scrollHeight });
-  }, [db.chat.length]);
+  }, [msgs.length]);
 
   // Auto-grow the input and publish the composer height for list padding.
   useLayoutEffect(() => {
@@ -69,87 +66,93 @@ export default function ChatPage() {
     }
     const h = composerRef.current?.offsetHeight ?? 72;
     document.documentElement.style.setProperty("--composer-h", `${h}px`);
-  }, [text, image]);
+  }, [text]);
 
-  const send = () => {
+  const append = (...m: Msg[]) => setMsgs((xs) => [...xs, ...m]);
+  const reply = (card: ChatCard): Msg => ({ id: uid(), role: "app", card, ts: Date.now() });
+  const setCard = (id: string, fn: (c: ChatCard) => ChatCard) =>
+    setMsgs((xs) => xs.map((m) => (m.id === id && m.role === "app" ? { ...m, card: fn(m.card) } : m)));
+
+  const send = async () => {
     const t = text.trim();
-    if (!t && !image) return;
-    const img = image;
+    if (!t || busy) return;
     setText("");
-    setImage(null);
+    const user: Msg = { id: uid(), role: "user", text: t, ts: Date.now() };
 
-    // "start push": begin the workout and switch to its tab. Audio unlocks inside this tap.
-    const plan = img ? null : matchStart(t, db);
+    // Workouts still run on local data: "start push", and sets during an active workout.
+    const plan = matchStart(t, db);
     if (plan) {
-      unlockAudio();
-      mutate((d) => {
-        const user: ChatMsg = { id: uid(), role: "user", text: t, ts: Date.now() };
-        const reply: ChatMsg = { id: uid(), role: "app", card: { kind: "saved", label: `Started ${plan.name}` }, ts: Date.now() };
-        return { ...startSession(d, plan), chat: [...d.chat, user, reply] };
-      });
+      unlockAudio(); // iOS needs a tap to enable the rest-timer sound
+      mutate((d) => startSession(d, plan));
+      append(user, reply({ kind: "saved", label: `Started ${plan.name}`, actionId: null }));
       router.push("/workout");
       return;
     }
+    const set = routeWorkoutChat(t, db);
+    if (set) {
+      mutate(() => set.db);
+      append(user, reply(set.card.kind === "saved" ? { kind: "saved", label: set.card.label, actionId: null } : { kind: "failed" }));
+      return;
+    }
 
-    mutate((d) => {
-      const user: ChatMsg = { id: uid(), role: "user", text: t, image: img ?? undefined, ts: Date.now() };
-      let out: { db: DB; card: Card };
-      try {
-        // During a workout, set messages ("135x8", "ohp 95x6") log to it.
-        out = (!img && routeWorkoutChat(t, d)) || resolve(d, img ? interpretPhoto(t) : interpret(t, d));
-      } catch {
-        out = { db: d, card: { kind: "failed" } };
-      }
-      const reply: ChatMsg = { id: uid(), role: "app", card: out.card, ts: Date.now() };
-      return { ...out.db, chat: [...d.chat, user, reply] };
-    });
+    append(user);
+    setBusy(true);
+    const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id });
+    setBusy(false);
+    const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
+    append(...cards.map(reply));
+    if (cards.some((c) => c.kind === "saved")) dataChanged();
   };
 
-  /** Replace a card in place, optionally writing to the db. */
-  const act = (msgId: string, fn: (db: DB, card: Card) => { db: DB; card: Card }) =>
-    mutate((d) => {
-      const msg = d.chat.find((m) => m.id === msgId);
-      if (!msg || msg.role !== "app") return d;
-      const r = fn(d, msg.card);
-      return { ...r.db, chat: r.db.chat.map((m) => (m.id === msgId ? { ...m, card: r.card } : m)) };
-    });
+  /** Sends a proposal to /api/confirm and adds the resulting card under the original. */
+  const confirm = async (msgId: string, proposalId: string, mark: (c: ChatCard) => ChatCard, values?: Record<string, unknown>) => {
+    const res = await post<ConfirmResponse>("/api/confirm", { proposalId, values });
+    const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
+    // A bad value on a fill card leaves it open to try again.
+    if (!(values && cards[0].kind === "failed")) setCard(msgId, mark);
+    append(...cards.map(reply));
+    if (cards.some((c) => c.kind === "saved")) dataChanged();
+  };
 
-  const handlers = (m: Extract<ChatMsg, { role: "app" }>): CardHandlers => ({
-    undo: () =>
-      act(m.id, (d, c) => {
-        if (c.kind !== "saved" || !c.undo) return { db: d, card: c };
-        try {
-          return { db: applyPending(d, c.undo).db, card: { ...c, undone: true } };
-        } catch {
-          return { db: d, card: { kind: "failed" } };
-        }
-      }),
-    choose: (i) => act(m.id, (d, c) => (c.kind === "unsure" ? commit(d, c.options[i].pending) : { db: d, card: c })),
-    saveNote: () => act(m.id, (d, c) => (c.kind === "unsure" ? commit(d, c.note) : { db: d, card: c })),
-    save: () => act(m.id, (d, c) => (c.kind === "warning" ? commit(d, c.pending) : { db: d, card: c })),
+  const handlers = (m: Extract<Msg, { role: "app" }>): CardHandlers => ({
+    undo: async () => {
+      if (m.card.kind !== "saved" || !m.card.actionId) return;
+      const r = await undo(m.card.actionId);
+      if (r.status === "done") setCard(m.id, (c) => ({ ...c, undone: true }) as ChatCard);
+    },
+    choose: (i) => {
+      if (m.card.kind !== "unsure") return;
+      confirm(m.id, m.card.options[i].proposalId, (c) => ({ ...c, resolved: "picked" }) as ChatCard);
+    },
+    save: () => {
+      if (m.card.kind !== "warning") return;
+      confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "saved" }) as ChatCard);
+    },
     edit: () => {
-      if (m.card.kind === "warning") setText(m.card.text);
-      act(m.id, (d, c) => ({ db: d, card: c.kind === "warning" ? { ...c, resolved: "edit" } : c }));
+      if (m.card.kind !== "warning") return;
+      setText(m.card.text);
+      setCard(m.id, (c) => ({ ...c, resolved: "edit" }) as ChatCard);
       taRef.current?.focus();
     },
-    confirm: () => act(m.id, (d, c) => (c.kind === "confirm" ? commit(d, c.pending) : { db: d, card: c })),
-    cancel: () =>
-      act(m.id, (d, c) => ({ db: d, card: c.kind === "confirm" || c.kind === "missing" ? { ...c, resolved: "cancelled" } : c })),
+    confirm: () => {
+      if (m.card.kind !== "confirm") return;
+      confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "confirmed" }) as ChatCard);
+    },
+    cancel: () => setCard(m.id, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard),
     fill: () => setFillFor(m.id),
   });
 
-  const fillMsg = db.chat.find((m) => m.id === fillFor);
-  const draft = fillMsg?.role === "app" && fillMsg.card.kind === "missing" ? fillMsg.card.draft : null;
+  const fillMsg = msgs.find((m) => m.id === fillFor);
+  const fillCard = fillMsg?.role === "app" && fillMsg.card.kind === "missing" ? fillMsg.card : null;
 
   return (
     <>
       <main className="chat">
-        {db.chat.length === 0 && <p className="chat-empty">Log anything.</p>}
-        {db.chat.map((m) =>
+        {msgs.length === 0 && <p className="chat-empty">Log anything.</p>}
+        {msgs.map((m) =>
           m.role === "user" ? (
             <div key={m.id} className="msg-user">
-              {m.image && <img src={m.image} alt="" />}
-              {m.text && <span>{m.text}</span>}
+              <span>{m.text}</span>
             </div>
           ) : (
             <div key={m.id} className="msg-app">
@@ -157,6 +160,7 @@ export default function ChatPage() {
             </div>
           ),
         )}
+        {busy && <p className="chat-empty faint">…</p>}
       </main>
 
       <div className="composer" ref={composerRef}>
@@ -167,34 +171,12 @@ export default function ChatPage() {
             send();
           }}
         >
-          <button type="button" className="round-btn" aria-label="Add photo" onClick={() => fileRef.current?.click()}>
-            <IconCamera />
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) setImage(await thumbnail(f).catch(() => null));
-            }}
-          />
           <div className="composer-field">
-            {image && (
-              <div className="composer-attach">
-                <img src={image} alt="Attached photo" />
-                <button type="button" className="icon-btn" aria-label="Remove photo" onClick={() => setImage(null)}>
-                  <IconX size={16} />
-                </button>
-              </div>
-            )}
             <textarea
               ref={taRef}
               rows={1}
               value={text}
-              placeholder="Log or ask"
+              placeholder="Log anything"
               enterKeyHint="send"
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}
@@ -206,28 +188,38 @@ export default function ChatPage() {
               }}
             />
           </div>
-          <button type="submit" className="round-btn send" aria-label="Send" disabled={!text.trim() && !image}>
+          <button type="submit" className="round-btn send" aria-label="Send" disabled={!text.trim() || busy}>
             <IconArrowUp />
           </button>
         </form>
       </div>
 
-      {draft && fillFor && (
+      {fillCard && fillFor && (
         <FormSheet
-          title="Application"
-          fields={[
-            { name: "company", label: "Company" },
-            { name: "role", label: "Role" },
-            { name: "source", label: "Source", placeholder: "Referral, LinkedIn, careers page" },
-            { name: "link", label: "Link", placeholder: "Optional" },
-            { name: "status", label: "Status", type: "select", options: db.settings.statuses },
-          ]}
-          initial={{ status: "Applied", ...draft }}
+          title={fillCard.title}
+          fields={fillCard.missing.map((f) => ({
+            name: f.name,
+            label: f.optional ? `${f.label} (optional)` : f.label,
+            type: f.type ?? ("number" as const),
+            options: f.type === "select" ? ["", ...(f.options ?? [])] : undefined,
+            optional: true,
+            full: f.type === "text",
+          }))}
+          initial={{}}
+          validate={(v) =>
+            fillCard.missing.some((f) => {
+              if (f.optional) return false;
+              const x = v[f.name];
+              return (f.type ?? "number") === "number" ? x == null || !Number.isFinite(x) : !String(x ?? "").trim();
+            })
+              ? "Fill in every required field."
+              : null
+          }
           onClose={() => setFillFor(null)}
           onSubmit={(v) => {
-            const item = { id: uid(), date: todayISO(), time: nowHM(), ...v } as unknown as Application;
-            act(fillFor, (d) => commit(d, { op: "add", coll: "applications", item }));
+            const id = fillFor;
             setFillFor(null);
+            confirm(id, fillCard.proposalId, (c) => ({ ...c, resolved: "filled" }) as ChatCard, v);
           }}
         />
       )}

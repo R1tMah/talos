@@ -24,7 +24,27 @@ export interface LogEntry {
   unit: string | null;
 }
 
-/** One portion of a saved meal. */
+/** A food in the library, per serving. */
+export interface Food {
+  id: string;
+  name: string;
+  aliases: string[];
+  amount: number;
+  unit: string;
+  cal: number;
+  p: number;
+}
+
+/** One ingredient of a saved meal: servings of a food per meal portion. */
+export interface MealItem {
+  foodId: string;
+  servings: number;
+}
+
+/**
+ * One portion of a saved meal. `cal`/`p` are the meal's own totals; `items` are
+ * optional ingredient tags, used to show the breakdown and to subtract at log time.
+ */
 export interface Meal {
   id: string;
   name: string;
@@ -32,6 +52,7 @@ export interface Meal {
   unit: string;
   cal: number;
   p: number;
+  items: MealItem[];
 }
 
 /** A logged day from the daily_totals view, with that day's targets. */
@@ -49,11 +70,13 @@ export interface NutritionData {
   days: DayTotal[]; // every logged day, newest first
   targets: { cal: number; p: number }; // for the selected day, even with no entries
   meals: Meal[];
+  foods: Food[]; // live foods, by name
 }
 
 export type WriteResult =
   | { status: "saved" }
-  | { status: "conflict"; existing: Meal }
+  | { status: "conflict"; kind: "meal" | "food"; name: string }
+  | { status: "in_use"; meals: string[] }
   | { status: "not_found" }
   | { status: "failed" };
 
@@ -71,11 +94,22 @@ const toEntry = (r: Tables["food_log"]["Row"]): LogEntry => ({
   unit: r.unit,
 });
 
-const toMeal = (r: MealRow): Meal => ({
+const toMeal = (r: MealRow, items: MealItem[] = []): Meal => ({
   id: r.id,
   name: r.name,
   aliases: r.aliases,
   unit: r.portion_unit,
+  cal: r.calories,
+  p: Number(r.protein_g),
+  items,
+});
+
+const toFood = (r: Tables["foods"]["Row"]): Food => ({
+  id: r.id,
+  name: r.name,
+  aliases: r.aliases,
+  amount: Number(r.serving_amount),
+  unit: r.serving_unit,
   cal: r.calories,
   p: Number(r.protein_g),
 });
@@ -87,13 +121,15 @@ export function useNutritionData(date: string) {
 
   const reload = useCallback(async () => {
     const db = createClient();
-    const [log, days, targets, meals] = await Promise.all([
+    const [log, days, targets, meals, foods, items] = await Promise.all([
       db.from("food_log").select("*").eq("logical_date", date).is("deleted_at", null).order("created_at", { ascending: false }),
       db.from("daily_totals").select("*"),
       db.rpc("targets_for", { p_date: date }).single(),
       db.from("saved_meals").select("*").is("deleted_at", null).order("name"),
+      db.from("foods").select("*").is("deleted_at", null).order("name"),
+      db.from("saved_meal_items").select("saved_meal_id, food_id, servings").is("deleted_at", null).order("created_at"),
     ]);
-    if (log.error || days.error || targets.error || meals.error) {
+    if (log.error || days.error || targets.error || meals.error || foods.error || items.error) {
       setFailed(true);
       return;
     }
@@ -109,7 +145,13 @@ export function useNutritionData(date: string) {
         pTarget: r.protein_target_g ?? 0,
       })),
       targets: { cal: targets.data.calorie_target, p: targets.data.protein_target_g },
-      meals: meals.data.map(toMeal),
+      meals: meals.data.map((m) =>
+        toMeal(
+          m,
+          items.data.filter((i) => i.saved_meal_id === m.id).map((i) => ({ foodId: i.food_id, servings: Number(i.servings) })),
+        ),
+      ),
+      foods: foods.data.map(toFood),
     });
   }, [date]);
 
@@ -123,10 +165,12 @@ export function useNutritionData(date: string) {
 }
 
 function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
-  const out = res.data as { status?: string; existing?: MealRow } | null;
+  const out = res.data as { status?: string; existing?: { name: string }; meals?: string[] } | null;
   if (res.error || !out) return { status: "failed" };
   announceWrite(table, out as { row?: Json; action_id?: string | null });
-  if (out.status === "conflict" && out.existing) return { status: "conflict", existing: toMeal(out.existing) };
+  if (out.status === "conflict" && out.existing)
+    return { status: "conflict", kind: table === "foods" ? "food" : "meal", name: out.existing.name };
+  if (out.status === "in_use") return { status: "in_use", meals: out.meals ?? [] };
   if (out.status === "saved" || out.status === "not_found") return { status: out.status };
   return { status: "failed" };
 }
@@ -146,6 +190,15 @@ export interface MealInput extends Macros {
   unit: string;
 }
 
+export interface FoodInput extends Macros {
+  name: string;
+  aliases: string[];
+  amount: number;
+  unit: string;
+}
+
+const itemsJson = (items: MealItem[]) => items.map((i) => ({ food_id: i.foodId, servings: i.servings }));
+
 /** Writes go through the database functions, which do all macro math and log an actions row. */
 export const nutritionApi = {
   logTyped: async (date: string, name: string, m: Macros) =>
@@ -154,8 +207,12 @@ export const nutritionApi = {
         p_date: date, p_description: name, p_calories: m.cal, p_protein_g: m.p,
       }),
     ),
-  logMeal: async (date: string, mealId: string, portions: number) =>
-    parse("food_log", await createClient().rpc("log_saved_meal", { p_date: date, p_meal_id: mealId, p_portions: portions })),
+  /** `minus`: servings of the meal's own ingredients to leave out of this log, per portion. */
+  logMeal: async (date: string, mealId: string, portions: number, minus: MealItem[] = []) =>
+    parse(
+      "food_log",
+      await createClient().rpc("log_saved_meal", { p_date: date, p_meal_id: mealId, p_portions: portions, p_minus: itemsJson(minus) }),
+    ),
   updateTyped: async (id: string, date: string, name: string, m: Macros) =>
     parse("food_log", 
       await createClient().rpc("update_food_entry", {
@@ -180,4 +237,24 @@ export const nutritionApi = {
       }),
     ),
   removeMeal: async (id: string) => parse("saved_meals", await createClient().rpc("delete_meal", { p_id: id })),
+  /** Replaces the meal's ingredient list. Never changes the meal's own totals. */
+  setMealItems: async (mealId: string, items: MealItem[]) =>
+    parse("saved_meal_items", await createClient().rpc("set_meal_items", { p_meal_id: mealId, p_items: itemsJson(items) })),
+
+  saveFood: async (f: FoodInput) =>
+    parse(
+      "foods",
+      await createClient().rpc("save_food", {
+        p_name: f.name, p_aliases: f.aliases, p_serving_amount: f.amount, p_serving_unit: f.unit, p_calories: f.cal, p_protein_g: f.p,
+      }),
+    ),
+  updateFood: async (id: string, f: FoodInput) =>
+    parse(
+      "foods",
+      await createClient().rpc("update_food", {
+        p_id: id, p_name: f.name, p_aliases: f.aliases, p_serving_amount: f.amount, p_serving_unit: f.unit, p_calories: f.cal, p_protein_g: f.p,
+      }),
+    ),
+  /** Refused with `in_use` while a saved meal lists the food. */
+  removeFood: async (id: string) => parse("foods", await createClient().rpc("delete_food", { p_id: id })),
 };

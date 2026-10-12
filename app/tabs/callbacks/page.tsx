@@ -39,7 +39,7 @@ export default function CallbacksPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Callbacks" back="/tabs" right={<ExportButton tab="callbacks" />} />
+      <ScreenHeader title="Callbacks" back="/tabs" right={<ExportButton tab="callbacks" live="callbacks" />} />
       <SummaryStrip
         items={[
           { label: "Interviews", value: counts.Interview ?? 0 },

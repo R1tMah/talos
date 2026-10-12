@@ -12,6 +12,7 @@ import { IconPlus } from "@/components/Icons";
 import { WeightChart } from "@/components/WeightChart";
 import { breakEnd, fmtRange, overlaps } from "@/lib/breaks";
 import { addDays, fmtDay, fmtDow, logicalToday, weekStart } from "@/lib/date";
+import type { TabExport } from "@/lib/exportTab";
 import type { Break, WeightEntry } from "@/lib/types";
 import { useWeightData, weightApi, type WriteResult } from "@/lib/weightData";
 
@@ -48,6 +49,15 @@ interface Conflict {
   existing: WeightEntry;
   lb: number;
   note?: string;
+}
+
+/** Every weigh-in from Supabase, newest first, for the header's export. */
+function exportOf(entries: WeightEntry[]): TabExport {
+  return {
+    title: "Weight",
+    columns: [{ key: "date", label: "Date" }, { key: "time", label: "Time" }, { key: "lb", label: "lb" }, { key: "note", label: "Note" }],
+    rows: entries.map((w) => ({ date: w.date, time: w.time, lb: w.lb.toFixed(1), note: w.note ?? "" })),
+  };
 }
 
 export default function WeightPage() {
@@ -120,7 +130,7 @@ export default function WeightPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" />} />
+      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={exportOf(entries)} />} />
 
       <SummaryStrip
         items={[

@@ -133,7 +133,7 @@ export default function LeetCodePage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="LeetCode" back="/tabs" right={<ExportButton tab="leetcode" />} />
+      <ScreenHeader title="LeetCode" back="/tabs" right={<ExportButton tab="leetcode" live="leetcode" />} />
 
       <SummaryStrip
         items={[

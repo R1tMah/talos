@@ -6,15 +6,17 @@ import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
 import { IconBack, IconChevron } from "@/components/Icons";
+import { IngredientsSheet, itemsSummary, LogMealSheet, MealSheet } from "@/components/MealSheets";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, SectionTitle, Segmented, Tag } from "@/components/ui";
 import { addDays, fmtDay, fmtDow, fmtNum, fromISO, logicalToday, weekStart } from "@/lib/date";
 import {
-  nutritionApi, useNutritionData, type FoodSource, type LogEntry, type Macros, type Meal, type MealInput, type WriteResult,
+  nutritionApi, useNutritionData, type Food, type FoodInput, type FoodSource, type LogEntry, type Macros, type Meal, type MealInput,
+  type WriteResult,
 } from "@/lib/nutritionData";
 
-type View = "log" | "meals";
+type View = "log" | "meals" | "foods";
 
 const MACROS: Field[] = [
   { name: "cal", label: "Calories", type: "number", optional: true },
@@ -32,6 +34,14 @@ const MEAL_FIELDS: Field[] = [
   { name: "name", label: "Name", full: true },
   { name: "aliases", label: "Aliases", full: true, placeholder: "Comma separated, e.g. flatbread dinner" },
   { name: "unit", label: "One portion is", placeholder: "serving, oz, scoop" },
+  ...MACROS,
+];
+
+const FOOD_FIELDS: Field[] = [
+  { name: "name", label: "Name", full: true },
+  { name: "aliases", label: "Aliases", full: true, placeholder: "Comma separated" },
+  { name: "amount", label: "Serving amount", type: "number" },
+  { name: "unit", label: "Serving unit", placeholder: "serving, oz, g" },
   ...MACROS,
 ];
 
@@ -66,6 +76,21 @@ const macrosOf = (v: Record<string, unknown>): Macros => ({
   p: v.p as number,
 });
 
+const checkFood = (v: Record<string, unknown>) =>
+  !String(v.name ?? "").trim()
+    ? "Name is required."
+    : bad(v.amount) || (v.amount as number) <= 0
+      ? "Serving amount must be more than 0."
+      : checkMacros(v);
+
+const foodOf = (v: Record<string, unknown>): FoodInput => ({
+  name: String(v.name).trim(),
+  aliases: String(v.aliases ?? "").split(",").map((a) => a.trim()).filter(Boolean),
+  amount: v.amount as number,
+  unit: String(v.unit ?? "").trim() || "serving",
+  ...macrosOf(v),
+});
+
 const mealOf = (v: Record<string, unknown>): MealInput => ({
   name: String(v.name).trim(),
   aliases: String(v.aliases ?? "").split(",").map((a) => a.trim()).filter(Boolean),
@@ -78,12 +103,16 @@ type SheetState =
   | { kind: "typed"; row?: LogEntry }
   | { kind: "portions"; row: LogEntry }
   | { kind: "logMeal"; meal?: Meal }
-  | { kind: "meal"; row?: Meal };
+  | { kind: "mealHub"; meal: Meal }
+  | { kind: "ingredients"; meal: Meal }
+  | { kind: "meal"; row?: Meal }
+  | { kind: "food"; row?: Food };
 
 function Nutrition() {
   const params = useSearchParams();
   const today = logicalToday();
-  const [view, setView] = useState<View>(params.get("view") === "meals" ? "meals" : "log");
+  const initialView = params.get("view");
+  const [view, setView] = useState<View>(initialView === "meals" || initialView === "foods" ? initialView : "log");
   const [date, setDate] = useState(today);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
@@ -94,7 +123,9 @@ function Nutrition() {
     setNotice(null);
     const r = await write;
     if (r.status === "saved") setNotice(ok ? { text: ok, ok: true } : null);
-    else if (r.status === "conflict") setNotice({ text: `A saved meal named "${r.existing.name}" already exists.`, ok: false });
+    else if (r.status === "conflict") setNotice({ text: `A ${r.kind === "food" ? "food" : "saved meal"} named "${r.name}" already exists.`, ok: false });
+    else if (r.status === "in_use")
+      setNotice({ text: `Used in ${r.meals.join(", ")}. Remove it from ${r.meals.length === 1 ? "that meal" : "those meals"} first.`, ok: false });
     else setNotice({ text: "Failed", ok: false });
     await reload();
   };
@@ -115,7 +146,9 @@ function Nutrition() {
     );
   }
 
-  const { entries, days, targets, meals } = data;
+  const { entries, days, targets, meals, foods } = data;
+  const foodById = new Map(foods.map((f) => [f.id, f]));
+  const usedIn = (f: Food) => meals.filter((m) => m.items.some((i) => i.foodId === f.id)).length;
   const day = days.find((d) => d.date === date);
   const loggedDays = new Set(days.map((d) => d.date));
   const ws = weekStart(date);
@@ -127,19 +160,15 @@ function Nutrition() {
   const weekLen = Math.round((fromISO(weekEnd).getTime() - fromISO(ws).getTime()) / 86400000) + 1;
   const isThisWeek = ws === weekStart(today);
 
-  const mealLabel = (m: Meal) => `${m.name} · per ${m.unit}`;
-  const logMealFields: Field[] = [
-    { name: "meal", label: "Saved meal", type: "select", options: meals.map(mealLabel), full: true },
-    ...PORTION_FIELDS,
-  ];
 
   return (
     <main className="screen">
-      <ScreenHeader title="Nutrition" back="/tabs" right={<ExportButton tab="nutrition" />} />
+      <ScreenHeader title="Nutrition" back="/tabs" right={<ExportButton tab="nutrition" live="nutrition" />} />
       <Segmented
         options={[
           { value: "log", label: "Log" },
           { value: "meals", label: "Saved meals" },
+          { value: "foods", label: "Foods" },
         ]}
         value={view}
         onChange={setView}
@@ -276,7 +305,7 @@ function Nutrition() {
           rows={meals}
           empty="No saved meals."
           onAdd={() => setSheet({ kind: "meal" })}
-          onRowClick={(r) => setSheet({ kind: "meal", row: r })}
+          onRowClick={(r) => setSheet({ kind: "mealHub", meal: r })}
           onDelete={(r) => run(nutritionApi.removeMeal(r.id))}
           columns={[
             {
@@ -288,6 +317,7 @@ function Nutrition() {
                     per {r.unit}
                     {r.aliases.length > 0 && ` · ${r.aliases.join(", ")}`}
                   </div>
+                  {r.items.length > 0 && <div className="ing-summary">{itemsSummary(r.items, foodById)}</div>}
                 </>
               ),
             },
@@ -313,7 +343,40 @@ function Nutrition() {
         />
       )}
 
-      <Fab onClick={() => setSheet(view === "meals" ? { kind: "meal" } : meals.length ? { kind: "choose" } : { kind: "typed" })} />
+      {view === "foods" && (
+        <DataTable
+          rows={foods}
+          empty="No foods."
+          onAdd={() => setSheet({ kind: "food" })}
+          onRowClick={(r) => setSheet({ kind: "food", row: r })}
+          onDelete={(r) => run(nutritionApi.removeFood(r.id))}
+          columns={[
+            {
+              key: "name", label: "Food", width: "1fr",
+              render: (r) => {
+                const n = usedIn(r);
+                return (
+                  <>
+                    <div className="cell-main">{r.name}</div>
+                    <div className="cell-sub">
+                      per {grams(r.amount)} {r.unit}
+                      {n > 0 && ` · in ${n} meal${n === 1 ? "" : "s"}`}
+                    </div>
+                  </>
+                );
+              },
+            },
+            { key: "cal", label: "kcal", width: "44px", align: "right", render: (r) => r.cal },
+            { key: "p", label: "P", width: "40px", align: "right", render: (r) => <span className="muted">{grams(r.p)}</span> },
+          ]}
+        />
+      )}
+
+      <Fab
+        onClick={() =>
+          setSheet(view === "meals" ? { kind: "meal" } : view === "foods" ? { kind: "food" } : meals.length ? { kind: "choose" } : { kind: "typed" })
+        }
+      />
 
       {sheet?.kind === "choose" && (
         <Sheet title="Add food" onClose={() => setSheet(null)}>
@@ -364,17 +427,55 @@ function Nutrition() {
       )}
 
       {sheet?.kind === "logMeal" && (
-        <FormSheet
-          title="Log saved meal"
-          submitLabel="Log"
-          fields={logMealFields}
-          validate={(v) => (!meals.some((m) => mealLabel(m) === v.meal) ? "Pick a saved meal." : checkPortions(v))}
-          initial={{ meal: mealLabel(sheet.meal ?? meals[0]), portions: 1, date }}
+        <LogMealSheet
+          meals={meals}
+          foods={foodById}
+          initialMealId={sheet.meal?.id}
+          initialDate={date}
           onClose={() => setSheet(null)}
+          onLog={(mealId, portions, d, minus) => {
+            const meal = meals.find((m) => m.id === mealId)!;
+            run(nutritionApi.logMeal(d, mealId, portions, minus), `Logged ${meal.name} to ${fmtDay(d)}.`);
+            setSheet(null);
+          }}
+        />
+      )}
+
+      {sheet?.kind === "mealHub" && (
+        <MealSheet
+          meal={sheet.meal}
+          foods={foodById}
+          onClose={() => setSheet(null)}
+          onEditDetails={() => setSheet({ kind: "meal", row: sheet.meal })}
+          onEditIngredients={() => setSheet({ kind: "ingredients", meal: sheet.meal })}
+          onLog={() => setSheet({ kind: "logMeal", meal: sheet.meal })}
+        />
+      )}
+
+      {sheet?.kind === "ingredients" && (
+        <IngredientsSheet
+          meal={sheet.meal}
+          foods={foods}
+          onClose={() => setSheet(null)}
+          onSave={(items) => {
+            run(nutritionApi.setMealItems(sheet.meal.id, items), `Saved ingredients for ${sheet.meal.name}.`);
+            setSheet(null);
+          }}
+        />
+      )}
+
+      {sheet?.kind === "food" && (
+        <FormSheet
+          title={sheet.row ? "Edit food" : "Add food"}
+          fields={FOOD_FIELDS}
+          confirm={!!sheet.row}
+          validate={checkFood}
+          initial={sheet.row ? { ...sheet.row, aliases: sheet.row.aliases.join(", ") } : { amount: 1, unit: "serving" }}
+          onClose={() => setSheet(null)}
+          onDelete={sheet.row ? () => (run(nutritionApi.removeFood(sheet.row!.id)), setSheet(null)) : undefined}
           onSubmit={(v) => {
-            const meal = meals.find((m) => mealLabel(m) === v.meal)!;
-            const d = v.date as string;
-            run(nutritionApi.logMeal(d, meal.id, v.portions as number), `Logged ${meal.name} to ${fmtDay(d)}.`);
+            if (sheet.row) run(nutritionApi.updateFood(sheet.row.id, foodOf(v)));
+            else run(nutritionApi.saveFood(foodOf(v)));
             setSheet(null);
           }}
         />

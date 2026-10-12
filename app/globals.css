@@ -805,6 +805,10 @@ html.kb-open .tabbar {
   background: var(--surface-2);
 }
 
+.row:disabled {
+  opacity: 0.45;
+}
+
 .row + .row {
   border-top: 1px solid var(--border);
 }
@@ -1505,6 +1509,75 @@ html.kb-open .composer {
   justify-content: space-between;
   gap: var(--s-3);
   margin-top: calc(-1 * var(--s-2));
+}
+
+/* ============================================================
+   Stepper and ingredient lists
+   ============================================================ */
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.stepper .btn-sm {
+  width: 32px;
+  padding: 0;
+  font-size: var(--t-lg);
+}
+
+.stepper-value {
+  min-width: 28px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.ing-list {
+  display: grid;
+  gap: 2px;
+}
+
+.ing-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--tap);
+  padding: var(--s-1) 0;
+}
+
+.ing-row + .ing-row {
+  border-top: 1px solid var(--border);
+}
+
+.ing-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.ing-name .cell-main {
+  white-space: normal;
+}
+
+.ing-row.removed .cell-main {
+  text-decoration: line-through;
+  color: var(--text-3);
+}
+
+.ing-summary {
+  font-size: var(--t-xs);
+  color: var(--text-3);
+  white-space: normal;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.totals-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: var(--t-sm);
+  padding: var(--s-2) 0;
 }
 
 /* ============================================================

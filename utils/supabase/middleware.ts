@@ -37,7 +37,10 @@ export const updateSession = async (request: NextRequest) => {
   // Without this call, the client above is created but the session never refreshes.
   const { data } = await supabase.auth.getClaims();
 
-  // Signed out: everything except the login page redirects there.
+  // Signed out: API calls get a plain 401; pages redirect to the login page.
+  if (!data?.claims && request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   if (!data?.claims && request.nextUrl.pathname !== "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

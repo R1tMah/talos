@@ -76,6 +76,8 @@ export function describeRow(table: string, r: Row | null): string {
       return `break "${str(r.label)}"`;
     case "applications":
       return `${str(r.company)} application`;
+    case "foods":
+      return `food ${str(r.name)}`;
     default:
       return table;
   }

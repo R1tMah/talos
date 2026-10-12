@@ -94,3 +94,30 @@ export function StatusPill({ status }: { status: string }) {
     </span>
   );
 }
+
+/** − value + control. Visually compact, 44px tap targets. */
+export function Stepper({
+  value, min = 0, max = Infinity, step = 1, onChange, label,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (v: number) => void;
+  label: string;
+}) {
+  const fmt = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  return (
+    <span className="stepper" role="group" aria-label={label}>
+      <button type="button" className="btn btn-sm" aria-label={`Fewer ${label}`} disabled={value - step < min - 1e-9} onClick={() => onChange(+(value - step).toFixed(2))}>
+        −
+      </button>
+      <span className="stepper-value num" aria-live="polite">
+        {fmt}
+      </span>
+      <button type="button" className="btn btn-sm" aria-label={`More ${label}`} disabled={value + step > max + 1e-9} onClick={() => onChange(+(value + step).toFixed(2))}>
+        +
+      </button>
+    </span>
+  );
+}

@@ -912,6 +912,7 @@ export type Database = {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
+      delete_food: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_food_entry: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -994,6 +995,7 @@ export type Database = {
         Args: {
           p_date: string
           p_meal_id: string
+          p_minus?: Json
           p_portions?: number
           p_tool?: string
         }
@@ -1015,6 +1017,18 @@ export type Database = {
           p_end: string
           p_label: string
           p_start: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      save_food: {
+        Args: {
+          p_aliases?: string[]
+          p_calories: number
+          p_name: string
+          p_protein_g: number
+          p_serving_amount: number
+          p_serving_unit: string
           p_tool?: string
         }
         Returns: Json
@@ -1056,6 +1070,10 @@ export type Database = {
       }
       set_leetcode_redo: {
         Args: { p_id: string; p_redo: boolean; p_tool?: string }
+        Returns: Json
+      }
+      set_meal_items: {
+        Args: { p_items: Json; p_meal_id: string; p_tool?: string }
         Returns: Json
       }
       set_note_body: {
@@ -1101,6 +1119,19 @@ export type Database = {
           p_kind: string
           p_outcome: string
           p_score: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      update_food: {
+        Args: {
+          p_aliases: string[]
+          p_calories: number
+          p_id: string
+          p_name: string
+          p_protein_g: number
+          p_serving_amount: number
+          p_serving_unit: string
           p_tool?: string
         }
         Returns: Json

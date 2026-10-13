@@ -1,16 +1,14 @@
 "use client";
 
+import { ApplyReminders } from "@/components/ApplyReminders";
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
-import { fmtDay, fmtNum, newestFirst } from "@/lib/date";
+import { fmtDay, fmtNum } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
 import { useHomeStats } from "@/lib/homeStats";
-import { inWeek, live } from "@/lib/stats";
-import { useStore } from "@/lib/store";
 
 export default function TabsPage() {
-  const { db } = useStore();
-  // Weight, Nutrition and LeetCode come from Supabase; the other cards still read local data.
+  // Every card reads Supabase through one round of queries (lib/homeStats.ts).
   const { data: stats, failed } = useHomeStats();
   const w = stats?.weight;
   const n = stats?.nutrition;
@@ -22,11 +20,12 @@ export default function TabsPage() {
     : [];
   const pending = failed ? "Failed" : "–";
   const cbs = stats?.callbacks;
-  const workouts = live(db.workouts).sort(newestFirst);
+  const lifts = stats?.lifts;
 
   return (
     <main className="screen">
       <ScreenHeader title="Tabs" />
+      <ApplyReminders variant="banner" />
       <div className="grid-2">
         <StatCard
           title="Weight"
@@ -62,11 +61,12 @@ export default function TabsPage() {
         />
         <StatCard
           title="Lifts"
-          value={inWeek(workouts).length}
-          unit="this wk"
+          href="/tabs/lifts"
+          value={lifts ? lifts.week : pending}
+          unit={lifts ? "this wk" : undefined}
           rows={[
-            { label: "Last", value: workouts[0] ? workouts[0].plan : "–" },
-            { label: "On", value: workouts[0] ? fmtDay(workouts[0].date) : "–" },
+            { label: "Last", value: lifts?.last ? lifts.last.plan : "–" },
+            { label: "On", value: lifts?.last ? fmtDay(lifts.last.date) : "–" },
           ]}
         />
         <StatCard

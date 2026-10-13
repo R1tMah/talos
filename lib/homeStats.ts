@@ -26,6 +26,8 @@ export interface HomeStats {
   callbacks: Record<string, number>;
   /** Live notepad entries per kind: count and latest logical date. */
   notes: Record<"content" | "journal", { n: number; last: string | null }>;
+  /** Finished workouts this logical week, and the latest one. */
+  lifts: { week: number; last: { plan: string; date: string } | null };
 }
 
 export function useHomeStats() {
@@ -54,9 +56,11 @@ export function useHomeStats() {
       db.from("applications").select("status").is("deleted_at", null),
       db.from("callback_counts").select("*"),
       db.from("notes").select("kind, logical_date").is("deleted_at", null),
-    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs, notes]) => {
+      db.from("workout_history").select("logical_date, plan_name").eq("status", "done")
+        .order("logical_date", { ascending: false }).order("started_at", { ascending: false }).limit(30),
+    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs, notes, lifts]) => {
       if (!live) return;
-      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error || notes.error) {
+      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error || notes.error || lifts.error) {
         setFailed(true);
         return;
       }
@@ -93,6 +97,10 @@ export function useHomeStats() {
         notes: {
           content: pad(notes.data, "content"),
           journal: pad(notes.data, "journal"),
+        },
+        lifts: {
+          week: lifts.data.filter((l) => l.logical_date! >= thisWeek && l.logical_date! <= today).length,
+          last: lifts.data[0] ? { plan: lifts.data[0].plan_name ?? "Workout", date: lifts.data[0].logical_date! } : null,
         },
       });
     });

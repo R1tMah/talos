@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fmtClock } from "@/lib/date";
-import { useOptionalStore } from "@/lib/store";
+import { useWorkoutClock } from "@/lib/workoutClock";
 import { IconChat, IconDumbbell, IconGrid, IconSliders } from "./Icons";
 
 const ITEMS = [
@@ -28,8 +28,7 @@ function useElapsed(startedAt: number | undefined) {
 
 export function TabBar() {
   const path = usePathname();
-  const session = useOptionalStore()?.db.session;
-  const elapsed = useElapsed(session?.startedAt);
+  const elapsed = useElapsed(useWorkoutClock().startedAt ?? undefined);
 
   if (path === "/login") return null;
 

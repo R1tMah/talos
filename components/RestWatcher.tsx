@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { playChime } from "@/lib/chime";
-import { useOptionalStore } from "@/lib/store";
+import { useWorkoutClock } from "@/lib/workoutClock";
 
 /**
  * Finishes the rest timer from any screen: chime plus screen flash when the
- * stored rest end time passes, so a set logged from Chat still gets its alert.
+ * stored rest end time passes, wherever the owner is in the app.
  */
 export function RestWatcher() {
-  const endsAt = useOptionalStore()?.db.session?.restEndsAt ?? null;
+  const endsAt = useWorkoutClock().restEndsAt;
   const [flash, setFlash] = useState(0);
 
   useEffect(() => {

@@ -21,6 +21,16 @@ export interface SavedMeal {
   name: string;
   aliases: string[];
   unit: string;
+  /** Ingredient tags: servings of a library food per portion. Empty when untagged. */
+  items: { foodId: string; servings: number }[];
+}
+
+/** A food in the owner's library. */
+export interface LibFood {
+  id: string;
+  name: string;
+  aliases: string[];
+  unit: string;
 }
 
 export interface Ctx {
@@ -28,6 +38,7 @@ export interface Ctx {
   text: string; // the owner's message, exactly as sent
   today: string; // logical date in the owner's timezone
   meals: SavedMeal[];
+  foods: LibFood[];
 }
 
 /** Arguments after code checks: everything a commit needs. Stored in pending_proposals. */
@@ -176,6 +187,74 @@ const updateWeight: ToolDef = {
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
+// ---- Food library lookups ------------------------------------------------------------
+
+const namesOf = (f: { name: string; aliases: string[] }) => [f.name, ...f.aliases].map(norm);
+
+/**
+ * "guac" against the food list: an exact name or alias wins; otherwise the closest
+ * names come back as options for the owner to pick. Never decides on a guess.
+ */
+function findFoods(q: string, foods: LibFood[]): { exact: LibFood | null; options: LibFood[] } {
+  const k = norm(q);
+  if (!k) return { exact: null, options: [] };
+  const exact = foods.filter((f) => namesOf(f).includes(k));
+  if (exact.length === 1) return { exact: exact[0], options: [] };
+  if (exact.length > 1) return { exact: null, options: exact.slice(0, 3) };
+  const partial = foods.filter((f) => [f.name, ...f.aliases].some((n) => wordsMatch(q, n)));
+  const fuzzy = closest(k, foods, (f) => [f.name, ...f.aliases]).map((x) => x.item);
+  const score = (f: LibFood) => Math.max(...[f.name, ...f.aliases].map((n) => nameScore(k, n)));
+  const options = [...new Map([...partial, ...fuzzy].map((f) => [f.id, f])).values()].sort((a, b) => score(b) - score(a)).slice(0, 3);
+  return { exact: null, options };
+}
+
+/**
+ * One food for `q` from a list, or a message saying why not. Used inside a list the
+ * owner gave (a meal's ingredients, "with a side tortilla"), where a single name
+ * containing the words ("guac" -> "Chipotle Guacamole") is unambiguous.
+ */
+function pickFood(q: string, foods: LibFood[], where: string): LibFood | string {
+  const found = findFoods(q, foods);
+  if (found.exact) return found.exact;
+  // Every meaningful word the owner used starts a word of exactly one name:
+  // "guac" -> Chipotle Guacamole, "tortilla on the side" -> Chipotle Side Tortilla.
+  const covered = foods.filter((f) => [f.name, ...f.aliases].some((n) => wordsMatch(q, n)));
+  if (covered.length === 1) return covered[0];
+  if (found.options.length > 1) return `"${q}" could be ${found.options.map((f) => f.name).join(" or ")}.`;
+  if (found.options.length === 1) return `No "${q}" in ${where}. Did you mean ${found.options[0].name}?`;
+  return `No "${q}" in ${where}.`;
+}
+
+const FILLER = new Set(["a", "an", "the", "of", "on", "with", "some", "my", "extra", "and"]);
+/** Lowercase words without filler, singular-ish ("tortillas" -> "tortilla"). */
+const wordsOf = (t: string) =>
+  norm(t).split(/[^a-z0-9]+/).filter((w) => w && !FILLER.has(w)).map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w));
+
+/**
+ * True when every word of `q` (3+ letters, filler dropped) starts a word of `name`.
+ * Word-based on purpose: "egg" must not match "Fajita Veggies".
+ */
+function wordsMatch(q: string, name: string) {
+  const qw = wordsOf(q);
+  const nw = wordsOf(name);
+  return qw.length > 0 && qw.every((w) => w.length >= 3 && nw.some((n) => n.startsWith(w)));
+}
+
+type ItemIn = { food?: unknown; servings?: unknown };
+const listOf = (v: unknown) => (Array.isArray(v) ? (v as ItemIn[]) : []);
+const servingsOf = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback);
+const countName = (servings: number, name: string) => (servings === 1 ? name : `${g(servings)}× ${name}`);
+
+const itemSchema = (servingsHelp: string) => ({
+  type: "object",
+  additionalProperties: false,
+  required: ["food", "servings"],
+  properties: {
+    food: { type: "string", description: "The food as the owner wrote it, e.g. 'guac'." },
+    servings: { type: ["number", "null"], description: servingsHelp },
+  },
+});
+
 const logSavedMeal: ToolDef = {
   name: "log_saved_meal",
   display: "Saved meal",
@@ -184,15 +263,27 @@ const logSavedMeal: ToolDef = {
     description:
       "One of the owner's saved meals, named in the message (see the saved meals list). Use only when the owner names " +
       "a saved meal or one of its aliases; a generic word like 'breakfast' or 'lunch' alone is not a saved meal. " +
-      "Not for foods that aren't in the list.",
-    strict: true,
+      "Changes to it go here too: ingredients left out ('without guac', 'one less chicken') in without, and foods from " +
+      "the food list eaten with it ('with a side tortilla') in extra. Not for foods that aren't in either list.",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["meal", "portions", "days_ago", "confidence"],
+      required: ["meal", "portions", "without", "extra", "days_ago", "confidence"],
       properties: {
         meal: { type: "string", description: "The saved meal name or alias as the owner wrote it." },
         portions: { type: ["number", "null"], description: "How many portions the owner said (e.g. '6 oz' of a per-oz meal is 6, 'half' is 0.5). Null if not said." },
+        without: {
+          type: "array",
+          items: itemSchema("How many servings of it to leave out ('one less chicken' = 1). Null = all of it."),
+          description: "Ingredients of this meal the owner left out. Empty if none.",
+        },
+        extra: {
+          type: "array",
+          items: itemSchema("How many. Null = 1."),
+          description: "Foods from the food list eaten along with this meal. Empty if none.",
+        },
         days_ago: daysAgo,
         confidence,
       },
@@ -201,20 +292,67 @@ const logSavedMeal: ToolDef = {
   async check(input, ctx) {
     const q = norm(String(input.meal ?? ""));
     if (!q) return { status: "invalid", detail: "No saved meal named." };
-    const names = (m: SavedMeal) => [m.name, ...m.aliases].map(norm);
     const portions = typeof input.portions === "number" && input.portions > 0 ? input.portions : 1;
     const date = dateFor(input, ctx.today);
-    const toOption = (m: SavedMeal, alias: string | null = null) => ({
-      resolved: { date, meal_id: m.id, portions, alias } as Resolved,
-      fields: [
-        ["Meal", m.name], ["Portions", `${portions} ${m.unit}`], ["Date", fmtDay(date)],
-        ...(alias ? [["Adds alias", alias] as [string, string]] : []),
-      ] as [string, string][],
-    });
+    const byId = new Map(ctx.foods.map((f) => [f.id, f]));
 
+    // Extras come from the whole food list.
+    const extras: { food: LibFood; servings: number }[] = [];
+    for (const e of listOf(input.extra)) {
+      const f = pickFood(String(e.food ?? ""), ctx.foods, "your food list");
+      if (typeof f === "string") return { status: "invalid", detail: f };
+      extras.push({ food: f, servings: servingsOf(e.servings, 1) });
+    }
+
+    // "Without" only ever matches the chosen meal's own ingredients.
+    const minusFor = (m: SavedMeal): { food: LibFood; servings: number; has: number }[] | string => {
+      const without = listOf(input.without);
+      if (!without.length) return [];
+      const ingredients = m.items.map((i) => byId.get(i.foodId)).filter((f): f is LibFood => !!f);
+      if (!ingredients.length) return `${m.name} has no ingredients tagged, so nothing can be left out.`;
+      const out: { food: LibFood; servings: number; has: number }[] = [];
+      for (const w of without) {
+        const f = pickFood(String(w.food ?? ""), ingredients, m.name);
+        if (typeof f === "string") return f;
+        const has = m.items.find((i) => i.foodId === f.id)!.servings;
+        const s = servingsOf(w.servings, has);
+        if (s > has) return `${m.name} only has ${g(has)} of ${f.name}.`;
+        out.push({ food: f, servings: s, has });
+      }
+      return out;
+    };
+
+    const toOption = (m: SavedMeal, alias: string | null = null) => {
+      const minus = minusFor(m);
+      if (typeof minus === "string") return minus;
+      const fields: [string, string][] = [["Meal", m.name], ["Portions", `${portions} ${m.unit}`], ["Date", fmtDay(date)]];
+      if (minus.length) fields.push(["Without", minus.map((x) => (x.servings === x.has ? x.food.name : `${g(x.servings)} of ${g(x.has)} ${x.food.name}`)).join(", ")]);
+      if (extras.length) fields.push(["Plus", extras.map((x) => countName(x.servings, x.food.name)).join(", ")]);
+      if (alias) fields.push(["Adds alias", alias]);
+      return {
+        resolved: {
+          date, meal_id: m.id, portions, alias,
+          minus: minus.map((x) => ({ food_id: x.food.id, servings: x.servings })),
+          extras: extras.map((x) => ({ food_id: x.food.id, servings: x.servings })),
+        } as Resolved,
+        fields,
+      };
+    };
+    type Opt = Exclude<ReturnType<typeof toOption>, string>;
+    const usable = (list: ReturnType<typeof toOption>[]) => list.filter((o): o is Opt => typeof o !== "string");
+
+    const names = (m: SavedMeal) => [m.name, ...m.aliases].map(norm);
     const exact = ctx.meals.filter((m) => names(m).includes(q));
-    if (exact.length === 1) return { status: "ready", ...toOption(exact[0]), warnings: portionWarnings(portions) };
-    if (exact.length > 1) return { status: "ambiguous", title: "Did you mean…", options: exact.slice(0, 3).map((m) => toOption(m)) };
+    if (exact.length === 1) {
+      const o = toOption(exact[0]);
+      if (typeof o === "string") return { status: "invalid", detail: o };
+      return { status: "ready", ...o, warnings: [...portionWarnings(portions), ...extras.flatMap((x) => portionWarnings(x.servings))] };
+    }
+    if (exact.length > 1) {
+      const all = exact.slice(0, 3).map((m) => toOption(m));
+      const options = usable(all);
+      return options.length ? { status: "ambiguous", title: "Did you mean…", options } : { status: "invalid", detail: String(all[0]) };
+    }
 
     // Not an exact name: suggest the closest meals ("did you mean"), never log on a guess.
     // Picking one also saves what the owner typed as an alias, so next time it's exact.
@@ -226,17 +364,28 @@ const logSavedMeal: ToolDef = {
       .sort((a, b) => score(b) - score(a))
       .slice(0, 3);
     if (!suggestions.length) return { status: "invalid", detail: `No saved meal like "${input.meal}".` };
-    return { status: "ambiguous", title: "Did you mean…", options: suggestions.map((m) => toOption(m, said)) };
+    const all = suggestions.map((m) => toOption(m, said));
+    const options = usable(all);
+    return options.length ? { status: "ambiguous", title: "Did you mean…", options } : { status: "invalid", detail: String(all[0]) };
   },
   async commit(r, db) {
-    const out = await rpc(db, "log_saved_meal", { p_date: r.date, p_meal_id: r.meal_id, p_portions: r.portions, p_tool: "log_saved_meal" });
+    const out = await rpc(db, "log_saved_meal", {
+      p_date: r.date, p_meal_id: r.meal_id, p_portions: r.portions, p_tool: "log_saved_meal", p_minus: r.minus ?? [],
+    });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
     const saved: Commit = {
       status: "saved",
       label: `${row.description} × ${g(row.amount)} ${row.unit}: ${row.calories} cal, ${g(row.protein_g)} g protein`,
       actionId: out.action_id ?? null,
+      also: [],
     };
+    // Foods eaten with it: each its own entry, with its own Undo.
+    for (const x of (r.extras ?? []) as { food_id: string; servings: number }[]) {
+      const e = await rpc(db, "log_food_item", { p_date: r.date, p_food_id: x.food_id, p_servings: x.servings, p_tool: "log_saved_meal" });
+      if (e?.status === "saved" && e.row) saved.also!.push({ label: itemLabel(e.row), actionId: e.action_id ?? null });
+      else saved.also!.push({ label: "Failed: one of the extra foods wasn't logged.", actionId: null });
+    }
     // Picked from "did you mean": remember the owner's wording as an alias.
     if (typeof r.alias === "string" && r.alias) {
       const { data: meal } = await db.from("saved_meals").select("*").eq("id", String(r.meal_id)).is("deleted_at", null).single();
@@ -245,12 +394,15 @@ const logSavedMeal: ToolDef = {
           p_id: meal.id, p_name: meal.name, p_aliases: [...meal.aliases, r.alias], p_portion_unit: meal.portion_unit,
           p_calories: meal.calories, p_protein_g: meal.protein_g, p_carbs_g: meal.carbs_g, p_fat_g: meal.fat_g, p_tool: "log_saved_meal",
         });
-        if (added?.status === "saved") saved.also = [{ label: `Alias "${r.alias}" for ${meal.name}`, actionId: added.action_id ?? null }];
+        if (added?.status === "saved") saved.also!.push({ label: `Alias "${r.alias}" for ${meal.name}`, actionId: added.action_id ?? null });
       }
     }
     return saved;
   },
 };
+
+/** "Chipotle Side Tortilla × 2 serving: 640 cal, 16 g protein" from a food_log row. */
+const itemLabel = (row: Record<string, unknown>) => `${row.description} × ${g(row.amount)} ${row.unit}: ${row.calories} cal, ${g(row.protein_g)} g protein`;
 
 const logFood: ToolDef = {
   name: "log_food",
@@ -258,40 +410,66 @@ const logFood: ToolDef = {
   definition: {
     name: "log_food",
     description:
-      "A one-off food the owner ate that is not one of their saved meals, e.g. 'chicken bowl 650 cal 50p'. " +
-      "Copy calories and protein only if the owner typed the numbers; never estimate them.",
-    strict: true,
+      "Something the owner ate that is not one of their saved meals. If it's in the owner's food list, set food to it and " +
+      "servings to how many, and leave the numbers null: code looks them up. Otherwise it's a one-off, e.g. " +
+      "'chicken bowl 650 cal 50p': copy calories and protein only if the owner typed the numbers; never estimate them.",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["description", "calories", "protein_g", "days_ago", "confidence"],
+      required: ["description", "food", "servings", "calories", "protein_g", "carbs_g", "fat_g", "days_ago", "confidence"],
       properties: {
         description: { type: "string", description: "Short name of the food, in the owner's words." },
+        food: { type: ["string", "null"], description: "The food-list name or alias it matches, as the owner wrote it. Null if it isn't in the food list." },
+        servings: { type: ["number", "null"], description: "How many servings of the food-list food ('two tortillas' = 2, 'half' = 0.5). Null if not said." },
         calories: { type: ["number", "null"], description: "Calories the owner typed. Null if they didn't type a number." },
         protein_g: { type: ["number", "null"], description: "Grams of protein the owner typed. Null if they didn't type a number." },
+        carbs_g: { type: ["number", "null"], description: "Grams of carbs the owner typed. Null if not typed." },
+        fat_g: { type: ["number", "null"], description: "Grams of fat the owner typed. Null if not typed." },
         days_ago: daysAgo,
         confidence,
       },
     },
   },
   async check(input, ctx) {
+    const date = dateFor(input, ctx.today);
+
+    // A food from the library: its stored macros times the servings, computed by the database.
+    if (typeof input.food === "string" && input.food.trim()) {
+      const servings = servingsOf(input.servings, 1);
+      const found = findFoods(input.food, ctx.foods);
+      const toOption = (f: LibFood, alias: string | null = null) => ({
+        resolved: { mode: "item", date, food_id: f.id, servings, alias } as Resolved,
+        fields: [
+          ["Food", f.name], ["Servings", `${g(servings)} ${f.unit}`], ["Date", fmtDay(date)],
+          ...(alias ? [["Adds alias", alias] as [string, string]] : []),
+        ] as [string, string][],
+      });
+      if (found.exact) return { status: "ready", ...toOption(found.exact), warnings: portionWarnings(servings) };
+      // Picking one also saves what the owner typed as an alias, so next time it's exact.
+      const said = verbatim(input.food, ctx.text)?.trim().toLowerCase() ?? null;
+      if (found.options.length) return { status: "ambiguous", title: "Did you mean…", options: found.options.map((f) => toOption(f, said)) };
+      // Not in the library after all: handled as a one-off below.
+    }
+
     const description = String(input.description ?? "").trim();
     if (!description) return { status: "invalid", detail: "No food named." };
     // Numbers the owner didn't type are treated as missing, never as estimates.
     const calories = typed(input.calories, ctx.text) ? Math.round(input.calories as number) : null;
     const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : null;
-    const date = dateFor(input, ctx.today);
-    const resolved: Resolved = { date, description, calories, protein_g: protein };
+    const carbs = typed(input.carbs_g, ctx.text) ? (input.carbs_g as number) : null;
+    const fat = typed(input.fat_g, ctx.text) ? (input.fat_g as number) : null;
+    const resolved: Resolved = { mode: "typed", date, description, calories, protein_g: protein, carbs_g: carbs, fat_g: fat };
     const missing: MissingField[] = [];
     if (calories == null) missing.push({ name: "calories", label: "Calories" });
     if (protein == null) missing.push({ name: "protein_g", label: "Protein (g)" });
     if (missing.length) return { status: "missing", resolved, title: `Log "${description}"`, missing };
-    return {
-      status: "ready",
-      resolved,
-      fields: [["Food", description], ["Calories", String(calories)], ["Protein", `${protein} g`], ["Date", fmtDay(date)]],
-      warnings: foodWarnings(calories!, protein!),
-    };
+    const fields: [string, string][] = [["Food", description], ["Calories", String(calories)], ["Protein", `${protein} g`]];
+    if (carbs != null) fields.push(["Carbs", `${carbs} g`]);
+    if (fat != null) fields.push(["Fat", `${fat} g`]);
+    fields.push(["Date", fmtDay(date)]);
+    return { status: "ready", resolved, fields, warnings: foodWarnings(calories!, protein!) };
   },
   fill(r, values) {
     const out = { ...r };
@@ -304,8 +482,25 @@ const logFood: ToolDef = {
     return out;
   },
   async commit(r, db) {
+    if (r.mode === "item") {
+      const out = await rpc(db, "log_food_item", { p_date: r.date, p_food_id: r.food_id, p_servings: r.servings, p_tool: "log_food" });
+      if (out?.status !== "saved" || !out.row) return { status: "failed" };
+      const saved: Commit = { status: "saved", label: itemLabel(out.row), actionId: out.action_id ?? null };
+      if (typeof r.alias === "string" && r.alias) {
+        const { data: food } = await db.from("foods").select("*").eq("id", String(r.food_id)).is("deleted_at", null).single();
+        if (food && ![food.name, ...food.aliases].map(norm).includes(norm(r.alias))) {
+          const added = await rpc(db, "update_food", {
+            p_id: food.id, p_name: food.name, p_aliases: [...food.aliases, r.alias], p_serving_amount: food.serving_amount,
+            p_serving_unit: food.serving_unit, p_calories: food.calories, p_protein_g: food.protein_g, p_tool: "log_food",
+          });
+          if (added?.status === "saved") saved.also = [{ label: `Alias "${r.alias}" for ${food.name}`, actionId: added.action_id ?? null }];
+        }
+      }
+      return saved;
+    }
     const out = await rpc(db, "log_food", {
-      p_date: r.date, p_description: r.description, p_calories: r.calories, p_protein_g: r.protein_g, p_tool: "log_food",
+      p_date: r.date, p_description: r.description, p_calories: r.calories, p_protein_g: r.protein_g,
+      p_carbs_g: r.carbs_g ?? null, p_fat_g: r.fat_g ?? null, p_tool: "log_food",
     });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
@@ -444,6 +639,22 @@ const addNote: ToolDef = {
 // ---- Food library --------------------------------------------------------------------
 
 type MealRow = Database["public"]["Tables"]["saved_meals"]["Row"];
+type FoodRow = Database["public"]["Tables"]["foods"]["Row"];
+type MealItemOut = { food_id: string; servings: number };
+
+/** The owner's ingredient list resolved against the food list, or why it can't be. */
+function itemsFrom(list: ItemIn[], foods: LibFood[]): { food: LibFood; servings: number }[] | string {
+  const out: { food: LibFood; servings: number }[] = [];
+  for (const it of list) {
+    const f = pickFood(String(it.food ?? ""), foods, "your food list");
+    if (typeof f === "string") return `${f} Save it as a food first.`;
+    if (out.some((x) => x.food.id === f.id)) return `${f.name} is listed twice.`;
+    out.push({ food: f, servings: servingsOf(it.servings, 1) });
+  }
+  return out;
+}
+
+const itemsText = (items: { name: string; servings: number }[]) => items.map((x) => countName(x.servings, x.name)).join(", ") || "none";
 
 const saveMeal: ToolDef = {
   name: "save_meal",
@@ -452,19 +663,26 @@ const saveMeal: ToolDef = {
     name: "save_meal",
     description:
       "Create a saved meal, or change one, e.g. 'save chicken breast as 47 cal 9g protein per oz', " +
-      "'flatbread pizza is 320 cal now', 'add alias cb to chicken breast'. A saved meal is one portion with fixed macros. " +
+      "'flatbread pizza is 320 cal now', 'add alias cb to chicken breast', 'save my usual bowl: rice, chicken, beans'. " +
+      "A saved meal is one portion with fixed macros, optionally made of foods from the food list. " +
       "Not for logging what the owner ate.",
-    strict: true,
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["name", "aliases", "unit", "calories", "protein_g", "confidence"],
+      required: ["name", "aliases", "unit", "calories", "protein_g", "items", "confidence"],
       properties: {
         name: { type: "string", description: "The meal's name as the owner wrote it." },
         aliases: { type: "array", items: { type: "string" }, description: "Other names the owner gave for it. Empty if none." },
         unit: { type: ["string", "null"], description: "What one portion is, e.g. 'oz', 'scoop', 'serving'. Null if not said." },
         calories: { type: ["number", "null"], description: "Calories per portion the owner typed. Null if not typed." },
         protein_g: { type: ["number", "null"], description: "Protein grams per portion the owner typed. Null if not typed." },
+        items: {
+          type: "array",
+          items: itemSchema("Servings of it per portion ('double chicken' = 2). Null = 1."),
+          description: "The meal's ingredients from the food list, only if the owner lists them. Empty if not.",
+        },
         confidence,
       },
     },
@@ -477,6 +695,25 @@ const saveMeal: ToolDef = {
     const unit = typeof input.unit === "string" && input.unit.trim() ? input.unit.trim() : null;
     const aliases = (Array.isArray(input.aliases) ? input.aliases : []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
 
+    const listed = listOf(input.items);
+    const items = itemsFrom(listed, ctx.foods);
+    if (typeof items === "string") return { status: "invalid", detail: items };
+    const itemsOut: MealItemOut[] | null = listed.length ? items.map((x) => ({ food_id: x.food.id, servings: x.servings })) : null;
+    const byId = new Map(ctx.foods.map((f) => [f.id, f]));
+    const named = (list: { foodId: string; servings: number }[]) => list.map((i) => ({ name: byId.get(i.foodId)?.name ?? "Unknown food", servings: i.servings }));
+
+    // Ingredient totals, from the stored foods, for a new meal whose numbers weren't typed.
+    let fromItems: { cal: number; p: number } | null = null;
+    if (items.length) {
+      const { data } = await ctx.db.from("foods").select("id, calories, protein_g").in("id", items.map((x) => x.food.id));
+      if (!data) return { status: "invalid", detail: "Couldn't load the foods." };
+      fromItems = items.reduce((t, x) => {
+        const f = data.find((d) => d.id === x.food.id)!;
+        return { cal: t.cal + f.calories * x.servings, p: t.p + Number(f.protein_g) * x.servings };
+      }, { cal: 0, p: 0 });
+      fromItems = { cal: Math.round(fromItems.cal), p: Math.round(fromItems.p * 10) / 10 };
+    }
+
     const names = (m: SavedMeal) => [m.name, ...m.aliases].map(norm);
     const exact = ctx.meals.find((m) => names(m).includes(norm(name)));
     // A partial name ("flatbread pizza" for "Flatbread pizza homemade") might mean an
@@ -485,6 +722,7 @@ const saveMeal: ToolDef = {
 
     const editOf = async (existing: SavedMeal): Promise<Check> => {
       // Edit: only what the owner said changes; always confirmed before it's written.
+      // Ingredients never rewrite the meal's own totals.
       const { data } = await ctx.db.from("saved_meals").select("*").eq("id", existing.id).single();
       if (!data) return { status: "invalid", detail: `Couldn't load ${existing.name}.` };
       const after = {
@@ -493,31 +731,38 @@ const saveMeal: ToolDef = {
         portion_unit: unit ?? data.portion_unit,
         calories: calories ?? data.calories,
         protein_g: protein ?? Number(data.protein_g),
+        items: itemsOut,
       };
       const fields: [string, string][] = [["Meal", data.name]];
       if (calories != null) fields.push(["Calories", String(calories)]);
       if (protein != null) fields.push(["Protein", `${protein} g`]);
       if (unit) fields.push(["Per", unit]);
       if (after.aliases.length !== data.aliases.length) fields.push(["Aliases", after.aliases.join(", ")]);
+      const ingredients = itemsOut ? { from: itemsText(named(existing.items)), to: itemsText(items.map((x) => ({ name: x.food.name, servings: x.servings }))) } : null;
+      if (ingredients && ingredients.from !== ingredients.to) fields.push(["Ingredients", ingredients.to]);
       if (fields.length === 1) return { status: "invalid", detail: `Nothing to change on ${data.name}.` };
       fields[0] = ["Change", data.name];
-      return { status: "ready", resolved: { mode: "update", id: data.id, before: data as unknown as Json, after }, fields, warnings: [] };
+      return { status: "ready", resolved: { mode: "update", id: data.id, before: data as unknown as Json, after, ingredients }, fields, warnings: [] };
     };
 
     if (exact) return editOf(exact);
 
-    const resolved: Resolved = { mode: "create", name, aliases, unit: unit ?? "serving", calories, protein_g: protein };
+    const cal = calories ?? fromItems?.cal ?? null;
+    const p = protein ?? fromItems?.p ?? null;
+    const resolved: Resolved = { mode: "create", name, aliases, unit: unit ?? "serving", calories: cal, protein_g: p, items: itemsOut };
     const missing: MissingField[] = [];
-    if (calories == null) missing.push({ name: "calories", label: "Calories per portion" });
-    if (protein == null) missing.push({ name: "protein_g", label: "Protein (g) per portion" });
+    if (cal == null) missing.push({ name: "calories", label: "Calories per portion" });
+    if (p == null) missing.push({ name: "protein_g", label: "Protein (g) per portion" });
+    const fields: [string, string][] = [
+      ["New meal", name], ["Per", unit ?? "serving"],
+      ["Calories", `${cal}${calories == null && fromItems ? " (from ingredients)" : ""}`],
+      ["Protein", `${p} g${protein == null && fromItems ? " (from ingredients)" : ""}`],
+    ];
+    if (items.length) fields.push(["Ingredients", itemsText(items.map((x) => ({ name: x.food.name, servings: x.servings })))]);
+    if (aliases.length) fields.push(["Aliases", aliases.join(", ")]);
     const create: Check = missing.length
       ? { status: "missing", resolved, title: `Save "${name}"`, missing }
-      : {
-          status: "ready",
-          resolved,
-          fields: [["New meal", name], ["Per", unit ?? "serving"], ["Calories", String(calories)], ["Protein", `${protein} g`], ...(aliases.length ? [["Aliases", aliases.join(", ")] as [string, string]] : [])],
-          warnings: foodWarnings(calories!, protein!),
-        };
+      : { status: "ready", resolved, fields, warnings: foodWarnings(cal!, p!) };
     if (!partial.length) return create;
 
     const options: { resolved: Resolved; fields: [string, string][] }[] = [];
@@ -532,12 +777,14 @@ const saveMeal: ToolDef = {
   async commit(r, db) {
     if (r.mode === "update") {
       const before = r.before as unknown as MealRow;
-      const after = r.after as { name: string; aliases: string[]; portion_unit: string; calories: number; protein_g: number };
+      const after = r.after as { name: string; aliases: string[]; portion_unit: string; calories: number; protein_g: number; items: MealItemOut[] | null };
+      const ingredients = r.ingredients as { from: string; to: string } | null;
       const changes: Change[] = [];
       if (after.calories !== before.calories) changes.push({ field: "Calories", from: String(before.calories), to: String(after.calories) });
       if (after.protein_g !== Number(before.protein_g)) changes.push({ field: "Protein", from: `${g(before.protein_g)} g`, to: `${g(after.protein_g)} g` });
       if (after.portion_unit !== before.portion_unit) changes.push({ field: "Per", from: before.portion_unit, to: after.portion_unit });
       if (after.aliases.join(",") !== before.aliases.join(",")) changes.push({ field: "Aliases", from: before.aliases.join(", ") || "–", to: after.aliases.join(", ") });
+      if (ingredients && ingredients.from !== ingredients.to) changes.push({ field: "Ingredients", from: ingredients.from, to: ingredients.to });
       return { status: "confirm", title: `Change ${before.name}?`, changes, tool: "update_meal", resolved: { id: before.id, ...after } };
     }
     const out = await rpc(db, "save_meal", {
@@ -546,7 +793,13 @@ const saveMeal: ToolDef = {
     if (out?.status === "conflict") return { status: "failed", detail: `A saved meal named "${r.name}" already exists.` };
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
-    return { status: "saved", label: `Saved meal ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein per ${row.portion_unit}`, actionId: out.action_id ?? null };
+    const saved: Commit = { status: "saved", label: `Saved meal ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein per ${row.portion_unit}`, actionId: out.action_id ?? null };
+    const items = r.items as MealItemOut[] | null;
+    if (items?.length) {
+      const set = await rpc(db, "set_meal_items", { p_meal_id: row.id, p_items: items, p_tool: "save_meal" });
+      saved.also = [{ label: set?.status === "saved" ? `${items.length} ingredients tagged on ${row.name}` : `Failed: ingredients for ${row.name} weren't saved.`, actionId: null }];
+    }
+    return saved;
   },
 };
 
@@ -561,7 +814,135 @@ const updateMeal: ToolDef = {
     });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
-    return { status: "saved", label: `Saved meal ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein per ${row.portion_unit}`, actionId: out.action_id ?? null };
+    const saved: Commit = { status: "saved", label: `Saved meal ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein per ${row.portion_unit}`, actionId: out.action_id ?? null };
+    const items = r.items as MealItemOut[] | null | undefined;
+    if (items) {
+      const set = await rpc(db, "set_meal_items", { p_meal_id: r.id, p_items: items, p_tool: "save_meal" });
+      saved.also = [{ label: set?.status === "saved" ? `Ingredients updated on ${row.name}` : `Failed: ingredients for ${row.name} weren't saved.`, actionId: null }];
+    }
+    return saved;
+  },
+};
+
+const perText = (amount: unknown, unit: unknown) => (num(amount) === 1 ? `per ${unit}` : `per ${g(amount)} ${unit}`);
+
+const saveFood: ToolDef = {
+  name: "save_food",
+  display: "Save food",
+  definition: {
+    name: "save_food",
+    description:
+      "Add a single food to the owner's food list (one serving with fixed macros), or change one, e.g. " +
+      "'save egg as 70 cal 6g protein', 'side tortilla is 300 cal now', 'add alias guac to Chipotle Guacamole'. " +
+      "Not for logging what the owner ate, and not for meals made of several foods (that's save_meal).",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "aliases", "serving_amount", "serving_unit", "calories", "protein_g", "confidence"],
+      properties: {
+        name: { type: "string", description: "The food's name as the owner wrote it." },
+        aliases: { type: "array", items: { type: "string" }, description: "Other names the owner gave for it. Empty if none." },
+        serving_amount: { type: ["number", "null"], description: "Size of one serving if the owner typed it, e.g. 100 for '100 g'. Null if not said." },
+        serving_unit: { type: ["string", "null"], description: "Unit of one serving, e.g. 'g', 'oz', 'tortilla'. Null if not said." },
+        calories: { type: ["number", "null"], description: "Calories per serving the owner typed. Null if not typed." },
+        protein_g: { type: ["number", "null"], description: "Protein grams per serving the owner typed. Null if not typed." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const name = String(input.name ?? "").trim();
+    if (!name) return { status: "invalid", detail: "No food named." };
+    const calories = typed(input.calories, ctx.text) ? Math.round(input.calories as number) : null;
+    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : null;
+    const amount = typed(input.serving_amount, ctx.text) && (input.serving_amount as number) > 0 ? (input.serving_amount as number) : null;
+    const unit = typeof input.serving_unit === "string" && input.serving_unit.trim() ? input.serving_unit.trim() : null;
+    const aliases = (Array.isArray(input.aliases) ? input.aliases : []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
+
+    const editOf = async (existing: LibFood): Promise<Check> => {
+      const { data } = await ctx.db.from("foods").select("*").eq("id", existing.id).single();
+      if (!data) return { status: "invalid", detail: `Couldn't load ${existing.name}.` };
+      const after = {
+        name: data.name,
+        aliases: [...new Set([...data.aliases, ...aliases.filter((a) => a !== norm(data.name))])],
+        serving_amount: amount ?? Number(data.serving_amount),
+        serving_unit: unit ?? data.serving_unit,
+        calories: calories ?? data.calories,
+        protein_g: protein ?? Number(data.protein_g),
+      };
+      const fields: [string, string][] = [["Change", data.name]];
+      if (calories != null) fields.push(["Calories", String(calories)]);
+      if (protein != null) fields.push(["Protein", `${protein} g`]);
+      if (amount != null || unit) fields.push(["Serving", `${g(after.serving_amount)} ${after.serving_unit}`]);
+      if (after.aliases.length !== data.aliases.length) fields.push(["Aliases", after.aliases.join(", ")]);
+      if (fields.length === 1) return { status: "invalid", detail: `Nothing to change on ${data.name}.` };
+      return { status: "ready", resolved: { mode: "update", id: data.id, before: data as unknown as Json, after }, fields, warnings: [] };
+    };
+
+    const found = findFoods(name, ctx.foods);
+    if (found.exact) return editOf(found.exact);
+
+    const resolved: Resolved = { mode: "create", name, aliases, serving_amount: amount ?? 1, serving_unit: unit ?? "serving", calories, protein_g: protein };
+    const missing: MissingField[] = [];
+    if (calories == null) missing.push({ name: "calories", label: "Calories per serving" });
+    if (protein == null) missing.push({ name: "protein_g", label: "Protein (g) per serving" });
+    const fields: [string, string][] = [
+      ["New food", name], ["Serving", `${g(amount ?? 1)} ${unit ?? "serving"}`], ["Calories", String(calories)], ["Protein", `${protein} g`],
+    ];
+    if (aliases.length) fields.push(["Aliases", aliases.join(", ")]);
+    const create: Check = missing.length
+      ? { status: "missing", resolved, title: `Save food "${name}"`, missing }
+      : { status: "ready", resolved, fields, warnings: foodWarnings(calories!, protein!) };
+
+    // A close name ("side tortilla" for "Chipotle Side Tortilla") might mean that food: the owner picks.
+    if (!found.options.length) return create;
+    const options: { resolved: Resolved; fields: [string, string][] }[] = [];
+    for (const f of found.options) {
+      const e = await editOf(f);
+      if (e.status === "ready") options.push({ resolved: e.resolved, fields: e.fields });
+    }
+    if (create.status === "ready" && options.length < 3) options.push({ resolved: create.resolved, fields: create.fields });
+    return options.length ? { status: "ambiguous", options } : create;
+  },
+  fill: (r, values) => logFood.fill!(r, values),
+  async commit(r, db) {
+    if (r.mode === "update") {
+      const before = r.before as unknown as FoodRow;
+      const after = r.after as { name: string; aliases: string[]; serving_amount: number; serving_unit: string; calories: number; protein_g: number };
+      const changes: Change[] = [];
+      if (after.calories !== before.calories) changes.push({ field: "Calories", from: String(before.calories), to: String(after.calories) });
+      if (after.protein_g !== Number(before.protein_g)) changes.push({ field: "Protein", from: `${g(before.protein_g)} g`, to: `${g(after.protein_g)} g` });
+      if (after.serving_amount !== Number(before.serving_amount) || after.serving_unit !== before.serving_unit)
+        changes.push({ field: "Serving", from: `${g(before.serving_amount)} ${before.serving_unit}`, to: `${g(after.serving_amount)} ${after.serving_unit}` });
+      if (after.aliases.join(",") !== before.aliases.join(",")) changes.push({ field: "Aliases", from: before.aliases.join(", ") || "–", to: after.aliases.join(", ") });
+      return { status: "confirm", title: `Change ${before.name}?`, changes, tool: "apply_food_update", resolved: { id: before.id, ...after } };
+    }
+    const out = await rpc(db, "save_food", {
+      p_name: r.name, p_aliases: r.aliases, p_serving_amount: r.serving_amount, p_serving_unit: r.serving_unit,
+      p_calories: r.calories, p_protein_g: r.protein_g, p_tool: "save_food",
+    });
+    if (out?.status === "conflict") return { status: "failed", detail: `A food named "${r.name}" already exists.` };
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const row = out.row;
+    return { status: "saved", label: `Food ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein ${perText(row.serving_amount, row.serving_unit)}`, actionId: out.action_id ?? null };
+  },
+};
+
+/** Only reachable from the confirm card above. */
+const applyFoodUpdate: ToolDef = {
+  name: "apply_food_update",
+  display: "Save food",
+  async commit(r, db) {
+    const out = await rpc(db, "update_food", {
+      p_id: r.id, p_name: r.name, p_aliases: r.aliases, p_serving_amount: r.serving_amount, p_serving_unit: r.serving_unit,
+      p_calories: r.calories, p_protein_g: r.protein_g, p_tool: "save_food",
+    });
+    if (out?.status === "conflict") return { status: "failed", detail: `A food named "${r.name}" already exists.` };
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const row = out.row;
+    return { status: "saved", label: `Food ${row.name}: ${row.calories} cal, ${g(row.protein_g)} g protein ${perText(row.serving_amount, row.serving_unit)}`, actionId: out.action_id ?? null };
   },
 };
 
@@ -634,13 +1015,19 @@ const addApplication: ToolDef = {
       status: statusOf(input.status),
       resume_name: verbatim(input.resume_name, ctx.text),
     };
+    // Applying to something on the "to apply" list checks that reminder off instead of adding a
+    // second row. Looked up as soon as the position is known; used only if the status is Applied
+    // (which may still be filled in on the missing-fields card).
+    if (resolved.position) resolved.reminder_id = (await reminderFor(ctx.db, company, String(resolved.position)))?.id ?? null;
     const missing = missingAppFields(resolved);
     if (missing.length) return { status: "missing", resolved, title: `Application: ${company}`, missing };
     const existing = (await appsFor(ctx.db, company)).filter((a) => a.position.toLowerCase() === String(resolved.position).toLowerCase());
+    const fields: [string, string][] = [["Company", company], ...appFields(resolved as unknown as AppRow)];
+    if (resolved.reminder_id && resolved.status === "Applied") fields.push(["Reminder", "checked off"]);
     return {
       status: "ready",
       resolved,
-      fields: [["Company", company], ...appFields(resolved as unknown as AppRow)],
+      fields,
       warnings: existing.length ? [`You already have a ${company} ${resolved.position} application from ${fmtDay(existing[0].applied_date)}.`] : [],
     };
   },
@@ -658,12 +1045,72 @@ const addApplication: ToolDef = {
   },
   async commit(r, db) {
     if (missingAppFields(r).some((m) => !m.optional)) return { status: "failed", detail: "Position, date and status are required." };
+    if (typeof r.reminder_id === "string" && r.status === "Applied") {
+      const done = await rpc(db, "apply_application_reminder", { p_id: r.reminder_id, p_date: r.applied_date, p_resume_name: r.resume_name, p_tool: "add_application" });
+      if (done?.status === "saved" && done.row) {
+        const row = done.row;
+        return { status: "saved", label: `Application: ${row.company}, ${row.position} (${row.status}, ${fmtDay(String(row.applied_date))})`, actionId: done.action_id ?? null };
+      }
+      // The reminder was closed meanwhile: fall through and record it normally.
+    }
     const out = await rpc(db, "save_application", {
       p_company: r.company, p_position: r.position, p_applied_date: r.applied_date, p_status: r.status, p_resume_name: r.resume_name, p_tool: "add_application",
     });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
     return { status: "saved", label: `Application: ${row.company}, ${row.position} (${row.status}, ${fmtDay(String(row.applied_date))})`, actionId: out.action_id ?? null };
+  },
+};
+
+async function reminderFor(db: Db, company: string, position: string) {
+  const { data } = await db.from("open_application_reminders").select("id, company, position").ilike("company", company.trim()).ilike("position", position.trim());
+  return data?.[0] ?? null;
+}
+
+const planApplication: ToolDef = {
+  name: "plan_application",
+  display: "To apply",
+  definition: {
+    name: "plan_application",
+    description:
+      "A job posting the owner saw and plans to apply to later, but hasn't yet, e.g. 'saw a Ramp SWE posting, apply later', " +
+      "'remind me to apply to Stripe new grad'. Not for applications already sent (that's add_application).",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["company", "position", "confidence"],
+      properties: {
+        company: { type: "string" },
+        position: { type: ["string", "null"], description: "Role as the owner wrote it. Null if not said." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const company = String(input.company ?? "").trim();
+    if (!company) return { status: "invalid", detail: "No company named." };
+    const position = typeof input.position === "string" && input.position.trim() ? input.position.trim() : null;
+    const resolved: Resolved = { company, position, date: ctx.today };
+    if (!position) return { status: "missing", resolved, title: `Reminder: apply to ${company}`, missing: [{ name: "position", label: "Position", type: "text" }] };
+    const applied = (await appsFor(ctx.db, company)).filter((a) => a.position.toLowerCase() === position.toLowerCase());
+    return {
+      status: "ready",
+      resolved,
+      fields: [["Apply to", company], ["Position", position]],
+      warnings: applied.length ? [`You already applied to ${company} ${position} on ${fmtDay(applied[0].applied_date)}.`] : [],
+    };
+  },
+  fill(r, values) {
+    const v = String(values.position ?? "").trim();
+    return v ? { ...r, position: v } : "Position is required.";
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "add_application_reminder", { p_company: r.company, p_position: r.position, p_date: r.date, p_tool: "plan_application" });
+    if (out?.status === "conflict") return { status: "failed", detail: `${r.company} ${r.position} is already on your list.` };
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    return { status: "saved", label: `To apply: ${out.row.company}, ${out.row.position}`, actionId: out.action_id ?? null };
   },
 };
 
@@ -798,7 +1245,7 @@ const logCallback: ToolDef = {
 
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
-  "save_meal", "add_application", "update_application", "log_callback",
+  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -833,7 +1280,7 @@ export const NO_MATCH: Anthropic.Tool = {
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
     logWeight, updateWeight, logSavedMeal, logFood, logLeetcode, addNote,
-    saveMeal, updateMeal, addApplication, updateApplication, applyApplicationUpdate, logCallback,
+    saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
   ].map((t) => [t.name, t]),
 );
 

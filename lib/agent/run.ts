@@ -53,7 +53,7 @@ export function preRoute(ctx: Ctx): Call[] | null {
 
 const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a LeetCode problem, a content idea or a journal entry.
 
-Call one tool per distinct item in the message; a message can hold several. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
+Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
 If nothing fits, or you would be guessing, call no_match with your best readings. Always respond with tool calls only.`;
 
@@ -61,8 +61,20 @@ let client: Anthropic | null = null;
 const anthropic = () => (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
 
 export async function callModel(ctx: Ctx): Promise<Call[] | null> {
+  const foodName = new Map(ctx.foods.map((f) => [f.id, f.name]));
   const meals = ctx.meals.length
-    ? ctx.meals.map((m) => `- ${m.name} (per ${m.unit})${m.aliases.length ? `; aliases: ${m.aliases.join(", ")}` : ""}`).join("\n")
+    ? ctx.meals
+        .map((m) => {
+          const aliases = m.aliases.length ? `; aliases: ${m.aliases.join(", ")}` : "";
+          const items = m.items.length
+            ? `; ingredients: ${m.items.map((i) => `${i.servings === 1 ? "" : `${i.servings}× `}${foodName.get(i.foodId) ?? "?"}`).join(", ")}`
+            : "";
+          return `- ${m.name} (per ${m.unit})${aliases}${items}`;
+        })
+        .join("\n")
+    : "(none)";
+  const foods = ctx.foods.length
+    ? ctx.foods.map((f) => `- ${f.name} (per ${f.unit})${f.aliases.length ? `; aliases: ${f.aliases.join(", ")}` : ""}`).join("\n")
     : "(none)";
   try {
     const res = await anthropic().messages.create({
@@ -75,7 +87,7 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
       messages: [
         {
           role: "user",
-          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})\nSaved meals:\n${meals}\n</context>\n\n<message>\n${ctx.text}\n</message>`,
+          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})\nSaved meals:\n${meals}\nFoods:\n${foods}\n</context>\n\n<message>\n${ctx.text}\n</message>`,
         },
       ],
     });

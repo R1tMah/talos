@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
+import { ApplyReminders } from "@/components/ApplyReminders";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
 import { PageSkeleton } from "@/components/Skeleton";
@@ -85,6 +86,7 @@ export default function ApplicationsPage() {
   return (
     <main className="screen">
       <ScreenHeader title="Applications" back="/tabs" right={<ExportButton tab="applications" source={exportOf(rows)} />} />
+      <ApplyReminders variant="list" />
       <SummaryStrip
         items={[
           { label: "Total", value: rows.length },

@@ -255,7 +255,7 @@ function Nutrition() {
             rows={entries}
             empty="Nothing logged this day."
             onAdd={() => setSheet(meals.length ? { kind: "choose" } : { kind: "typed" })}
-            onRowClick={(r) => setSheet(r.source === "saved_meal" && r.portions != null ? { kind: "portions", row: r } : { kind: "typed", row: r })}
+            onRowClick={(r) => setSheet(r.portions != null ? { kind: "portions", row: r } : { kind: "typed", row: r })}
             onDelete={(r) => run(nutritionApi.removeEntry(r.id))}
             columns={[
               { key: "time", label: "Time", width: "44px", render: (r) => <span className="faint">{r.time}</span> },
@@ -265,7 +265,7 @@ function Nutrition() {
                   <>
                     <div className="cell-main">{r.name}</div>
                     <div style={{ marginTop: 3, display: "flex", gap: 6, alignItems: "center" }}>
-                      <Tag>{SOURCE_LABEL[r.source]}</Tag>
+                      <Tag>{r.source === "typed" && r.portions != null ? "food" : SOURCE_LABEL[r.source]}</Tag>
                       {r.portions != null && <span className="faint num">× {portionText(r)}</span>}
                     </div>
                   </>

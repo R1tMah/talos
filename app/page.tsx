@@ -1,16 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FormSheet } from "@/components/FormSheet";
-import { IconArrowUp } from "@/components/Icons";
+import { IconArrowUp, IconMic, IconStop } from "@/components/Icons";
 import { ResultCard, type CardHandlers } from "@/components/ResultCard";
 import type { ChatCard, ChatResponse, ConfirmResponse } from "@/lib/agent/cards";
-import { unlockAudio } from "@/lib/chime";
 import { uid } from "@/lib/date";
-import { useStore } from "@/lib/store";
-import { dataChanged, undo } from "@/lib/undo";
-import { matchStart, routeWorkoutChat, startSession } from "@/lib/workoutChat";
+import { dataChanged, showToast, undo } from "@/lib/undo";
+import { useDictation } from "@/lib/useDictation";
 
 type Msg = { id: string; role: "user"; text: string; ts: number } | { id: string; role: "app"; card: ChatCard; ts: number };
 
@@ -37,14 +34,13 @@ async function post<T>(url: string, body: unknown): Promise<T | null> {
 }
 
 export default function ChatPage() {
-  const { db, mutate } = useStore();
-  const router = useRouter();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [fillFor, setFillFor] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const dictation = useDictation(setText, (message) => showToast({ text: message, tone: "error" }));
 
   useEffect(() => setMsgs(loadChat()), []);
   useEffect(() => {
@@ -76,25 +72,9 @@ export default function ChatPage() {
   const send = async () => {
     const t = text.trim();
     if (!t || busy) return;
+    dictation.stop();
     setText("");
     const user: Msg = { id: uid(), role: "user", text: t, ts: Date.now() };
-
-    // Workouts still run on local data: "start push", and sets during an active workout.
-    const plan = matchStart(t, db);
-    if (plan) {
-      unlockAudio(); // iOS needs a tap to enable the rest-timer sound
-      mutate((d) => startSession(d, plan));
-      append(user, reply({ kind: "saved", label: `Started ${plan.name}`, actionId: null }));
-      router.push("/workout");
-      return;
-    }
-    const set = routeWorkoutChat(t, db);
-    if (set) {
-      mutate(() => set.db);
-      append(user, reply(set.card.kind === "saved" ? { kind: "saved", label: set.card.label, actionId: null } : { kind: "failed" }));
-      return;
-    }
-
     append(user);
     setBusy(true);
     const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id });
@@ -171,12 +151,23 @@ export default function ChatPage() {
             send();
           }}
         >
+          {dictation.supported && (
+            <button
+              type="button"
+              className={`round-btn${dictation.listening ? " listening" : ""}`}
+              aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+              aria-pressed={dictation.listening}
+              onClick={() => (dictation.listening ? dictation.stop() : dictation.start(text))}
+            >
+              {dictation.listening ? <IconStop size={18} /> : <IconMic />}
+            </button>
+          )}
           <div className="composer-field">
             <textarea
               ref={taRef}
               rows={1}
               value={text}
-              placeholder="Log anything"
+              placeholder={dictation.listening ? "Listening…" : "Log anything"}
               enterKeyHint="send"
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}

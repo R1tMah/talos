@@ -1,12 +1,11 @@
-import { addDays, fmtDay, todayISO, weekStart } from "@/lib/date";
-import type { Workout } from "@/lib/types";
+import { addDays, fmtDay, logicalToday, weekStart } from "@/lib/date";
 
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
 
 /** Last N weeks, Monday first, newest week at the bottom, with lifts per week. */
-export function LiftCalendar({ workouts, weeks = 8 }: { workouts: Workout[]; weeks?: number }) {
-  const today = todayISO();
-  const days = new Set(workouts.map((w) => w.date));
+export function LiftCalendar({ dates, weeks = 8 }: { dates: string[]; weeks?: number }) {
+  const today = logicalToday();
+  const days = new Set(dates);
   const first = addDays(weekStart(today), -7 * (weeks - 1));
 
   return (

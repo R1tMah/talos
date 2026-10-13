@@ -83,6 +83,44 @@ export type Database = {
           },
         ]
       }
+      application_reminders: {
+        Row: {
+          application_id: string | null
+          company: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          noted_date: string
+          position: string
+        }
+        Insert: {
+          application_id?: string | null
+          company: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          noted_date: string
+          position: string
+        }
+        Update: {
+          application_id?: string | null
+          company?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          noted_date?: string
+          position?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_reminders_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       applications: {
         Row: {
           applied_date: string
@@ -731,6 +769,13 @@ export type Database = {
             foreignKeyName: "sets_workout_id_fkey"
             columns: ["workout_id"]
             isOneToOne: false
+            referencedRelation: "workout_history"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sets_workout_id_fkey"
+            columns: ["workout_id"]
+            isOneToOne: false
             referencedRelation: "workouts"
             referencedColumns: ["id"]
           },
@@ -856,6 +901,37 @@ export type Database = {
         }
         Relationships: []
       }
+      lift_daily: {
+        Row: {
+          best_reps: number | null
+          best_weight: number | null
+          e1rm: number | null
+          exercise_id: string | null
+          logical_date: string | null
+          max_reps: number | null
+          sets: number | null
+          volume: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sets_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      open_application_reminders: {
+        Row: {
+          company: string | null
+          created_at: string | null
+          id: string | null
+          noted_date: string | null
+          position: string | null
+        }
+        Relationships: []
+      }
       redo_queue: {
         Row: {
           catalog_id: string | null
@@ -891,8 +967,43 @@ export type Database = {
         }
         Relationships: []
       }
+      workout_history: {
+        Row: {
+          ended_at: string | null
+          id: string | null
+          logical_date: string | null
+          minutes: number | null
+          plan_id: string | null
+          plan_name: string | null
+          sets: number | null
+          started_at: string | null
+          status: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workouts_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      add_application_reminder: {
+        Args: {
+          p_company: string
+          p_date: string
+          p_position: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      add_exercise: {
+        Args: { p_aliases?: string[]; p_name: string; p_tool?: string }
+        Returns: Json
+      }
       add_note: {
         Args: {
           p_body: string
@@ -903,6 +1014,15 @@ export type Database = {
         Returns: Json
       }
       application_for: { Args: { p_company: string }; Returns: string }
+      apply_application_reminder: {
+        Args: {
+          p_date: string
+          p_id: string
+          p_resume_name?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       delete_application: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -923,7 +1043,13 @@ export type Database = {
       }
       delete_meal: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_set: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_weight: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_workout: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      dismiss_application_reminder: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       is_owner: { Args: never; Returns: boolean }
       lc_lookup: {
         Args: { p_title: string }
@@ -975,6 +1101,15 @@ export type Database = {
         }
         Returns: Json
       }
+      log_food_item: {
+        Args: {
+          p_date: string
+          p_food_id: string
+          p_servings?: number
+          p_tool?: string
+        }
+        Returns: Json
+      }
       log_leetcode: {
         Args: {
           p_date: string
@@ -998,6 +1133,17 @@ export type Database = {
           p_minus?: Json
           p_portions?: number
           p_tool?: string
+        }
+        Returns: Json
+      }
+      log_set: {
+        Args: {
+          p_exercise_id: string
+          p_reps: number
+          p_tool?: string
+          p_variant?: string
+          p_weight_lb?: number
+          p_workout_id: string
         }
         Returns: Json
       }
@@ -1078,6 +1224,10 @@ export type Database = {
       }
       set_note_body: {
         Args: { p_body: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      start_workout: {
+        Args: { p_date: string; p_plan_id: string; p_tool?: string }
         Returns: Json
       }
       targets_for: {
@@ -1179,6 +1329,16 @@ export type Database = {
         }
         Returns: Json
       }
+      update_set: {
+        Args: {
+          p_id: string
+          p_reps: number
+          p_tool?: string
+          p_variant: string
+          p_weight_lb: number
+        }
+        Returns: Json
+      }
       update_weight: {
         Args: {
           p_date: string
@@ -1186,6 +1346,17 @@ export type Database = {
           p_note: string
           p_tool?: string
           p_weight_lb: number
+        }
+        Returns: Json
+      }
+      update_workout: {
+        Args: {
+          p_date: string
+          p_ended_at: string
+          p_id: string
+          p_started_at: string
+          p_status: string
+          p_tool?: string
         }
         Returns: Json
       }

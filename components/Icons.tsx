@@ -110,3 +110,16 @@ export const IconShare = (p: P) => (
     <path d="M12 15V4M8 8l4-4 4 4M5 13v5.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V13" />
   </Base>
 );
+
+export const IconMic = (p: P) => (
+  <Base {...p}>
+    <rect x="9" y="3.5" width="6" height="11" rx="3" />
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5" />
+  </Base>
+);
+
+export const IconStop = (p: P) => (
+  <Base {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+  </Base>
+);

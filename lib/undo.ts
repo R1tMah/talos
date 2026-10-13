@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Json } from "./database.types";
 import { fmtDay } from "./date";
+import { cancelRest } from "./workoutClock";
 
 /**
  * App-wide undo. Every write logs an actions row; after one, a toast offers Undo.
@@ -78,6 +79,14 @@ export function describeRow(table: string, r: Row | null): string {
       return `${str(r.company)} application`;
     case "foods":
       return `food ${str(r.name)}`;
+    case "application_reminders":
+      return `reminder to apply to ${str(r.company)}`;
+    case "sets":
+      return `set ${r.weight_lb == null ? "bodyweight" : `${Number(r.weight_lb)} lb`} × ${str(r.reps)}`;
+    case "workouts":
+      return `workout, ${fmtDay(str(r.logical_date))}`;
+    case "exercises":
+      return `exercise ${str(r.name)}`;
     default:
       return table;
   }
@@ -105,6 +114,8 @@ export async function undo(actionId?: string | null): Promise<UndoResult> {
   if (out.status === "conflict") return finish({ status: "conflict" });
   if (out.status !== "done" || !out.action) return finish({ status: "failed" });
   const what = describeAction(out.action);
+  // Undoing a set also stops the rest countdown it started.
+  if (out.action.table_name === "sets" && out.kind !== "redo") cancelRest();
   return finish({ status: "done", text: out.kind === "redo" ? `Redid: ${what}` : `Undid: ${what}`, redoId: out.redo_id ?? null });
 }
 

@@ -37,6 +37,8 @@ export interface Active {
   date: string;
   startedAt: number;
   sets: LoggedSet[];
+  /** Plan exercises skipped for this workout only; the plan itself is unchanged. */
+  skipped: string[];
 }
 
 export interface HistoryRow {
@@ -127,6 +129,7 @@ export function useWorkoutData() {
         date: active.data.logical_date,
         startedAt: new Date(active.data.started_at).getTime(),
         sets: sets.data.map(toSet),
+        skipped: active.data.skipped_exercise_ids ?? [],
       };
     }
     // Keep the device's clock (tab bar, rest timer) in step with the database.
@@ -195,6 +198,98 @@ export function useLiftDays() {
   return { data, failed, reload };
 }
 
+// ---- One finished (or active) workout, for its summary --------------------------------
+
+export interface ExerciseSummary {
+  id: string;
+  name: string;
+  sets: LoggedSet[]; // in the order logged
+  best: { weight: number | null; reps: number } | null; // the set with the highest e1RM (or most reps if bodyweight)
+  e1rm: number | null; // Epley, as in the lift_daily view; null for bodyweight-only
+  volume: number; // sum of weight × reps
+}
+
+export interface WorkoutSummary {
+  id: string;
+  date: string;
+  planName: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  minutes: number | null;
+  totalSets: number;
+  volume: number;
+  exercises: ExerciseSummary[]; // in the order first worked
+  skipped: string[]; // names of plan exercises skipped that day
+}
+
+/** Same estimate as the lift_daily view: weight × (1 + reps / 30); a single is the weight itself. */
+export const epley = (weight: number | null, reps: number) =>
+  weight == null || weight === 0 ? null : reps === 1 ? weight : weight * (1 + reps / 30);
+
+export async function loadWorkoutSummary(id: string): Promise<WorkoutSummary | null> {
+  const db = createClient();
+  const [w, sets, ex] = await Promise.all([
+    db.from("workouts").select("*, plans(name)").eq("id", id).is("deleted_at", null).maybeSingle(),
+    db.from("sets").select("*").eq("workout_id", id).is("deleted_at", null).order("created_at"),
+    db.from("exercises").select("id, name"),
+  ]);
+  if (w.error || sets.error || ex.error || !w.data) return null;
+  const name = new Map(ex.data.map((e) => [e.id, e.name]));
+
+  const order: string[] = [];
+  const by = new Map<string, LoggedSet[]>();
+  for (const row of sets.data) {
+    const set = toSet(row);
+    if (!by.has(set.exerciseId)) {
+      order.push(set.exerciseId);
+      by.set(set.exerciseId, []);
+    }
+    by.get(set.exerciseId)!.push(set);
+  }
+
+  const exercises: ExerciseSummary[] = order.map((exId) => {
+    const list = by.get(exId)!;
+    let best: LoggedSet | null = null;
+    let bestE: number | null = null;
+    for (const s of list) {
+      const e = epley(s.weight, s.reps);
+      if (e != null) {
+        // Weighted sets compare by estimated 1RM.
+        if (bestE == null || e > bestE) {
+          best = s;
+          bestE = e;
+        }
+      } else if (bestE == null && (!best || s.reps > best.reps)) {
+        // Bodyweight-only so far: most reps wins.
+        best = s;
+      }
+    }
+    return {
+      id: exId,
+      name: name.get(exId) ?? "Unknown exercise",
+      sets: list,
+      best: best ? { weight: best.weight, reps: best.reps } : null,
+      e1rm: bestE == null ? null : Math.round(bestE * 10) / 10,
+      volume: list.reduce((v, s) => v + (s.weight ?? 0) * s.reps, 0),
+    };
+  });
+
+  const started = w.data.started_at;
+  const ended = w.data.ended_at;
+  return {
+    id: w.data.id,
+    date: w.data.logical_date,
+    planName: (w.data.plans as { name: string } | null)?.name ?? null,
+    startedAt: started,
+    endedAt: ended,
+    minutes: ended ? Math.round((new Date(ended).getTime() - new Date(started).getTime()) / 60000) : null,
+    totalSets: sets.data.length,
+    volume: exercises.reduce((v, e) => v + e.volume, 0),
+    exercises,
+    skipped: (w.data.skipped_exercise_ids ?? []).map((id) => name.get(id)).filter((n): n is string => !!n),
+  };
+}
+
 export type WriteResult = { status: "saved"; row?: Record<string, unknown> } | { status: "conflict"; existing?: Record<string, unknown> } | { status: "not_found" } | { status: "failed" };
 
 function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
@@ -223,6 +318,12 @@ export const workoutApi = {
   update: async (id: string, date: string, startedAt: string, endedAt: string | null, status: "active" | "done") =>
     parse("workouts", await createClient().rpc("update_workout", { p_id: id, p_date: date, p_started_at: startedAt, p_ended_at: n(endedAt), p_status: status })),
   remove: async (id: string) => parse("workouts", await createClient().rpc("delete_workout", { p_id: id })),
+  /** Skip a plan exercise for this workout only (or bring it back). Refused once it has sets. */
+  setSkipped: async (workoutId: string, exerciseId: string, skipped: boolean) => {
+    const res = await createClient().rpc("set_exercise_skipped", { p_workout_id: workoutId, p_exercise_id: exerciseId, p_skipped: skipped });
+    if ((res.data as { status?: string } | null)?.status === "has_sets") return { status: "has_sets" as const };
+    return parse("workouts", res);
+  },
   addExercise: async (name: string, aliases: string[] = []) =>
     parse("exercises", await createClient().rpc("add_exercise", { p_name: name, p_aliases: aliases })),
 };

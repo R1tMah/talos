@@ -642,6 +642,42 @@ export type Database = {
         }
         Relationships: []
       }
+      runs: {
+        Row: {
+          calories_est: number | null
+          created_at: string
+          deleted_at: string | null
+          distance_mi: number
+          duration_sec: number
+          id: string
+          logical_date: string
+          note: string | null
+          weight_lb_used: number | null
+        }
+        Insert: {
+          calories_est?: number | null
+          created_at?: string
+          deleted_at?: string | null
+          distance_mi: number
+          duration_sec: number
+          id?: string
+          logical_date: string
+          note?: string | null
+          weight_lb_used?: number | null
+        }
+        Update: {
+          calories_est?: number | null
+          created_at?: string
+          deleted_at?: string | null
+          distance_mi?: number
+          duration_sec?: number
+          id?: string
+          logical_date?: string
+          note?: string | null
+          weight_lb_used?: number | null
+        }
+        Relationships: []
+      }
       saved_meal_items: {
         Row: {
           created_at: string
@@ -846,6 +882,7 @@ export type Database = {
           id: string
           logical_date: string
           plan_id: string | null
+          skipped_exercise_ids: string[]
           started_at: string
           status: string
         }
@@ -856,6 +893,7 @@ export type Database = {
           id?: string
           logical_date: string
           plan_id?: string | null
+          skipped_exercise_ids?: string[]
           started_at: string
           status?: string
         }
@@ -866,6 +904,7 @@ export type Database = {
           id?: string
           logical_date?: string
           plan_id?: string | null
+          skipped_exercise_ids?: string[]
           started_at?: string
           status?: string
         }
@@ -1043,6 +1082,7 @@ export type Database = {
       }
       delete_meal: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_run: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_set: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_weight: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_workout: { Args: { p_id: string; p_tool?: string }; Returns: Json }
@@ -1126,6 +1166,16 @@ export type Database = {
         }
         Returns: Json
       }
+      log_run: {
+        Args: {
+          p_date: string
+          p_distance_mi: number
+          p_duration_sec: number
+          p_note?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       log_saved_meal: {
         Args: {
           p_date: string
@@ -1146,6 +1196,13 @@ export type Database = {
           p_workout_id: string
         }
         Returns: Json
+      }
+      run_calories: {
+        Args: { p_date: string; p_distance_mi: number }
+        Returns: {
+          calories: number
+          weight_lb: number
+        }[]
       }
       save_application: {
         Args: {
@@ -1203,6 +1260,15 @@ export type Database = {
       }
       set_debrief: {
         Args: { p_debrief: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      set_exercise_skipped: {
+        Args: {
+          p_exercise_id: string
+          p_skipped: boolean
+          p_tool?: string
+          p_workout_id: string
+        }
         Returns: Json
       }
       set_food_portions: {
@@ -1325,6 +1391,17 @@ export type Database = {
           p_name: string
           p_portion_unit: string
           p_protein_g: number
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      update_run: {
+        Args: {
+          p_date: string
+          p_distance_mi: number
+          p_duration_sec: number
+          p_id: string
+          p_note: string
           p_tool?: string
         }
         Returns: Json

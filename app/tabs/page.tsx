@@ -5,6 +5,7 @@ import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
 import { fmtDay, fmtNum } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
+import { FLAGS } from "@/lib/flags";
 import { useHomeStats } from "@/lib/homeStats";
 
 export default function TabsPage() {
@@ -21,6 +22,7 @@ export default function TabsPage() {
   const pending = failed ? "Failed" : "–";
   const cbs = stats?.callbacks;
   const lifts = stats?.lifts;
+  const runs = stats?.runs;
 
   return (
     <main className="screen">
@@ -59,6 +61,7 @@ export default function TabsPage() {
             { label: "Total", value: lc ? lc.total : "–" },
           ]}
         />
+        {FLAGS.workout && (
         <StatCard
           title="Lifts"
           href="/tabs/lifts"
@@ -67,6 +70,17 @@ export default function TabsPage() {
           rows={[
             { label: "Last", value: lifts?.last ? lifts.last.plan : "–" },
             { label: "On", value: lifts?.last ? fmtDay(lifts.last.date) : "–" },
+          ]}
+        />
+        )}
+        <StatCard
+          title="Runs"
+          href="/tabs/runs"
+          value={runs ? runs.miles : pending}
+          unit={runs ? "mi this wk" : undefined}
+          rows={[
+            { label: "Runs this wk", value: runs ? runs.week : "–" },
+            { label: "Last", value: runs?.last ? `${runs.last.miles} mi, ${fmtDay(runs.last.date)}` : "–" },
           ]}
         />
         <StatCard

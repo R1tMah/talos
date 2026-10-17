@@ -4,7 +4,7 @@ import { live } from "./stats";
 import type { DB } from "./types";
 
 export type ExportTab =
-  | "weight" | "nutrition" | "leetcode" | "applications" | "callbacks" | "workouts" | "content" | "journal" | "notes";
+  | "weight" | "nutrition" | "leetcode" | "applications" | "callbacks" | "workouts" | "content" | "journal" | "notes" | "runs";
 
 type Row = Record<string, string>;
 
@@ -74,6 +74,9 @@ function build(tab: ExportTab, db: DB): TabExport {
         })),
         body: "debrief",
       };
+    case "runs":
+      // Runs only live in Supabase; the Runs screen always passes its rows as `source`.
+      return { title: "Runs", columns: [], rows: [] };
     case "workouts":
       return {
         title: "Workouts",

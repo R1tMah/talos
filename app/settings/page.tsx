@@ -7,6 +7,7 @@ import { IconChevron } from "@/components/Icons";
 import { ScreenHeader, Segmented } from "@/components/ui";
 import { addDays, fmtDay, fmtNum, newestFirst, todayISO, uid, weekStart } from "@/lib/date";
 import { countBy, dayTotals, inWeek, live, mean, weekSummary } from "@/lib/stats";
+import { FLAGS } from "@/lib/flags";
 import { useStore } from "@/lib/store";
 import type { DB, Plan, Settings } from "@/lib/types";
 
@@ -51,8 +52,10 @@ function reviewPacket(db: DB) {
     out.push(`### ${fmtDay(c.date)} ${c.company}, ${c.type}, ${c.stage}`, c.debrief || "(no debrief)", "");
   }
 
-  const wo = inWeek(live(db.workouts)).sort(newestFirst);
-  out.push("## Workouts this week", ...wo.map((x) => `- ${fmtDay(x.date)} ${x.plan}, ${x.sets.length} sets, ${x.minutes} min`));
+  if (FLAGS.workout) {
+    const wo = inWeek(live(db.workouts)).sort(newestFirst);
+    out.push("## Workouts this week", ...wo.map((x) => `- ${fmtDay(x.date)} ${x.plan}, ${x.sets.length} sets, ${x.minutes} min`));
+  }
   return out.join("\n");
 }
 
@@ -137,11 +140,15 @@ export default function SettingsPage() {
         <Row label="Fat" value={`${s.fat} g`} onClick={() => setEdit("targets")} />
       </div>
 
-      <span className="label group-title">Workout</span>
-      <div className="card list">
-        <Row label="Rest time" value={`${s.restSec} s`} onClick={() => setEdit("rest")} />
-        <Row label="Plans" value={plans.map((p) => p.name).join(", ")} onClick={() => setEdit("plans")} />
-      </div>
+      {FLAGS.workout && (
+        <>
+          <span className="label group-title">Workout</span>
+          <div className="card list">
+            <Row label="Rest time" value={`${s.restSec} s`} onClick={() => setEdit("rest")} />
+            <Row label="Plans" value={plans.map((p) => p.name).join(", ")} onClick={() => setEdit("plans")} />
+          </div>
+        </>
+      )}
 
       <span className="label group-title">Logging</span>
       <div className="card list">

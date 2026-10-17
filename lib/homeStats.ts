@@ -28,6 +28,8 @@ export interface HomeStats {
   notes: Record<"content" | "journal", { n: number; last: string | null }>;
   /** Finished workouts this logical week, and the latest one. */
   lifts: { week: number; last: { plan: string; date: string } | null };
+  /** Runs this logical week: count and miles; plus the latest run. */
+  runs: { week: number; miles: number; last: { miles: number; seconds: number; date: string } | null };
 }
 
 export function useHomeStats() {
@@ -58,9 +60,11 @@ export function useHomeStats() {
       db.from("notes").select("kind, logical_date").is("deleted_at", null),
       db.from("workout_history").select("logical_date, plan_name").eq("status", "done")
         .order("logical_date", { ascending: false }).order("started_at", { ascending: false }).limit(30),
-    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs, notes, lifts]) => {
+      db.from("runs").select("logical_date, distance_mi, duration_sec").is("deleted_at", null)
+        .order("logical_date", { ascending: false }).order("created_at", { ascending: false }).limit(30),
+    ]).then(([w, wk, day, targets, lcWeek, lcAll, redo, apps, cbs, notes, lifts, runs]) => {
       if (!live) return;
-      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error || notes.error || lifts.error) {
+      if (w.error || wk.error || day.error || targets.error || lcWeek.error || lcAll.error || redo.error || apps.error || cbs.error || notes.error || lifts.error || runs.error) {
         setFailed(true);
         return;
       }
@@ -98,6 +102,15 @@ export function useHomeStats() {
           content: pad(notes.data, "content"),
           journal: pad(notes.data, "journal"),
         },
+        runs: (() => {
+          const week = runs.data.filter((r) => r.logical_date >= thisWeek && r.logical_date <= today);
+          const r0 = runs.data[0];
+          return {
+            week: week.length,
+            miles: Math.round(week.reduce((a, r) => a + Number(r.distance_mi), 0) * 100) / 100,
+            last: r0 ? { miles: Number(r0.distance_mi), seconds: r0.duration_sec, date: r0.logical_date } : null,
+          };
+        })(),
         lifts: {
           week: lifts.data.filter((l) => l.logical_date! >= thisWeek && l.logical_date! <= today).length,
           last: lifts.data[0] ? { plan: lifts.data[0].plan_name ?? "Workout", date: lifts.data[0].logical_date! } : null,

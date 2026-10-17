@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { fmtClock } from "@/lib/date";
+import { FLAGS } from "@/lib/flags";
 import { useWorkoutClock } from "@/lib/workoutClock";
 import { IconChat, IconDumbbell, IconGrid, IconSliders } from "./Icons";
 
@@ -12,7 +13,7 @@ const ITEMS = [
   { href: "/workout", label: "Workout", Icon: IconDumbbell, match: (p: string) => p.startsWith("/workout") },
   { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
   { href: "/settings", label: "Settings", Icon: IconSliders, match: (p: string) => p.startsWith("/settings") },
-];
+].filter((i) => i.href !== "/workout" || FLAGS.workout);
 
 /** Elapsed time from the stored start timestamp; the interval only triggers re-renders. */
 function useElapsed(startedAt: number | undefined) {
@@ -33,7 +34,7 @@ export function TabBar() {
   if (path === "/login") return null;
 
   return (
-    <nav className="tabbar" aria-label="Main">
+    <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${ITEMS.length}, 1fr)` }}>
       {ITEMS.map(({ href, label, Icon, match, primary }) => {
         const live = href === "/workout" && elapsed != null;
         return (

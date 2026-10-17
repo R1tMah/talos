@@ -75,10 +75,13 @@ export function ActiveWorkout({ data, active, reload }: { data: WorkoutData; act
 
   // The plan's exercises in order, then anything else logged or added this workout.
   const [added, setAdded] = useState<string[]>([]);
+  // Exercises skipped for today drop out of the list and sit in a "Skipped" row below it.
+  const skipped = useMemo(() => new Set(active.skipped), [active.skipped]);
   const list: Exercise[] = useMemo(() => {
     const ids = [...planExercises.map((e) => e.id), ...active.sets.map((s) => s.exerciseId), ...added];
-    return [...new Set(ids)].map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
-  }, [planExercises, active.sets, added, byId]);
+    return [...new Set(ids)].filter((id) => !skipped.has(id)).map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
+  }, [planExercises, active.sets, added, byId, skipped]);
+  const skippedList = active.skipped.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
 
   const [current, setCurrent] = useState<string | null>(null);
   const cur = current && list.some((e) => e.id === current) ? current : (list[0]?.id ?? null);
@@ -145,6 +148,12 @@ export function ActiveWorkout({ data, active, reload }: { data: WorkoutData; act
     await reload();
   };
 
+  const skip = async (exerciseId: string, value: boolean) => {
+    const res = await workoutApi.setSkipped(active.id, exerciseId, value);
+    setError(res.status !== "saved" && res.status !== "has_sets");
+    await reload();
+  };
+
   const nudge = (sec: number) => restEndsAt && setRestEndsAt(Math.max(Date.now() + 1000, restEndsAt + sec * 1000));
 
   return (
@@ -201,9 +210,24 @@ export function ActiveWorkout({ data, active, reload }: { data: WorkoutData; act
               <div key={ex.id} role="button" tabIndex={0} className="ex" aria-pressed={ex.id === cur} onClick={() => setCurrent(ex.id)}>
                 <span className="ex-name">
                   <span>{ex.name}</span>
-                  <span className="faint num" style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>
-                    {sets.length || ""}
-                  </span>
+                  {sets.length ? (
+                    <span className="faint num" style={{ fontSize: "var(--t-sm)", fontWeight: 500 }}>
+                      {sets.length}
+                    </span>
+                  ) : (
+                    // Only lifts with nothing logged can be skipped for today.
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm ex-skip"
+                      aria-label={`Skip ${ex.name} today`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        skip(ex.id, true);
+                      }}
+                    >
+                      Skip
+                    </button>
+                  )}
                 </span>
                 <span className="sets">
                   {sets.map((s) => (
@@ -226,6 +250,18 @@ export function ActiveWorkout({ data, active, reload }: { data: WorkoutData; act
               </div>
             );
           })}
+          {skippedList.length > 0 && (
+            <div className="ex-skipped">
+              <span className="label">Skipped today</span>
+              <span className="sets">
+                {skippedList.map((ex) => (
+                  <button key={ex.id} type="button" className="set-chip empty" aria-label={`Bring back ${ex.name}`} onClick={() => skip(ex.id, false)}>
+                    {ex.name} ↺
+                  </button>
+                ))}
+              </span>
+            </div>
+          )}
           <button type="button" className="btn" style={{ width: "100%" }} onClick={() => setAdding(true)}>
             + Add exercise
           </button>

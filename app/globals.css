@@ -1947,6 +1947,26 @@ html.kb-open .wo {
   font-weight: 550;
 }
 
+.ex-skip {
+  margin: -6px -8px -6px 0;
+  font-size: var(--t-sm);
+  font-weight: 500;
+}
+
+.ex-skipped {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-1);
+}
+
+.ex-skipped .set-chip.empty {
+  width: auto;
+  padding: 0 10px;
+  min-height: 32px;
+  color: var(--text-2);
+}
+
 .set-chip.empty {
   background: transparent;
   border: 1px dashed var(--border-strong);
@@ -2027,6 +2047,60 @@ html.kb-open .wo {
   border-radius: 6px;
   background: var(--surface-2);
   border: 1px solid transparent;
+}
+
+button.cal-day {
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+}
+
+button.cal-day:active {
+  border-color: var(--accent);
+}
+
+.wsum-list {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+
+.wsum-ex {
+  padding: var(--s-3) var(--s-4);
+}
+
+.wsum-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.wsum-name {
+  font-weight: 600;
+  font-size: var(--t-md);
+}
+
+.wsum-sets {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.wsum-sets li {
+  display: grid;
+  grid-template-columns: 20px auto 1fr;
+  gap: var(--s-3);
+  align-items: baseline;
+  font-size: var(--t-md);
+  min-height: 28px;
+}
+
+.wsum-foot {
+  margin-top: var(--s-2);
+  font-size: var(--t-xs);
 }
 
 .cal-day.on {

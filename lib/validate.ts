@@ -1,3 +1,5 @@
+import { fmtDuration } from "./duration";
+
 // Soft range checks shared by the agent and (later) the manual forms. A value that
 // trips one is never silently saved or rejected: the owner gets "are you sure?".
 // Hard limits (negative values, bad enums) live in the database constraints.
@@ -10,6 +12,9 @@ export const LIMITS = {
   foodProtein: 300,
   leetcodeMinutes: 180,
   portions: 10,
+  runMiles: 30,
+  runPaceFast: 4 * 60, // seconds per mile
+  runPaceSlow: 20 * 60,
 };
 
 export function weightWarnings(lb: number, previous: number | null): string[] {
@@ -33,4 +38,12 @@ export function portionWarnings(portions: number): string[] {
 
 export function leetcodeWarnings(minutes: number | null): string[] {
   return minutes != null && minutes > LIMITS.leetcodeMinutes ? [`${minutes} minutes is over ${LIMITS.leetcodeMinutes}.`] : [];
+}
+
+export function runWarnings(miles: number, seconds: number): string[] {
+  const out: string[] = [];
+  if (miles > LIMITS.runMiles) out.push(`${miles} mi is over ${LIMITS.runMiles} mi for one run.`);
+  const pace = seconds / miles;
+  if (pace < LIMITS.runPaceFast || pace > LIMITS.runPaceSlow) out.push(`That's ${fmtDuration(pace)} per mile.`);
+  return out;
 }

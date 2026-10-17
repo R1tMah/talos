@@ -10,7 +10,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
 import { addDays, fmtDay } from "@/lib/date";
 import type { Change } from "@/lib/types";
-import { foodWarnings, leetcodeWarnings, portionWarnings, weightWarnings } from "@/lib/validate";
+import { fmtDuration, parseDuration } from "@/lib/duration";
+import { foodWarnings, leetcodeWarnings, portionWarnings, runWarnings, weightWarnings } from "@/lib/validate";
 import type { MissingField } from "./cards";
 import { closest, nameScore } from "./fuzzy";
 
@@ -171,6 +172,83 @@ const logWeight: ToolDef = {
     }
     const row = out.row!;
     return { status: "saved", label: `Weight ${num(row.weight_lb).toFixed(1)} lb, ${fmtDay(String(row.logical_date))}`, actionId: out.action_id ?? null };
+  },
+};
+
+const KM_PER_MI = 1.609344;
+
+const logRun: ToolDef = {
+  name: "log_run",
+  display: "Run",
+  definition: {
+    name: "log_run",
+    description:
+      "A run the owner did, with distance and time, e.g. 'ran 3.1 miles in 27:30', '5k in 26 min', 'did 4 mi, 36:10'. " +
+      "Copy the distance and time exactly as written; code converts units. Not for lifting or walking steps.",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["distance", "unit", "time_text", "note", "days_ago", "confidence"],
+      properties: {
+        distance: { type: ["number", "null"], description: "The distance number the owner typed ('5k' = 5). Null if not said." },
+        unit: { anyOf: [{ type: "string", enum: ["mi", "km"] }, { type: "null" }], description: "mi for miles, km for km or 'k'. Null if not said." },
+        time_text: { type: ["string", "null"], description: "The time exactly as written, e.g. '27:30', '26 min', '1:02:05'. Null if not said." },
+        note: { type: ["string", "null"], description: "Any remark about the run, copied exactly. Null if none." },
+        days_ago: daysAgo,
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const date = dateFor(input, ctx.today);
+    const typedDistance = typed(input.distance, ctx.text) && (input.distance as number) > 0 ? (input.distance as number) : null;
+    const km = input.unit === "km";
+    const miles = typedDistance == null ? null : Math.round((km ? typedDistance / KM_PER_MI : typedDistance) * 100) / 100;
+    const timeText = verbatim(input.time_text, ctx.text);
+    const seconds = timeText ? parseDuration(timeText) : null;
+    const note = verbatim(input.note, ctx.text);
+    const resolved: Resolved = { date, miles, seconds, note };
+    const missing: MissingField[] = [];
+    if (miles == null) missing.push({ name: "miles", label: "Distance (mi)" });
+    if (!seconds) missing.push({ name: "time", label: "Time (e.g. 27:30)", type: "text" });
+    if (missing.length) return { status: "missing", resolved, title: "Log run", missing };
+    const fields: [string, string][] = [
+      ["Distance", km ? `${typedDistance} km (${miles} mi)` : `${miles} mi`],
+      ["Time", fmtDuration(seconds!)],
+      ["Pace", `${fmtDuration(seconds! / miles!)}/mi`],
+      ["Date", fmtDay(date)],
+    ];
+    if (note) fields.push(["Note", note]);
+    return { status: "ready", resolved, fields, warnings: runWarnings(miles!, seconds!) };
+  },
+  fill(r, values) {
+    const out = { ...r };
+    if (out.miles == null) {
+      const v = Number(values.miles);
+      if (!Number.isFinite(v) || v <= 0) return "Distance must be more than 0.";
+      out.miles = v;
+    }
+    if (!out.seconds) {
+      const s = parseDuration(String(values.time ?? ""));
+      if (!s) return "Time must look like 27:30, 1:02:05 or 27 min.";
+      out.seconds = s;
+    }
+    return out;
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "log_run", { p_date: r.date, p_distance_mi: r.miles, p_duration_sec: r.seconds, p_note: r.note, p_tool: "log_run" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const row = out.row;
+    const miles = num(row.distance_mi);
+    const secs = num(row.duration_sec);
+    const cal = row.calories_est == null ? "" : `, ~${row.calories_est} cal est.`;
+    return {
+      status: "saved",
+      label: `Run ${g(miles)} mi in ${fmtDuration(secs)} (${fmtDuration(secs / miles)}/mi)${cal}, ${fmtDay(String(row.logical_date))}`,
+      actionId: out.action_id ?? null,
+    };
   },
 };
 
@@ -1245,7 +1323,7 @@ const logCallback: ToolDef = {
 
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
-  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback",
+  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -1279,7 +1357,7 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
-    logWeight, updateWeight, logSavedMeal, logFood, logLeetcode, addNote,
+    logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
   ].map((t) => [t.name, t]),
 );

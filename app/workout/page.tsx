@@ -6,6 +6,7 @@ import { ActiveWorkout } from "@/components/ActiveWorkout";
 import { DataTable } from "@/components/DataTable";
 import { FormSheet } from "@/components/FormSheet";
 import { LiftCalendar } from "@/components/LiftCalendar";
+import { WorkoutSummarySheet } from "@/components/WorkoutSummary";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader, SectionTitle } from "@/components/ui";
 import { unlockAudio } from "@/lib/chime";
@@ -18,6 +19,7 @@ const at = (date: string, hm: string) => new Date(`${date}T${hm || "00:00"}`).to
 export default function WorkoutPage() {
   const { data, failed, reload } = useWorkoutData();
   const [edit, setEdit] = useState<HistoryRow | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -107,7 +109,7 @@ export default function WorkoutPage() {
       <DataTable
         rows={data.history}
         empty="No workouts logged."
-        onRowClick={setEdit}
+        onRowClick={(r) => setViewing(r.id)}
         onDelete={async (r) => {
           await workoutApi.remove(r.id);
           reload();
@@ -121,7 +123,19 @@ export default function WorkoutPage() {
       />
 
       <SectionTitle>Lifts per week</SectionTitle>
-      <LiftCalendar dates={data.history.map((h) => h.date)} />
+      <LiftCalendar workouts={data.history} onPick={setViewing} />
+
+      {viewing && (
+        <WorkoutSummarySheet
+          id={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => {
+            const row = data.history.find((h) => h.id === viewing) ?? null;
+            setViewing(null);
+            setEdit(row);
+          }}
+        />
+      )}
 
       {adding && (
         <FormSheet

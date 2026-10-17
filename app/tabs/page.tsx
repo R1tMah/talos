@@ -1,12 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { ApplyReminders } from "@/components/ApplyReminders";
+import { IconChevron } from "@/components/Icons";
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
 import { fmtDay, fmtNum } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
 import { FLAGS } from "@/lib/flags";
+import { useArchivedTabs } from "@/lib/archivedTabs";
 import { useHomeStats } from "@/lib/homeStats";
+import { ARCHIVABLE, type TabKey } from "@/lib/tabs";
 
 export default function TabsPage() {
   // Every card reads Supabase through one round of queries (lib/homeStats.ts).
@@ -23,11 +27,15 @@ export default function TabsPage() {
   const cbs = stats?.callbacks;
   const lifts = stats?.lifts;
   const runs = stats?.runs;
+  // Archived tabs drop off the grid and sit in the accordion at the bottom.
+  const archived = useArchivedTabs();
+  const shown = (k: TabKey) => !archived?.has(k);
+  const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key));
 
   return (
     <main className="screen">
       <ScreenHeader title="Tabs" />
-      <ApplyReminders variant="banner" />
+      {shown("applications") && <ApplyReminders variant="banner" />}
       <div className="grid-2">
         <StatCard
           title="Weight"
@@ -50,6 +58,7 @@ export default function TabsPage() {
             { label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
           ]}
         />
+        {shown("leetcode") && (
         <StatCard
           title="LeetCode"
           href="/tabs/leetcode"
@@ -61,6 +70,7 @@ export default function TabsPage() {
             { label: "Total", value: lc ? lc.total : "–" },
           ]}
         />
+        )}
         {FLAGS.workout && (
         <StatCard
           title="Lifts"
@@ -73,6 +83,7 @@ export default function TabsPage() {
           ]}
         />
         )}
+        {shown("runs") && (
         <StatCard
           title="Runs"
           href="/tabs/runs"
@@ -83,6 +94,8 @@ export default function TabsPage() {
             { label: "Last", value: runs?.last ? `${runs.last.miles} mi, ${fmtDay(runs.last.date)}` : "–" },
           ]}
         />
+        )}
+        {shown("applications") && (
         <StatCard
           title="Applications"
           href="/tabs/applications"
@@ -90,6 +103,8 @@ export default function TabsPage() {
           unit={ap ? "total" : undefined}
           rows={apStatuses.map((st) => ({ label: st, value: ap!.byStatus[st] }))}
         />
+        )}
+        {shown("callbacks") && (
         <StatCard
           title="Callbacks"
           href="/tabs/callbacks"
@@ -100,12 +115,30 @@ export default function TabsPage() {
             { label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" },
           ]}
         />
+        )}
       </div>
 
-      <div className="grid-2">
-        <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />
-        <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />
-      </div>
+      {(shown("content") || shown("journal")) && (
+        <div className="grid-2">
+          {shown("content") && <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />}
+          {shown("journal") && <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />}
+        </div>
+      )}
+
+      {archivedTabs.length > 0 && (
+        <details className="card archived-acc">
+          <summary>
+            <span className="label">Archived ({archivedTabs.length})</span>
+            <IconChevron />
+          </summary>
+          {archivedTabs.map((t) => (
+            <Link key={t.key} href={t.href} className="row">
+              <span className="row-label">{t.label}</span>
+              <IconChevron />
+            </Link>
+          ))}
+        </details>
+      )}
     </main>
   );
 }

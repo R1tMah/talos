@@ -1,5 +1,6 @@
 "use client";
 
+import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
@@ -133,7 +134,8 @@ export default function LeetCodePage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="LeetCode" back="/tabs" right={<ExportButton tab="leetcode" live="leetcode" />} />
+      <ScreenHeader title="LeetCode" back="/tabs" right={<><ArchiveButton tab="leetcode" /><ExportButton tab="leetcode" live="leetcode" /></>} />
+      <ArchivedBar tab="leetcode" />
 
       <SummaryStrip
         items={[

@@ -7,6 +7,7 @@ import { announceWrite, useDataChanged } from "./undo";
 import { toHM, logicalToday } from "./date";
 import type { WeekRow } from "./stats";
 import type { Break, Phase, WeightEntry } from "./types";
+import type { PhaseText, WeightNote } from "./weightLog";
 
 type Tables = Database["public"]["Tables"];
 type WeightRow = Tables["weights"]["Row"];
@@ -16,6 +17,10 @@ export interface WeightData {
   weeks: WeekRow[]; // newest first, from the weekly_weights view
   phases: Phase[];
   breaks: Break[];
+  /** Phase descriptions in the owner's words, for the log view. */
+  phaseTexts: PhaseText[];
+  /** Dated free-text notes in the weight log (notes.kind = 'weight'). */
+  notes: WeightNote[];
 }
 
 /** Outcome of a write. A conflict carries the row already on that date. */
@@ -55,14 +60,16 @@ export function useWeightData() {
 
   const reload = useCallback(async () => {
     const db = createClient();
-    const [w, wk, ph, br] = await Promise.all([
+    const [w, wk, ph, br, nt] = await Promise.all([
       db.from("weights").select("*").is("deleted_at", null)
         .order("logical_date", { ascending: false }).order("created_at", { ascending: false }),
       db.from("weekly_weights").select("*").order("week_start", { ascending: false }),
       db.from("phases").select("*").is("deleted_at", null).order("start_date"),
       db.from("breaks").select("*").is("deleted_at", null).order("start_date", { ascending: false }),
+      db.from("notes").select("id, logical_date, body").eq("kind", "weight").is("deleted_at", null)
+        .order("logical_date").order("created_at"),
     ]);
-    if (w.error || wk.error || ph.error || br.error) {
+    if (w.error || wk.error || ph.error || br.error || nt.error) {
       setFailed(true);
       return;
     }
@@ -78,6 +85,8 @@ export function useWeightData() {
       })),
       phases: ph.data.map(toPhase),
       breaks: br.data.map(toBreak),
+      phaseTexts: ph.data.map((p) => ({ id: p.id, start: p.start_date, calories: p.calorie_target, description: p.description })),
+      notes: nt.data.map((n) => ({ id: n.id, date: n.logical_date, body: n.body })),
     });
   }, []);
 

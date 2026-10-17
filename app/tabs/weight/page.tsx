@@ -10,11 +10,14 @@ import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, SectionTitle, Segmented, Tag } from "@/components/ui";
 import { IconPlus } from "@/components/Icons";
 import { WeightChart } from "@/components/WeightChart";
+import { WeightLog } from "@/components/WeightLog";
 import { breakEnd, fmtRange, overlaps } from "@/lib/breaks";
 import { addDays, fmtDay, fmtDow, logicalToday, weekStart } from "@/lib/date";
 import type { TabExport } from "@/lib/exportTab";
 import type { Break, WeightEntry } from "@/lib/types";
+import { notesApi } from "@/lib/notesData";
 import { useWeightData, weightApi, type WriteResult } from "@/lib/weightData";
+import { buildWeightLog, weightLogRows, weightLogText, type LogItem, type WeightNote } from "@/lib/weightLog";
 
 const FIELDS: Field[] = [
   { name: "lb", label: "Weight (lb)", type: "number", full: true },
@@ -51,19 +54,23 @@ interface Conflict {
   note?: string;
 }
 
-/** Every weigh-in from Supabase, newest first, for the header's export. */
-function exportOf(entries: WeightEntry[]): TabExport {
+/** The log as a spreadsheet, oldest first: every weigh-in with its week, plus trips and notes. */
+function exportOf(log: LogItem[]): TabExport {
   return {
     title: "Weight",
-    columns: [{ key: "date", label: "Date" }, { key: "time", label: "Time" }, { key: "lb", label: "lb" }, { key: "note", label: "Note" }],
-    rows: entries.map((w) => ({ date: w.date, time: w.time, lb: w.lb.toFixed(1), note: w.note ?? "" })),
+    columns: [
+      { key: "week", label: "Week" }, { key: "date", label: "Date" }, { key: "lb", label: "lb" },
+      { key: "week_avg", label: "Week average" }, { key: "note", label: "Note" }, { key: "break", label: "Break" },
+    ],
+    rows: weightLogRows(log),
   };
 }
 
 export default function WeightPage() {
   const { data, failed, reload } = useWeightData();
   const [sheet, setSheet] = useState<WeightEntry | "new" | null>(null);
-  const [view, setView] = useState<"weekly" | "daily">("weekly");
+  const [view, setView] = useState<"log" | "weekly" | "daily">("log");
+  const [noteSheet, setNoteSheet] = useState<WeightNote | "new" | null>(null);
   const [breakSheet, setBreakSheet] = useState<Break | "new" | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -102,6 +109,19 @@ export default function WeightPage() {
     return items.sort((a, b) => b.key.localeCompare(a.key)).map((i) => i.row);
   }, [entries, breaks]);
 
+  // The owner's own layout: numbered weeks, oldest first, with phases, trips and notes.
+  const log = useMemo(
+    () => (data ? buildWeightLog({ entries, weeks: weeks.map((w) => ({ week: w.week, avg: w.avg, days: w.days })), phases: data.phaseTexts, breaks, notes: data.notes }) : []),
+    [data, entries, weeks, breaks],
+  );
+
+  /** Writes a weight note; any failure becomes the plain "Failed" message. */
+  const runNote = async (write: Promise<{ status: string }>) => {
+    setNotice(null);
+    if ((await write).status !== "saved") setNotice("Failed");
+    await reload();
+  };
+
   /** Runs a write, reloads on success, and turns anything else into a plain message. */
   const run = async (write: Promise<WriteResult>, onConflict?: (existing: WeightEntry) => void) => {
     setNotice(null);
@@ -130,7 +150,7 @@ export default function WeightPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={exportOf(entries)} />} />
+      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={exportOf(log)} text={weightLogText(log)} order="oldest first, as in the log" />} />
 
       <SummaryStrip
         items={[
@@ -164,6 +184,7 @@ export default function WeightPage() {
 
       <Segmented
         options={[
+          { value: "log", label: "Log" },
           { value: "weekly", label: "Weekly" },
           { value: "daily", label: "Daily" },
         ]}
@@ -171,7 +192,20 @@ export default function WeightPage() {
         onChange={setView}
       />
 
-      {view === "weekly" ? (
+      {view === "log" ? (
+        <>
+          <SectionTitle
+            right={
+              <button type="button" className="btn btn-sm" onClick={() => setNoteSheet("new")}>
+                <IconPlus size={14} /> Add note
+              </button>
+            }
+          >
+            Oldest first
+          </SectionTitle>
+          <WeightLog items={log} onDay={(e) => setSheet(e)} onBreak={(b) => setBreakSheet(b)} onNote={(n) => setNoteSheet(n)} />
+        </>
+      ) : view === "weekly" ? (
         <DataTable
           rows={weeks}
           columns={[
@@ -254,6 +288,28 @@ export default function WeightPage() {
             if (breakSheet === "new") run(weightApi.saveBreak(start, end, label));
             else run(weightApi.updateBreak(breakSheet.id, start, end, label));
             setBreakSheet(null);
+          }}
+        />
+      )}
+
+      {noteSheet && (
+        <FormSheet
+          title={noteSheet === "new" ? "Add note" : `Note, ${fmtDay(noteSheet.date)}`}
+          fields={[
+            ...(noteSheet === "new" ? [{ name: "date", label: "Date", type: "date" as const }] : []),
+            { name: "body", label: "Note", type: "textarea", trim: false, placeholder: "In your own words" },
+          ]}
+          confirm={noteSheet !== "new"}
+          validate={(v) => (!String(v.body ?? "").trim() ? "Write something first." : noteSheet === "new" && !v.date ? "Date is required." : null)}
+          initial={noteSheet === "new" ? { date: logicalToday(), body: "" } : { body: noteSheet.body }}
+          onClose={() => setNoteSheet(null)}
+          onDelete={noteSheet !== "new" ? () => (runNote(notesApi.remove(noteSheet.id)), setNoteSheet(null)) : undefined}
+          onSubmit={(v) => {
+            // Saved exactly as typed.
+            const body = v.body as string;
+            if (noteSheet === "new") runNote(notesApi.add("weight", v.date as string, body));
+            else runNote(notesApi.setBody(noteSheet.id, body));
+            setNoteSheet(null);
           }}
         />
       )}

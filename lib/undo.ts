@@ -72,7 +72,7 @@ export function describeRow(table: string, r: Row | null): string {
     case "callbacks":
       return `${str(r.company)} ${str(r.kind)}`;
     case "notes":
-      return r.kind === "journal" ? "journal entry" : "content idea";
+      return r.kind === "journal" ? "journal entry" : r.kind === "weight" ? "weight note" : "content idea";
     case "breaks":
       return `break "${str(r.label)}"`;
     case "applications":

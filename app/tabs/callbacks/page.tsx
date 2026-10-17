@@ -1,5 +1,6 @@
 "use client";
 
+import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DataTable } from "@/components/DataTable";
@@ -39,7 +40,8 @@ export default function CallbacksPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Callbacks" back="/tabs" right={<ExportButton tab="callbacks" live="callbacks" />} />
+      <ScreenHeader title="Callbacks" back="/tabs" right={<><ArchiveButton tab="callbacks" /><ExportButton tab="callbacks" live="callbacks" /></>} />
+      <ArchivedBar tab="callbacks" />
       <SummaryStrip
         items={[
           { label: "Interviews", value: counts.Interview ?? 0 },

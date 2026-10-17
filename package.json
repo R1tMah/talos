@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:db": "vitest run tests/db",
+    "test:http": "vitest run tests/http"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -19,6 +23,7 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "supabase": "^2.120.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

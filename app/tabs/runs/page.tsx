@@ -1,5 +1,6 @@
 "use client";
 
+import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
@@ -90,7 +91,8 @@ export default function RunsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Runs" back="/tabs" right={<ExportButton tab="runs" source={exportOf(runs)} />} />
+      <ScreenHeader title="Runs" back="/tabs" right={<><ArchiveButton tab="runs" /><ExportButton tab="runs" source={exportOf(runs)} /></>} />
+      <ArchivedBar tab="runs" />
 
       <SummaryStrip
         items={[

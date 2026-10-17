@@ -123,3 +123,10 @@ export const IconStop = (p: P) => (
     <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
   </Base>
 );
+
+export const IconArchive = (p: P) => (
+  <Base {...p}>
+    <rect x="3.5" y="4.5" width="17" height="4.5" rx="1" />
+    <path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" />
+  </Base>
+);

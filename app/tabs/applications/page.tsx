@@ -1,5 +1,6 @@
 "use client";
 
+import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
 import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ApplyReminders } from "@/components/ApplyReminders";
@@ -85,7 +86,8 @@ export default function ApplicationsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Applications" back="/tabs" right={<ExportButton tab="applications" source={exportOf(rows)} />} />
+      <ScreenHeader title="Applications" back="/tabs" right={<><ArchiveButton tab="applications" /><ExportButton tab="applications" source={exportOf(rows)} /></>} />
+      <ArchivedBar tab="applications" />
       <ApplyReminders variant="list" />
       <SummaryStrip
         items={[

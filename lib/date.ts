@@ -12,15 +12,26 @@ export function fromISO(s: string) {
 
 export const todayISO = () => toISO(new Date());
 
-/** The 4am rule: anything before 04:00 belongs to the previous day. Use for every stored date. */
-export const logicalToday = () => toISO(new Date(Date.now() - 4 * 3600_000));
+// The 4am rule works on the wall clock: before 04:00 local time belongs to the previous
+// calendar day. Subtracting 4 hours from the instant instead would land on the wrong day
+// on daylight-saving changes (3:30 the night clocks fall back, 4:30 the night they spring forward).
+
+/** The 4am rule on this device's clock. Use for every stored date. */
+export function logicalToday(now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (now.getHours() < 4) d.setDate(d.getDate() - 1);
+  return toISO(d);
+}
 
 /** The 4am rule in a given IANA timezone, for the server (which runs in UTC). */
 export function logicalDateIn(timeZone: string, now = new Date()) {
-  // en-CA formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
-    new Date(now.getTime() - 4 * 3600_000),
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
   );
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return Number(parts.hour) < 4 ? addDays(date, -1) : date;
 }
 
 export const toHM = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;

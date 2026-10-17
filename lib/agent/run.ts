@@ -7,6 +7,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { fmtDay } from "@/lib/date";
+import { CHAT_TABS, type TabKey } from "@/lib/tabs";
+import { archivedMessage, loadArchived, tabOf } from "./archive";
+import { inScope } from "./scope";
 import type { CardOption, ChatCard } from "./cards";
 import { MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
 
@@ -82,12 +85,15 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
       max_tokens: 4000,
       output_config: { effort: "low" },
       system: SYSTEM,
-      tools: MODEL_TOOLS,
+      // A tab chip narrows the tools to that tab's (plus no_match); otherwise all of them.
+      tools: ctx.tab ? MODEL_TOOLS.filter((t) => t.name === "no_match" || inScope(ctx.tab, t.name)) : MODEL_TOOLS,
       tool_choice: { type: "auto" },
       messages: [
         {
           role: "user",
-          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})\nSaved meals:\n${meals}\nFoods:\n${foods}\n</context>\n\n<message>\n${ctx.text}\n</message>`,
+          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})\nSaved meals:\n${meals}\nFoods:\n${foods}${
+            ctx.tab ? `\nTab: the owner filed this message under ${CHAT_TABS.find((t) => t.key === ctx.tab)!.label}.` : ""
+          }\n</context>\n\n<message>\n${ctx.text}\n</message>`,
         },
       ],
     });
@@ -135,6 +141,9 @@ async function candidates(calls: Call[], ctx: Ctx) {
       } catch {
         continue;
       }
+      const tab = tabOf(cand.tool!, args);
+      if (tab && ctx.archived?.has(tab)) continue; // never offered while archived
+      if (!inScope(ctx.tab, cand.tool!)) continue; // a tab chip keeps it to that tab
       out.push({ name: cand.tool!, confidence: cand.confidence ?? 0, check: await tool.check(args, ctx) });
     }
   }
@@ -149,6 +158,11 @@ export async function decide(calls: Call[], ctx: Ctx, threshold: number, propose
 
   for (const call of writes) {
     const tool = TOOLS[call.name];
+    const tab = tabOf(call.name, call.input);
+    if (tab && ctx.archived?.has(tab)) {
+      cards.push({ kind: "failed", detail: archivedMessage(tab) });
+      continue;
+    }
     const check = await tool.check!(call.input, ctx);
 
     if (check.status === "invalid") {
@@ -188,23 +202,38 @@ export async function decide(calls: Call[], ctx: Ctx, threshold: number, propose
 }
 
 /** Commits a checked proposal and turns the result into cards (a save can carry a follow-up offer). */
-export async function commitCard(name: string, resolved: Resolved, ctx: Pick<Ctx, "db">, propose: Propose): Promise<ChatCard[]> {
+export async function commitCard(name: string, resolved: Resolved, ctx: Pick<Ctx, "db" | "archived">, propose: Propose): Promise<ChatCard[]> {
   const tool = TOOLS[name];
   if (!tool) return [{ kind: "failed" }];
+  // Every chat write (and every confirm) passes through here: an archived tab is refused
+  // even for a proposal made before it was archived.
+  const archived = ctx.archived ?? (await loadArchived(ctx.db));
+  const tab = tabOf(name, resolved);
+  if (tab && archived.has(tab)) return [{ kind: "failed", detail: archivedMessage(tab) }];
   const out = await tool.commit(resolved, ctx.db);
   if (out.status === "confirm") return [{ kind: "confirm", title: out.title, changes: out.changes, proposalId: await propose(out.tool, out.resolved) }];
   if (out.status === "failed") return [{ kind: "failed", detail: out.detail }];
   const cards: ChatCard[] = [{ kind: "saved", label: out.label, actionId: out.actionId }];
   for (const extra of out.also ?? []) cards.push({ kind: "saved", label: extra.label, actionId: extra.actionId });
-  if (out.offer) {
+  const offerTab = out.offer ? tabOf(out.offer.tool, out.offer.resolved) : null;
+  if (out.offer && !(offerTab && archived.has(offerTab))) {
     cards.push({ kind: "missing", title: out.offer.title, missing: out.offer.missing, proposalId: await propose(out.offer.tool, out.offer.resolved) });
   }
   return cards;
 }
 
 export async function run(ctx: Ctx, threshold: number, propose: Propose): Promise<RunResult> {
+  if (ctx.tab) {
+    if (ctx.archived?.has(ctx.tab)) return { route: "rule", calls: [], cards: [{ kind: "failed", detail: archivedMessage(ctx.tab as TabKey) }] };
+    // Content / Work Journal chip: the whole message is the note, saved as typed. No model.
+    if (ctx.tab === "content" || ctx.tab === "journal") {
+      const calls: Call[] = [{ name: "add_note", input: { kind: ctx.tab, text: null, confidence: 1 } }];
+      return { route: "rule", calls, cards: await decide(calls, ctx, threshold, propose) };
+    }
+  }
   const ruled = preRoute(ctx);
-  if (ruled) return { route: "rule", calls: ruled, cards: await decide(ruled, ctx, threshold, propose) };
+  // A rule match outside the chosen tab ("168" under Runs) goes to the model instead.
+  if (ruled && ruled.every((c) => inScope(ctx.tab, c.name))) return { route: "rule", calls: ruled, cards: await decide(ruled, ctx, threshold, propose) };
   const calls = await callModel(ctx);
   if (!calls) return { route: "model", calls: [], cards: [{ kind: "failed" }] };
   return { route: "model", calls, cards: await decide(calls, ctx, threshold, propose) };

@@ -5,20 +5,27 @@ import { FormSheet } from "@/components/FormSheet";
 import { IconArrowUp, IconMic, IconStop } from "@/components/Icons";
 import { ResultCard, type CardHandlers } from "@/components/ResultCard";
 import type { ChatCard, ChatResponse, ConfirmResponse } from "@/lib/agent/cards";
-import { uid } from "@/lib/date";
+import { logicalToday, uid } from "@/lib/date";
 import { dataChanged, showToast, undo } from "@/lib/undo";
 import { useDictation } from "@/lib/useDictation";
+import { useArchivedTabs } from "@/lib/archivedTabs";
+import { CHAT_TABS, type ChatTab } from "@/lib/tabs";
 
-type Msg = { id: string; role: "user"; text: string; ts: number } | { id: string; role: "app"; card: ChatCard; ts: number };
+const tabName = (k: ChatTab) => CHAT_TABS.find((t) => t.key === k)!.label;
+
+type Msg = { id: string; role: "user"; text: string; tab?: ChatTab; ts: number } | { id: string; role: "app"; card: ChatCard; ts: number };
 
 // The transcript is a per-device convenience; the data itself lives in Supabase.
-const KEY = "talos.chat.v2";
+// It only covers one logical day (the app's 4am rule): a new day starts empty.
+const KEY = "talos.chat.v3";
 const MAX_KEPT = 200;
 
-function loadChat(): Msg[] {
+function loadChat(day: string): Msg[] {
   try {
+    localStorage.removeItem("talos.chat.v2"); // the old, never-cleared transcript
     const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Msg[]) : [];
+    const saved = raw ? (JSON.parse(raw) as { day?: string; msgs?: Msg[] }) : null;
+    return saved?.day === day && Array.isArray(saved.msgs) ? saved.msgs : [];
   } catch {
     return [];
   }
@@ -42,12 +49,37 @@ export default function ChatPage() {
   const composerRef = useRef<HTMLDivElement>(null);
   const dictation = useDictation(setText, (message) => showToast({ text: message, tone: "error" }));
 
-  useEffect(() => setMsgs(loadChat()), []);
+  // Tab chips: every tab chat can log to, minus archived ones.
+  const archived = useArchivedTabs() as ReadonlySet<string> | null;
+  const chips = CHAT_TABS.filter((t) => !archived?.has(t.key));
+  const [chosen, setChosen] = useState<ChatTab | null>(null);
+  useEffect(() => {
+    if (chosen && archived?.has(chosen)) setChosen(null);
+  }, [archived, chosen]);
+
+  const [day, setDay] = useState(() => logicalToday());
+  useEffect(() => setMsgs(loadChat(day)), [day]);
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(msgs.slice(-MAX_KEPT)));
+      localStorage.setItem(KEY, JSON.stringify({ day, msgs: msgs.slice(-MAX_KEPT) }));
     } catch {}
-  }, [msgs]);
+  }, [day, msgs]);
+
+  // The app can sit open overnight: when it comes back to the foreground on a new
+  // day, start fresh. Never mid-conversation, only on return.
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = logicalToday();
+      if (now !== day) setDay(now);
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [day]);
 
   useEffect(() => {
     window.scrollTo({ top: document.documentElement.scrollHeight });
@@ -62,7 +94,7 @@ export default function ChatPage() {
     }
     const h = composerRef.current?.offsetHeight ?? 72;
     document.documentElement.style.setProperty("--composer-h", `${h}px`);
-  }, [text]);
+  }, [text, chips.length]);
 
   const append = (...m: Msg[]) => setMsgs((xs) => [...xs, ...m]);
   const reply = (card: ChatCard): Msg => ({ id: uid(), role: "app", card, ts: Date.now() });
@@ -74,10 +106,13 @@ export default function ChatPage() {
     if (!t || busy) return;
     dictation.stop();
     setText("");
-    const user: Msg = { id: uid(), role: "user", text: t, ts: Date.now() };
+    // A picked tab chip goes with this one message, then clears.
+    const tab = chosen ?? undefined;
+    setChosen(null);
+    const user: Msg = { id: uid(), role: "user", text: t, tab, ts: Date.now() };
     append(user);
     setBusy(true);
-    const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id });
+    const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id, tab });
     setBusy(false);
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
     append(...cards.map(reply));
@@ -132,6 +167,7 @@ export default function ChatPage() {
         {msgs.map((m) =>
           m.role === "user" ? (
             <div key={m.id} className="msg-user">
+              {m.tab && <span className="msg-tab">{tabName(m.tab)}</span>}
               <span>{m.text}</span>
             </div>
           ) : (
@@ -144,6 +180,19 @@ export default function ChatPage() {
       </main>
 
       <div className="composer" ref={composerRef}>
+        <div className="tab-chips" role="group" aria-label="Log to a tab">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              className="tab-chip"
+              aria-pressed={chosen === c.key}
+              onClick={() => setChosen((cur) => (cur === c.key ? null : c.key))}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
         <form
           className="composer-inner"
           onSubmit={(e) => {
@@ -167,7 +216,7 @@ export default function ChatPage() {
               ref={taRef}
               rows={1}
               value={text}
-              placeholder={dictation.listening ? "Listening…" : "Log anything"}
+              placeholder={dictation.listening ? "Listening…" : chosen ? `Log to ${tabName(chosen)}` : "Log anything"}
               enterKeyHint="send"
               autoCapitalize="sentences"
               onChange={(e) => setText(e.target.value)}

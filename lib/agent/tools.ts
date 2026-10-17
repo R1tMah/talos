@@ -40,6 +40,10 @@ export interface Ctx {
   today: string; // logical date in the owner's timezone
   meals: SavedMeal[];
   foods: LibFood[];
+  /** Archived tab keys (settings.archived_tabs). Chat refuses to write to these. */
+  archived?: ReadonlySet<string>;
+  /** The tab chip the owner picked for this message, if any: only its tools apply. */
+  tab?: import("@/lib/tabs").ChatTab;
 }
 
 /** Arguments after code checks: everything a commit needs. Stored in pending_proposals. */

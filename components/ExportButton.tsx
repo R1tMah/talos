@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { todayISO } from "@/lib/date";
-import { tabCount, tabCsv, tabMarkdown, tabTitle, toCsv, toMarkdown, type ExportTab, type TabExport } from "@/lib/exportTab";
+import { toCsv, toMarkdown, type ExportTab, type TabExport } from "@/lib/exportTab";
 import { loadExport, type LiveTab } from "@/lib/exportLive";
-import { useStore } from "@/lib/store";
 import { Sheet } from "./FormSheet";
 import { IconShare } from "./Icons";
 
@@ -13,12 +12,20 @@ const LIVE_TITLES: Record<LiveTab, string> = {
 };
 
 /**
- * Header button that exports just this tab. Supabase-backed tabs either pass their
- * rows as `source`, or set `live` to fetch the full history when the sheet opens.
- * Anything else exports the local store.
+ * Header button that exports just this tab, from Supabase: either the screen's rows
+ * (`source`), or the full history fetched when the sheet opens (`live`).
  */
-export function ExportButton({ tab, source: given, live }: { tab: ExportTab; source?: TabExport; live?: LiveTab }) {
-  const { db } = useStore();
+export function ExportButton({
+  tab, text, order = "newest first", ...from
+}: {
+  tab: ExportTab;
+  /** Replaces the generated markdown for "Copy" (e.g. Weight's week-by-week log). */
+  text?: string;
+  /** How the rows are ordered, shown under the buttons. */
+  order?: string;
+} & ({ source: TabExport; live?: never } | { live: LiveTab; source?: never })) {
+  const given = from.source;
+  const live = from.live;
   const [open, setOpen] = useState(false);
   const [copy, setCopy] = useState<"" | "Copied" | "Failed">("");
   const [fetched, setFetched] = useState<TabExport | "loading" | "failed" | null>(null);
@@ -38,10 +45,10 @@ export function ExportButton({ tab, source: given, live }: { tab: ExportTab; sou
 
   const source = given ?? (fetched && typeof fetched === "object" ? fetched : undefined);
   const waiting = !!live && !source;
-  const title = source?.title ?? (live ? LIVE_TITLES[live] : tabTitle(tab, db));
-  const count = source?.rows.length ?? (live ? 0 : tabCount(tab, db));
-  const markdown = () => (source ? toMarkdown(source) : tabMarkdown(tab, db));
-  const csv = () => (source ? toCsv(source) : tabCsv(tab, db));
+  const title = source?.title ?? (live ? LIVE_TITLES[live] : "");
+  const count = source?.rows.length ?? 0;
+  const markdown = () => text ?? (source ? toMarkdown(source) : "");
+  const csv = () => (source ? toCsv(source) : "");
 
   const copyMarkdown = async () => {
     try {
@@ -88,7 +95,7 @@ export function ExportButton({ tab, source: given, live }: { tab: ExportTab; sou
             ) : waiting ? (
               "Loading…"
             ) : (
-              `${count} ${count === 1 ? "entry" : "entries"}, newest first`
+              `${count} ${count === 1 ? "entry" : "entries"}, ${order}`
             )}
           </p>
         </Sheet>

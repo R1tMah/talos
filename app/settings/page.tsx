@@ -4,60 +4,18 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FormSheet, Sheet } from "@/components/FormSheet";
 import { IconChevron } from "@/components/Icons";
+import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader, Segmented } from "@/components/ui";
-import { addDays, fmtDay, fmtNum, newestFirst, todayISO, uid, weekStart } from "@/lib/date";
-import { countBy, dayTotals, inWeek, live, mean, weekSummary } from "@/lib/stats";
+import { setTabArchived, useArchivedTabs } from "@/lib/archivedTabs";
+import { buildBackup } from "@/lib/backup";
+import { fmtNum, todayISO } from "@/lib/date";
 import { FLAGS } from "@/lib/flags";
-import { useStore } from "@/lib/store";
-import type { DB, Plan, Settings } from "@/lib/types";
+import { buildReviewPacket } from "@/lib/reviewPacket";
+import { settingsApi, useSettings, type SettingsResult } from "@/lib/settingsData";
+import { ARCHIVABLE, type TabKey } from "@/lib/tabs";
 
-type Edit = "targets" | "rest" | "aliases" | "plans" | "statuses" | "context" | { plan: Plan | "new" } | null;
+type Edit = "targets" | "rest" | "context" | "confidence" | "timezone" | "plans" | null;
 type Theme = "system" | "dark" | "light";
-
-const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
-
-/** Plain data for an outside review. Numbers and the owner's own words only. */
-function reviewPacket(db: DB) {
-  const today = todayISO();
-  const wk = weekStart(today);
-  const w = live(db.weight);
-  const out: string[] = [`# TALOS review packet, ${fmtDay(today)}`, "", "## Context", db.settings.context, ""];
-
-  out.push("## Weight (weekly average)", "| Week of | Avg lb | Days |", "|---|---|---|");
-  for (let i = 0; i < 4; i++) {
-    const s = weekSummary(w, addDays(wk, -7 * i));
-    out.push(`| ${fmtDay(addDays(wk, -7 * i))} | ${s.avg?.toFixed(1) ?? "–"} | ${s.days} |`);
-  }
-
-  const days = Array.from({ length: 7 }, (_, i) => dayTotals(live(db.food), addDays(today, -i))).filter((d) => d.cal > 0);
-  out.push(
-    "", "## Nutrition (7-day average of logged days)",
-    `- Calories: ${fmtNum(mean(days.map((d) => d.cal)) ?? 0)} / ${db.settings.calories}`,
-    `- Protein: ${Math.round(mean(days.map((d) => d.p)) ?? 0)} / ${db.settings.protein} g`,
-    `- Days logged: ${days.length}`,
-  );
-
-  const lc = inWeek(live(db.leetcode)).sort(newestFirst);
-  out.push(
-    "", "## LeetCode this week",
-    ...lc.map((l) => `- ${fmtDay(l.date)} ${l.problem} (${l.difficulty}, ${l.result}, ${l.minutes} min)${l.notes ? `\n  ${l.notes.replace(/\n/g, "\n  ")}` : ""}`),
-  );
-  out.push(`- Redo queue: ${live(db.leetcode).filter((l) => l.redo).length}`);
-
-  const apps = countBy(live(db.applications), (a) => a.status);
-  out.push("", "## Applications", ...db.settings.statuses.map((s) => `- ${s}: ${apps[s] ?? 0}`));
-
-  out.push("", "## Callbacks");
-  for (const c of live(db.callbacks).sort(newestFirst).slice(0, 5)) {
-    out.push(`### ${fmtDay(c.date)} ${c.company}, ${c.type}, ${c.stage}`, c.debrief || "(no debrief)", "");
-  }
-
-  if (FLAGS.workout) {
-    const wo = inWeek(live(db.workouts)).sort(newestFirst);
-    out.push("## Workouts this week", ...wo.map((x) => `- ${fmtDay(x.date)} ${x.plan}, ${x.sets.length} sets, ${x.minutes} min`));
-  }
-  return out.join("\n");
-}
 
 function Row({ label, value, onClick, href }: { label: string; value?: string; onClick?: () => void; href?: string }) {
   const inner = (
@@ -78,12 +36,16 @@ function Row({ label, value, onClick, href }: { label: string; value?: string; o
   );
 }
 
+const isInt = (v: unknown, min: number, max: number) => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+
 export default function SettingsPage() {
-  const { db, mutate, add, update } = useStore();
-  const s = db.settings;
+  const { data, failed, reload } = useSettings();
   const [edit, setEdit] = useState<Edit>(null);
-  const [copy, setCopy] = useState<"" | "Copied" | "Failed">("");
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const [copy, setCopy] = useState<"" | "Copying…" | "Copied" | "Failed">("");
   const [theme, setTheme] = useState<Theme>("system");
+  const archived = useArchivedTabs();
+  const [archiving, setArchiving] = useState<{ tab: TabKey; label: string; archive: boolean } | null>(null);
 
   useEffect(() => {
     try {
@@ -91,6 +53,7 @@ export default function SettingsPage() {
     } catch {}
   }, []);
 
+  // Theme is a per-device preference, so it stays in this browser.
   const applyTheme = (t: Theme) => {
     setTheme(t);
     const root = document.documentElement;
@@ -102,14 +65,28 @@ export default function SettingsPage() {
     } catch {}
   };
 
-  const save = (patch: Partial<Settings>) => {
-    mutate((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
+  /** Runs a settings write, closes the sheet, and reports the outcome in plain words. */
+  const run = async (write: Promise<SettingsResult>, ok: string) => {
     setEdit(null);
+    setNotice(null);
+    const r = await write;
+    if (r.status === "saved") setNotice({ text: ok, ok: true });
+    else if (r.status === "invalid") setNotice({ text: r.detail, ok: false });
+    else if (r.status !== "unchanged") setNotice({ text: "Failed", ok: false });
+    await reload();
   };
 
+  // Both read Supabase when tapped. Safari only lets the clipboard be written during
+  // the tap, so the copy hands it a promise (ClipboardItem) instead of awaiting first.
   const exportPacket = async () => {
+    setCopy("Copying…");
     try {
-      await navigator.clipboard.writeText(reviewPacket(db));
+      const text = buildReviewPacket();
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })]);
+      } else {
+        await navigator.clipboard.writeText(await text);
+      }
       setCopy("Copied");
     } catch {
       setCopy("Failed");
@@ -117,45 +94,101 @@ export default function SettingsPage() {
     setTimeout(() => setCopy(""), 2000);
   };
 
-  const backup = () => {
-    const blob = new Blob([JSON.stringify({ ...db, chat: [] }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `talos-backup-${todayISO()}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  const [backingUp, setBackingUp] = useState<"" | "Preparing…" | "Failed">("");
+  const backup = async () => {
+    setBackingUp("Preparing…");
+    try {
+      const out = await buildBackup();
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `talos-backup-${todayISO()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      setBackingUp("");
+    } catch {
+      setBackingUp("Failed");
+      setTimeout(() => setBackingUp(""), 2000);
+    }
   };
 
-  const plans = live(db.plans);
+  if (!data) {
+    return failed ? (
+      <main className="screen">
+        <ScreenHeader title="Settings" />
+        <p role="alert" className="muted">
+          Failed.{" "}
+          <button type="button" className="btn btn-sm" onClick={reload}>
+            Retry
+          </button>
+        </p>
+      </main>
+    ) : (
+      <PageSkeleton />
+    );
+  }
 
   return (
     <main className="screen">
       <ScreenHeader title="Settings" />
 
+      {notice && (
+        <p role={notice.ok ? "status" : "alert"} style={{ color: notice.ok ? "var(--text-2)" : "var(--danger)", fontSize: "var(--t-sm)", margin: 0 }}>
+          {notice.text}
+        </p>
+      )}
+
       <span className="label group-title">Targets</span>
       <div className="card list">
-        <Row label="Calories" value={`${fmtNum(s.calories)} kcal`} onClick={() => setEdit("targets")} />
-        <Row label="Protein" value={`${s.protein} g`} onClick={() => setEdit("targets")} />
-        <Row label="Carbs" value={`${s.carbs} g`} onClick={() => setEdit("targets")} />
-        <Row label="Fat" value={`${s.fat} g`} onClick={() => setEdit("targets")} />
+        <Row label="Calories" value={`${fmtNum(data.targets.calories)} kcal`} onClick={() => setEdit("targets")} />
+        <Row label="Protein" value={`${data.targets.protein} g`} onClick={() => setEdit("targets")} />
       </div>
 
       {FLAGS.workout && (
         <>
           <span className="label group-title">Workout</span>
           <div className="card list">
-            <Row label="Rest time" value={`${s.restSec} s`} onClick={() => setEdit("rest")} />
-            <Row label="Plans" value={plans.map((p) => p.name).join(", ")} onClick={() => setEdit("plans")} />
+            <Row label="Rest time" value={`${data.restSeconds} s`} onClick={() => setEdit("rest")} />
+            <Row label="Plans" value={data.plans.map((p) => p.name).join(", ")} onClick={() => setEdit("plans")} />
           </div>
         </>
       )}
 
       <span className="label group-title">Logging</span>
       <div className="card list">
-        <Row label="Aliases" value={String(s.aliases.length)} onClick={() => setEdit("aliases")} />
-        <Row label="Saved meals" value={String(live(db.meals).length)} href="/tabs/nutrition?view=meals" />
-        <Row label="Statuses" value={String(s.statuses.length)} onClick={() => setEdit("statuses")} />
-        <Row label="Context blurb" value={s.context ? `${s.context.length} chars` : "Empty"} onClick={() => setEdit("context")} />
+        <Row label="Saved meals" value={String(data.savedMeals)} href="/tabs/nutrition?view=meals" />
+        <Row label="Context blurb" value={data.contextBlurb ? `${data.contextBlurb.length} chars` : "Empty"} onClick={() => setEdit("context")} />
+      </div>
+
+      <span className="label group-title">Tabs</span>
+      <div className="card list">
+        {ARCHIVABLE.map((t) => {
+          const on = !archived?.has(t.key);
+          return (
+            <div key={t.key} className="row">
+              <span className="row-label">{t.label}</span>
+              <span className="row-value">{on ? "Shown" : "Archived"}</span>
+              <button
+                type="button"
+                role="switch"
+                className="switch"
+                aria-checked={on}
+                aria-label={`${t.label} shown`}
+                disabled={!archived}
+                onClick={() => setArchiving({ tab: t.key, label: t.label, archive: on })}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <p className="faint" style={{ fontSize: "var(--t-xs)", margin: "calc(-1 * var(--s-2)) var(--s-4) 0" }}>
+        Archived tabs move to the bottom of Tabs and chat won&rsquo;t log to them. Weight and Nutrition always stay.
+      </p>
+
+      <span className="label group-title">Chat</span>
+      <div className="card list">
+        <Row label="Auto-save confidence" value={data.confidence.toFixed(2)} onClick={() => setEdit("confidence")} />
+        <Row label="Timezone" value={data.timezone} onClick={() => setEdit("timezone")} />
       </div>
 
       <span className="label group-title">Appearance</span>
@@ -179,12 +212,38 @@ export default function SettingsPage() {
             {copy || "Copy markdown"}
           </span>
         </button>
-        <button type="button" className="row" onClick={backup}>
+        <button type="button" className="row" onClick={backup} disabled={backingUp === "Preparing…"}>
           <span className="row-label">Download backup</span>
-          <span className="row-value">JSON</span>
+          <span className="row-value" style={{ color: backingUp === "Failed" ? "var(--danger)" : undefined }}>{backingUp || "JSON"}</span>
         </button>
       </div>
 
+      {archiving && (
+        <Sheet title={`${archiving.archive ? "Archive" : "Unarchive"} ${archiving.label}?`} onClose={() => setArchiving(null)}>
+          <p className="muted" style={{ fontSize: "var(--t-sm)", margin: 0 }}>
+            {archiving.archive
+              ? "It moves to Archived at the bottom of Tabs and chat won't log to it. Your data stays."
+              : "It goes back on Tabs and chat logs to it again."}
+          </p>
+          <div className="sheet-actions">
+            <button type="button" className="btn" onClick={() => setArchiving(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={async () => {
+                const a = archiving;
+                setArchiving(null);
+                const ok = await setTabArchived(a.tab, a.archive);
+                setNotice(ok ? { text: `${a.label} ${a.archive ? "archived" : "unarchived"}.`, ok: true } : { text: "Failed", ok: false });
+              }}
+            >
+              {archiving.archive ? "Archive" : "Unarchive"}
+            </button>
+          </div>
+        </Sheet>
+      )}
       {edit === "targets" && (
         <FormSheet
           title="Targets"
@@ -192,100 +251,77 @@ export default function SettingsPage() {
           fields={[
             { name: "calories", label: "Calories", type: "number" },
             { name: "protein", label: "Protein (g)", type: "number" },
-            { name: "carbs", label: "Carbs (g)", type: "number" },
-            { name: "fat", label: "Fat (g)", type: "number" },
           ]}
-          initial={s}
+          initial={data.targets}
+          validate={(v) =>
+            !isInt(v.calories, 500, 10000) ? "Calories must be a whole number from 500 to 10,000."
+              : !isInt(v.protein, 0, 500) ? "Protein must be a whole number from 0 to 500."
+              : null
+          }
           onClose={() => setEdit(null)}
-          onSubmit={(v) => save(v as Partial<Settings>)}
+          onSubmit={(v) =>
+            run(settingsApi.setTargets(v.calories as number, v.protein as number), "Targets saved. They apply from today; past days keep theirs.")
+          }
         />
       )}
       {edit === "rest" && (
         <FormSheet
           title="Rest time"
           confirm
-          fields={[{ name: "restSec", label: "Seconds", type: "number", full: true }]}
-          initial={s}
+          fields={[{ name: "rest", label: "Seconds", type: "number", full: true }]}
+          initial={{ rest: data.restSeconds }}
+          validate={(v) => (!isInt(v.rest, 10, 900) ? "Rest must be 10 to 900 seconds." : null)}
           onClose={() => setEdit(null)}
-          onSubmit={(v) => save(v as Partial<Settings>)}
-        />
-      )}
-      {edit === "aliases" && (
-        <FormSheet
-          title="Aliases"
-          confirm
-          fields={[{ name: "aliases", label: "One per line: short = expansion", type: "textarea" }]}
-          initial={{ aliases: s.aliases.map((a) => `${a.from} = ${a.to}`).join("\n") }}
-          onClose={() => setEdit(null)}
-          onSubmit={(v) =>
-            save({
-              aliases: lines(v.aliases as string)
-                .map((l) => l.split("=").map((x) => x.trim()))
-                .filter(([a, b]) => a && b)
-                .map(([from, to]) => ({ from, to })),
-            })
-          }
-        />
-      )}
-      {edit === "statuses" && (
-        <FormSheet
-          title="Application statuses"
-          confirm
-          fields={[{ name: "statuses", label: "One per line, in order", type: "textarea" }]}
-          initial={{ statuses: s.statuses.join("\n") }}
-          onClose={() => setEdit(null)}
-          onSubmit={(v) => save({ statuses: lines(v.statuses as string) })}
+          onSubmit={(v) => run(settingsApi.update({ rest_seconds: v.rest as number }), "Rest time saved.")}
         />
       )}
       {edit === "context" && (
         <FormSheet
           title="Context blurb"
           confirm
-          fields={[{ name: "context", label: "Included in the review packet", type: "textarea" }]}
-          initial={s}
+          fields={[{ name: "context", label: "Included in the review packet", type: "textarea", trim: false }]}
+          initial={{ context: data.contextBlurb }}
           onClose={() => setEdit(null)}
-          onSubmit={(v) => save({ context: v.context as string })}
+          onSubmit={(v) => run(settingsApi.update({ context_blurb: String(v.context ?? "") }), "Context saved.")}
+        />
+      )}
+      {edit === "confidence" && (
+        <FormSheet
+          title="Auto-save confidence"
+          confirm
+          fields={[{ name: "confidence", label: "0.50 to 0.99. Below it, chat asks before saving.", type: "number", full: true }]}
+          initial={{ confidence: data.confidence }}
+          validate={(v) =>
+            typeof v.confidence !== "number" || v.confidence < 0.5 || v.confidence > 0.99 ? "Use a number from 0.50 to 0.99." : null
+          }
+          onClose={() => setEdit(null)}
+          onSubmit={(v) => run(settingsApi.update({ confidence_threshold: v.confidence as number }), "Confidence saved.")}
+        />
+      )}
+      {edit === "timezone" && (
+        <FormSheet
+          title="Timezone"
+          confirm
+          fields={[{ name: "timezone", label: "IANA name, e.g. America/New_York", full: true }]}
+          initial={{ timezone: data.timezone }}
+          validate={(v) => (!String(v.timezone ?? "").trim() ? "Timezone is required." : null)}
+          onClose={() => setEdit(null)}
+          onSubmit={(v) => run(settingsApi.update({ timezone: String(v.timezone).trim() }), "Timezone saved.")}
         />
       )}
       {edit === "plans" && (
         <Sheet title="Plans" onClose={() => setEdit(null)}>
           <div className="card list">
-            {plans.map((p) => (
-              <Row key={p.id} label={p.name} value={`${p.exercises.length} exercises`} onClick={() => setEdit({ plan: p })} />
+            {data.plans.map((p) => (
+              <div key={p.name} className="row" style={{ flexDirection: "column", alignItems: "flex-start", padding: "var(--s-3) var(--s-4)" }}>
+                <span className="row-label">{p.name}</span>
+                <span className="cell-sub" style={{ whiteSpace: "normal" }}>
+                  {p.exercises.join(", ") || "No exercises"}
+                </span>
+              </div>
             ))}
           </div>
-          <div className="sheet-actions">
-            <button type="button" className="btn" onClick={() => setEdit({ plan: "new" })}>
-              Add plan
-            </button>
-          </div>
         </Sheet>
-      )}
-      {edit && typeof edit === "object" && (
-        <FormSheet
-          title={edit.plan === "new" ? "New plan" : "Edit plan"}
-          confirm={edit.plan !== "new"}
-          fields={[
-            { name: "name", label: "Name" },
-            { name: "exercises", label: "Exercises, one per line", type: "textarea" },
-          ]}
-          initial={edit.plan === "new" ? {} : { name: edit.plan.name, exercises: edit.plan.exercises.join("\n") }}
-          onClose={() => setEdit("plans")}
-          onDelete={
-            edit.plan !== "new"
-              ? () => {
-                  update("plans", (edit.plan as Plan).id, { deleted: true });
-                  setEdit("plans");
-                }
-              : undefined
-          }
-          onSubmit={(v) => {
-            const data = { name: v.name as string, exercises: lines(v.exercises as string) };
-            if (edit.plan === "new") add("plans", { id: uid(), ...data });
-            else update("plans", edit.plan.id, data);
-            setEdit("plans");
-          }}
-        />
       )}
     </main>
   );

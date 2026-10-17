@@ -1294,6 +1294,56 @@ html.kb-open .composer {
   bottom: var(--kb);
 }
 
+.tab-chips {
+  max-width: 528px;
+  margin: 0 auto var(--s-2);
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+
+.tab-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-chip {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  position: relative;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+/* 30px pill, 44px tap target */
+.tab-chip::after {
+  content: "";
+  position: absolute;
+  inset: -7px -2px;
+}
+
+.tab-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+.msg-tab {
+  align-self: flex-end;
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .composer-inner {
   max-width: 528px;
   margin: 0 auto;
@@ -1515,6 +1565,44 @@ html.kb-open .composer {
   justify-content: space-between;
   gap: var(--s-3);
   margin-top: calc(-1 * var(--s-2));
+}
+
+/* ============================================================
+   Archived tabs
+   ============================================================ */
+.archived-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  font-size: var(--t-sm);
+}
+
+.archived-acc > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  padding: 0 var(--s-4);
+  cursor: pointer;
+}
+
+.archived-acc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.archived-acc > summary svg {
+  transition: transform var(--dur) var(--ease);
+}
+
+.archived-acc[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.archived-acc .row {
+  border-top: 1px solid var(--border);
 }
 
 /* ============================================================

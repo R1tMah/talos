@@ -54,7 +54,8 @@ function parse(table: string, res: { data: Json | null; error: unknown }): Write
 
 /** Bodies are saved exactly as given; the database functions also log an actions row. */
 export const notesApi = {
-  add: async (kind: NoteKind, date: string, body: string) =>
+  /** "weight" notes live in the Weight tab's log, not a notepad screen. */
+  add: async (kind: NoteKind | "weight", date: string, body: string) =>
     parse("notes", await createClient().rpc("add_note", { p_kind: kind, p_date: date, p_body: body })),
   setBody: async (id: string, body: string) => parse("notes", await createClient().rpc("set_note_body", { p_id: id, p_body: body })),
   remove: async (id: string) => parse("notes", await createClient().rpc("delete_note", { p_id: id })),

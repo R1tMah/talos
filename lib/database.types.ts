@@ -819,6 +819,7 @@ export type Database = {
       }
       settings: {
         Row: {
+          archived_tabs: string[]
           calorie_target: number
           confidence_threshold: number
           context_blurb: string | null
@@ -828,6 +829,7 @@ export type Database = {
           timezone: string
         }
         Insert: {
+          archived_tabs?: string[]
           calorie_target?: number
           confidence_threshold?: number
           context_blurb?: string | null
@@ -837,6 +839,7 @@ export type Database = {
           timezone?: string
         }
         Update: {
+          archived_tabs?: string[]
           calorie_target?: number
           confidence_threshold?: number
           context_blurb?: string | null
@@ -1292,6 +1295,19 @@ export type Database = {
         Args: { p_body: string; p_id: string; p_tool?: string }
         Returns: Json
       }
+      set_tab_archived: {
+        Args: { p_archived: boolean; p_tab: string; p_tool?: string }
+        Returns: Json
+      }
+      set_targets: {
+        Args: {
+          p_calories: number
+          p_date: string
+          p_protein_g: number
+          p_tool?: string
+        }
+        Returns: Json
+      }
       start_workout: {
         Args: { p_date: string; p_plan_id: string; p_tool?: string }
         Returns: Json
@@ -1414,6 +1430,10 @@ export type Database = {
           p_variant: string
           p_weight_lb: number
         }
+        Returns: Json
+      }
+      update_settings: {
+        Args: { p_changes: Json; p_tool?: string }
         Returns: Json
       }
       update_weight: {

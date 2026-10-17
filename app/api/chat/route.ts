@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { ChatResponse } from "@/lib/agent/cards";
 import { MODEL, run } from "@/lib/agent/run";
 import { loadCtx, ownerDb, proposer } from "@/lib/agent/server";
+import { isChatTab, type ChatTab } from "@/lib/tabs";
 import type { Json } from "@/lib/database.types";
 
 const PER_MINUTE = 20; // a front-end bug can't loop and burn credits
@@ -14,7 +15,7 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   const db = await ownerDb();
   if (!db) return failed(401);
 
-  let body: { text?: unknown; clientMsgId?: unknown };
+  let body: { text?: unknown; clientMsgId?: unknown; tab?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -23,6 +24,9 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   const text = typeof body.text === "string" ? body.text : "";
   const clientMsgId = typeof body.clientMsgId === "string" ? body.clientMsgId : "";
   if (!text.trim() || text.length > MAX_LENGTH || !clientMsgId) return failed(400);
+  // Optional tab chip; anything that isn't a known tab is rejected rather than ignored.
+  if (body.tab != null && !isChatTab(body.tab)) return failed(400);
+  const tab = body.tab as ChatTab | undefined;
 
   // The same message sent twice gets the first answer back, not a second write.
   const seen = await db.from("message_log").select("response").eq("client_msg_id", clientMsgId).maybeSingle();
@@ -45,7 +49,7 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   let response: ChatResponse;
   let meta: { route: string; tool_calls: Json; model: string | null } = { route: "model", tool_calls: [], model: MODEL };
   try {
-    const result = await run(loaded.ctx, loaded.threshold, proposer(db, logged.data.id));
+    const result = await run({ ...loaded.ctx, tab }, loaded.threshold, proposer(db, logged.data.id));
     response = { cards: result.cards };
     meta = { route: result.route, tool_calls: result.calls as unknown as Json, model: result.route === "model" ? MODEL : null };
   } catch {

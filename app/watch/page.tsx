@@ -25,7 +25,7 @@ export default function WatchPage() {
   if (!data) {
     return failed ? (
       <main className="screen">
-        <ScreenHeader title="Watch" />
+        <ScreenHeader title="WATCH" brand />
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -45,7 +45,8 @@ export default function WatchPage() {
   return (
     <main className="screen">
       <ScreenHeader
-        title="Watch"
+        title="WATCH"
+        brand
         right={
           <button type="button" className="icon-btn" aria-label="Add source" onClick={() => setAdding("pick")}>
             <IconPlus />

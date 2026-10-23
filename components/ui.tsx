@@ -12,6 +12,8 @@ export function ScreenHeader({ title, back, right, brand }: { title: string; bac
           <IconBack />
         </Link>
       )}
+      {/* Balances a right-side control so a centered wordmark stays centered. */}
+      {brand && right && !back && <span className="header-spacer" aria-hidden />}
       <h1 className={brand ? "brand" : undefined}>{title}</h1>
       {right}
     </header>

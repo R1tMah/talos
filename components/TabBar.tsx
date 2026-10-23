@@ -8,11 +8,13 @@ import { FLAGS } from "@/lib/flags";
 import { useWorkoutClock } from "@/lib/workoutClock";
 import { IconChat, IconDumbbell, IconEye, IconGrid, IconSliders } from "./Icons";
 
-const ITEMS = [
+/** Main tabs in bar order; SwipeNav moves between neighbours. */
+export const NAV_ITEMS = [
   { href: "/", label: "Chat", Icon: IconChat, match: (p: string) => p === "/", primary: true },
   { href: "/workout", label: "Workout", Icon: IconDumbbell, match: (p: string) => p.startsWith("/workout") },
-  { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
+  
   { href: "/watch", label: "Watch", Icon: IconEye, match: (p: string) => p.startsWith("/watch") },
+  { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
   { href: "/settings", label: "Settings", Icon: IconSliders, match: (p: string) => p.startsWith("/settings") },
 ].filter((i) => i.href !== "/workout" || FLAGS.workout);
 
@@ -35,8 +37,8 @@ export function TabBar() {
   if (path === "/login") return null;
 
   return (
-    <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${ITEMS.length}, 1fr)` }}>
-      {ITEMS.map(({ href, label, Icon, match, primary }) => {
+    <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${NAV_ITEMS.length}, 1fr)` }}>
+      {NAV_ITEMS.map(({ href, label, Icon, match, primary }) => {
         const live = href === "/workout" && elapsed != null;
         return (
           <Link

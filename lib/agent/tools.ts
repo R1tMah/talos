@@ -1084,6 +1084,30 @@ async function appsFor(db: Db, company: string) {
   return data ?? [];
 }
 
+const roleWords = (s: string) => s.toLowerCase().split(/[^a-z0-9+#]+/).filter((w) => w && !["the", "one", "role", "position", "job", "for", "at"].includes(w));
+
+/**
+ * Which of a company's applications the owner means. A named role keeps the ones whose
+ * position has every word of it (by prefix: "ml" ~ "ML Engineer", "swe" ~ "SWE Intern");
+ * a status change prefers ones not already in that status. Never narrows to nothing.
+ */
+export function narrowApps<T extends Pick<AppRow, "position" | "status">>(apps: T[], which: string | null, status: string | null): T[] {
+  let out = apps;
+  const words = which ? roleWords(which) : [];
+  if (words.length) {
+    const hit = out.filter((a) => {
+      const pos = roleWords(a.position);
+      return words.every((w) => pos.some((p) => p.startsWith(w) || w.startsWith(p)));
+    });
+    if (hit.length) out = hit;
+  }
+  if (status && out.length > 1) {
+    const open = out.filter((a) => a.status !== status);
+    if (open.length) out = open;
+  }
+  return out;
+}
+
 /** The fields a new application still needs, asked for rather than defaulted. */
 function missingAppFields(r: Resolved): MissingField[] {
   const m: MissingField[] = [];
@@ -1135,14 +1159,18 @@ const addApplication: ToolDef = {
     if (resolved.position) resolved.reminder_id = (await reminderFor(ctx.db, company, String(resolved.position)))?.id ?? null;
     const missing = missingAppFields(resolved);
     if (missing.length) return { status: "missing", resolved, title: `Application: ${company}`, missing };
-    const existing = (await appsFor(ctx.db, company)).filter((a) => a.position.toLowerCase() === String(resolved.position).toLowerCase());
+    // Several applications at one company are normal (different roles, or the same role re-posted).
+    // Only the same role on the same day looks like a double entry.
+    const same = (await appsFor(ctx.db, company)).filter(
+      (a) => a.position.toLowerCase() === String(resolved.position).toLowerCase() && a.applied_date === resolved.applied_date,
+    );
     const fields: [string, string][] = [["Company", company], ...appFields(resolved as unknown as AppRow)];
     if (resolved.reminder_id && resolved.status === "Applied") fields.push(["Reminder", "checked off"]);
     return {
       status: "ready",
       resolved,
       fields,
-      warnings: existing.length ? [`You already have a ${company} ${resolved.position} application from ${fmtDay(existing[0].applied_date)}.`] : [],
+      warnings: same.length ? [`You already logged ${company} ${resolved.position} on ${fmtDay(same[0].applied_date)}.`] : [],
     };
   },
   fill(r, values) {
@@ -1208,13 +1236,11 @@ const planApplication: ToolDef = {
     const position = typeof input.position === "string" && input.position.trim() ? input.position.trim() : null;
     const resolved: Resolved = { company, position, date: ctx.today };
     if (!position) return { status: "missing", resolved, title: `Reminder: apply to ${company}`, missing: [{ name: "position", label: "Position", type: "text" }] };
+    // Applying to a company (even the same role) again is normal; past applications are shown, not warned about.
     const applied = (await appsFor(ctx.db, company)).filter((a) => a.position.toLowerCase() === position.toLowerCase());
-    return {
-      status: "ready",
-      resolved,
-      fields: [["Apply to", company], ["Position", position]],
-      warnings: applied.length ? [`You already applied to ${company} ${position} on ${fmtDay(applied[0].applied_date)}.`] : [],
-    };
+    const fields: [string, string][] = [["Apply to", company], ["Position", position]];
+    if (applied.length) fields.push(["Last applied", fmtDay(applied[0].applied_date)]);
+    return { status: "ready", resolved, fields, warnings: [] };
   },
   fill(r, values) {
     const v = String(values.position ?? "").trim();
@@ -1241,9 +1267,13 @@ const updateApplication: ToolDef = {
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["company", "status", "position", "resume_name", "confidence"],
+      required: ["company", "which", "status", "position", "resume_name", "confidence"],
       properties: {
         company: { type: "string" },
+        which: {
+          type: ["string", "null"],
+          description: "Which of the company's applications, when the owner names its role or team, e.g. 'Google ML rejected' -> 'ML'. Null if not said.",
+        },
         status: { type: ["string", "null"], description: "New status, in the owner's word (e.g. 'rejected'). Null if unchanged." },
         position: { type: ["string", "null"], description: "New position, only if the owner is changing it. Null otherwise." },
         resume_name: { type: ["string", "null"], description: "New resume name, copied exactly, only if changing it. Null otherwise." },
@@ -1267,9 +1297,11 @@ const updateApplication: ToolDef = {
       } as Resolved,
       fields: [["Company", a.company], ...appFields(a), ...(status ? [["New status", status] as [string, string]] : [])] as [string, string][],
     });
-    // Several applications at one company (e.g. Google): the owner picks which.
-    if (apps.length > 1) return { status: "ambiguous", options: apps.slice(0, 3).map(toOption) };
-    return { status: "ready", ...toOption(apps[0]), warnings: [] };
+    // Several applications at one company (e.g. Google): narrow by the role the owner named, then
+    // by status (a "rejected" goes to one that isn't rejected yet). Still several: the owner picks.
+    const candidates = narrowApps(apps, verbatim(input.which, ctx.text), status);
+    if (candidates.length > 1) return { status: "ambiguous", options: candidates.slice(0, 3).map(toOption) };
+    return { status: "ready", ...toOption(candidates[0]), warnings: [] };
   },
   async commit(r) {
     const b = r.before as { position: string; status: string; resume_name: string | null };

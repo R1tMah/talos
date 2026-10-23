@@ -334,7 +334,7 @@ export function JobsCard({ s }: { s: WatchSource }) {
       {snap && (
         <div className="watch-line">
           <span>
-            <b className="num">{s.newCount ?? 0}</b> new {s.seenAt ? "since you last looked" : "in the last 3 days"}
+            <b className="num">{s.newCount ?? 0}</b> new {s.seenAt ? "since you marked them seen" : "in the last 3 days"}
           </span>
           <span className="faint num">{snap.matched} open</span>
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
-// The jobs tab: what's new since the owner last looked first, then the rest of the
-// open postings. Opening it counts as looking, so "new" resets for next time.
+// The jobs tab: what's new first, then the rest of the open postings. Postings stay
+// in New until the owner taps "Mark seen"; just opening the tab doesn't clear them.
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -14,8 +14,8 @@ import { shortDate } from "./format";
 const PAGE = 50;
 
 export function JobsView({ s }: { s: WatchSource }) {
-  // "New" is measured from when the tab was last opened, captured before this visit marks it seen.
-  const [since] = useState(() => newSince(s));
+  // "New" is measured from the last time the owner tapped "Mark seen".
+  const [since, setSince] = useState(() => newSince(s));
   const [items, setItems] = useState<JobItem[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [applied, setApplied] = useState<Set<string>>(new Set());
@@ -29,7 +29,6 @@ export function JobsView({ s }: { s: WatchSource }) {
       if (!jobs) return setFailed(true);
       setItems(jobs);
       setApplied(companies);
-      watchApi.markSeen(s.id);
     });
     return () => {
       live = false;
@@ -55,8 +54,21 @@ export function JobsView({ s }: { s: WatchSource }) {
     <>
       <input className="input" type="search" placeholder="Filter by company, role or place" value={query} onChange={(e) => setQuery(e.target.value)} />
       <section className="card list">
-        <div className="group-head label">
-          New {s.seenAt ? `since ${shortDate(since)}` : "in the last 3 days"} ({fresh.length})
+        <div className="group-head label jobs-new-head">
+          <span>New {s.seenAt ? `since ${shortDate(since)}` : "in the last 3 days"} ({fresh.length})</span>
+          {fresh.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={async () => {
+                const now = new Date().toISOString();
+                await watchApi.markSeen(s.id);
+                setSince(now);
+              }}
+            >
+              Mark seen
+            </button>
+          )}
         </div>
         {fresh.length ? fresh.map((j) => <JobRow key={j.key} j={j} applied={applied.has(companyKey(j.company))} />) : (
           <p className="muted watch-empty pad">Nothing new.</p>

@@ -59,7 +59,9 @@ function fieldsFor(kind: WatchKind): Field[] {
       return [...common,
         { name: "categories", label: "Roles", full: true, placeholder: "Software, AI/ML/Data, Quant, Product, Hardware" },
         { name: "locations", label: "Locations (blank = anywhere)", full: true, placeholder: "Boston, NYC, Remote" },
-        { name: "exclude", label: "Leave out titles with", full: true, placeholder: "PhD, Senior" }, every, show];
+        { name: "us_only", label: "US only", type: "toggle" },
+        { name: "bachelors", label: "Leave out Master's/PhD roles", type: "toggle" },
+        { name: "exclude", label: "Leave out titles with", full: true, placeholder: "Senior, Clearance" }, every, show];
     case "newsletter":
       return [...common, { name: "url", label: "Latest-issue page", full: true, placeholder: "https://www.morningbrew.com/issues/latest" },
         { name: "markets", label: "Markets numbers", type: "toggle" }, every, show];
@@ -86,7 +88,7 @@ function toValues(s: Pick<WatchSource, "kind" | "title" | "config" | "enabled" |
     case "headlines": return { ...base, hn: c.hn, feeds: (c.feeds as string[]).join("\n"), limit: c.limit };
     case "jobs": {
       const j = c as unknown as JobsConfig;
-      return { ...base, categories: j.categories.join(", "), locations: j.locations.join(", "), exclude: j.exclude.join(", ") };
+      return { ...base, categories: j.categories.join(", "), locations: j.locations.join(", "), exclude: j.exclude.join(", "), us_only: j.us_only, bachelors: j.bachelors };
     }
     case "weather": return { ...base, place: c.place, lat: c.lat, lon: c.lon };
     case "newsletter": return { ...base, url: c.url, markets: c.markets };
@@ -109,7 +111,8 @@ function fromValues(kind: WatchKind, prev: Record<string, unknown>, v: Values): 
     case "espn_team": return { ...base, config: { ...prev, league: v.league, sport: LEAGUES[v.league as string], team: str(v.team).toLowerCase(), players: list(v.players) } };
     case "espn_news": return { ...base, config: { ...prev, league: v.league, sport: LEAGUES[v.league as string], limit: Number(v.limit) } };
     case "headlines": return { ...base, config: { ...prev, hn: Boolean(v.hn), feeds: list(v.feeds), limit: Number(v.limit) } };
-    case "jobs": return { ...base, config: { ...prev, categories: list(v.categories), locations: list(v.locations), exclude: list(v.exclude) } };
+    case "jobs": return { ...base, config: { ...prev, categories: list(v.categories), locations: list(v.locations), exclude: list(v.exclude),
+      us_only: Boolean(v.us_only), bachelors: Boolean(v.bachelors) } };
     case "weather": return { ...base, config: { ...prev, place: str(v.place), lat: Number(v.lat), lon: Number(v.lon) } };
     case "newsletter": return { ...base, config: { ...prev, url: str(v.url), markets: Boolean(v.markets) } };
     case "transit": return {

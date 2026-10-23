@@ -12,6 +12,7 @@ import type {
 import { fallbackLink } from "./types";
 import { jobMatches } from "./match";
 import { parseNewsletter } from "./newsletter";
+import { categoryOf, isOpen, onNewGradList } from "./simplify";
 
 const TIMEOUT_MS = 15_000;
 
@@ -267,6 +268,9 @@ interface Listing {
   date_posted: number; // unix seconds
   category?: string;
   sponsorship?: string;
+  source?: string;
+  company_url?: string;
+  degrees?: string[];
   active: boolean;
   is_visible: boolean;
 }
@@ -274,7 +278,7 @@ interface Listing {
 export interface JobsFetch {
   /** Every listing that's open and visible, by id (so closed ones can be told apart from filtered ones). */
   open: Map<string, JobData>;
-  /** Of those, the ids that match the owner's filters. */
+  /** Of those, the ids that are on the README's new-grad list and match the owner's filters. */
   matched: Set<string>;
 }
 
@@ -284,13 +288,15 @@ export async function fetchJobs(c: JobsConfig): Promise<JobsFetch> {
   const open = new Map<string, JobData>();
   const matched = new Set<string>();
   for (const l of all) {
-    if (!l.active || !l.is_visible || !l.id) continue;
+    if (!isOpen(l) || !l.is_visible || !l.id) continue;
     const job: JobData = {
       company: l.company_name, title: l.title, locations: l.locations ?? [], url: l.url,
-      posted: new Date(l.date_posted * 1000).toISOString(), category: l.category ?? null, sponsorship: l.sponsorship ?? null,
+      posted: new Date(l.date_posted * 1000).toISOString(), category: categoryOf(l), sponsorship: l.sponsorship ?? null,
+      degrees: l.degrees ?? [],
     };
     open.set(l.id, job);
-    if (jobMatches(job, c)) matched.add(l.id);
+    // listings.json also holds scraped postings the README leaves out; only the list counts.
+    if (onNewGradList(l) && jobMatches(job, c)) matched.add(l.id);
   }
   return { open, matched };
 }

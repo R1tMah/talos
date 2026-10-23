@@ -14,7 +14,13 @@ export interface TeamConfig {
 }
 export interface NewsConfig { sport: string; league: string; limit: number }
 export interface HeadlinesConfig { hn: boolean; feeds: string[]; limit: number }
-export interface JobsConfig { categories: string[]; locations: string[]; exclude: string[] }
+export interface JobsConfig {
+  categories: string[];
+  locations: string[];
+  exclude: string[];
+  us_only?: boolean; // at least one location in the US
+  bachelors?: boolean; // leave out roles that need a Master's or PhD (don't accept a Bachelor's, or say so in the title)
+}
 export interface NewsletterConfig {
   url: string; // the newsletter's "latest issue" page, e.g. https://www.morningbrew.com/issues/latest
   markets: boolean; // show the markets numbers card
@@ -117,6 +123,7 @@ export interface JobData {
   posted: string; // ISO
   category: string | null;
   sponsorship: string | null;
+  degrees?: string[]; // degrees the posting accepts, as listed ("Bachelor's", "Master's", "PhD")
 }
 export interface JobsSnap { matched: number; active: number; link: string }
 

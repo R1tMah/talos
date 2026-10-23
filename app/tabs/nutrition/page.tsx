@@ -49,6 +49,12 @@ const SOURCE_LABEL: Record<FoodSource, string> = { typed: "typed", saved_meal: "
 
 const pct = (v: number, t: number) => `${Math.min(100, t ? (v / t) * 100 : 0)}%`;
 const grams = (n: number | null) => (n == null ? "–" : Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+/** "(450 left)" toward a target, or "(120 over)" past it. Numbers only, no judgment. */
+function remaining(total: number, target: number, fmt: (n: number) => string, unit = "") {
+  const diff = Math.round((target - total) * 10) / 10;
+  return diff >= 0 ? `(${fmt(diff)}${unit} left)` : `(${fmt(-diff)}${unit} over)`;
+}
 const portionText = (e: { portions: number | null; unit: string | null }) =>
   e.portions == null ? "" : `${grams(e.portions)} ${e.unit ?? "serving"}`;
 
@@ -157,6 +163,7 @@ function Nutrition() {
   const weekEnd = addDays(ws, 6) < today ? addDays(ws, 6) : today;
   const weekRows = days.filter((d) => d.date >= ws && d.date <= weekEnd);
   const weekTotal = weekRows.reduce((a, d) => a + d.cal, 0);
+  const weekProtein = weekRows.reduce((a, d) => a + d.p, 0);
   const weekLen = Math.round((fromISO(weekEnd).getTime() - fromISO(ws).getTime()) / 86400000) + 1;
   const isThisWeek = ws === weekStart(today);
 
@@ -217,7 +224,9 @@ function Nutrition() {
             <div className="grid-2" style={{ gap: "var(--s-4)" }}>
               <div>
                 <div className="macro-head">
-                  <span className="label">Calories</span>
+                  <span className="label">
+                    Calories <span className="faint num">{remaining(day?.cal ?? 0, targets.cal, fmtNum)}</span>
+                  </span>
                 </div>
                 <div className="macro-big num">
                   {fmtNum(day?.cal ?? 0)} <small>/ {fmtNum(targets.cal)}</small>
@@ -228,7 +237,9 @@ function Nutrition() {
               </div>
               <div>
                 <div className="macro-head">
-                  <span className="label">Protein</span>
+                  <span className="label">
+                    Protein <span className="faint num">{remaining(day?.p ?? 0, targets.p, grams, " g")}</span>
+                  </span>
                 </div>
                 <div className="macro-big num">
                   {grams(day?.p ?? 0)} <small>/ {targets.p} g</small>
@@ -245,6 +256,8 @@ function Nutrition() {
               { label: isThisWeek ? "Week so far" : `Week of ${fmtDay(ws)}`, value: fmtNum(weekTotal), unit: "kcal" },
               { label: "Days logged", value: weekRows.length, sub: `of ${weekLen}` },
               { label: "Daily avg", value: weekRows.length ? fmtNum(weekTotal / weekRows.length) : "–", unit: "kcal" },
+              // Same rule as calories: only days with entries count (missing is not zero).
+              { label: "Avg protein", value: weekRows.length ? grams(Math.round((weekProtein / weekRows.length) * 10) / 10) : "–", unit: "g" },
             ]}
           />
 

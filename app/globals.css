@@ -15,19 +15,21 @@
   --surface-3: #2a2350;
   --border: #2e2754;
   --border-strong: #3e3570;
-  --text: #e9ecef;
-  --text-2: #a9a3c4;
-  --text-3: #746d94;
-  --accent: #5ad8ec;
-  --accent-ink: #061317;
-  --accent-soft: rgba(90, 216, 236, 0.12);
-  --accent-line: rgba(90, 216, 236, 0.4);
+  /* Text is metallic gray (silver) rather than white; accents are soft pink. */
+  --text: #c9cdd6;
+  --text-2: #9a96b0;
+  --text-3: #726c8f;
+  --metal: linear-gradient(180deg, #eef0f4 0%, #c5c9d2 45%, #9da2ad 100%);
+  --accent: #f4a6c8;
+  --accent-ink: #2b0f1f;
+  --accent-soft: rgba(244, 166, 200, 0.13);
+  --accent-line: rgba(244, 166, 200, 0.42);
   --warn: #e3b55f;
   --warn-soft: rgba(227, 181, 95, 0.12);
   --danger: #ef6b73;
   --danger-soft: rgba(239, 107, 115, 0.12);
   --band-a: rgba(255, 255, 255, 0.025);
-  --band-b: rgba(90, 216, 236, 0.045);
+  --band-b: rgba(244, 166, 200, 0.05);
   --break-fill: rgba(255, 255, 255, 0.07);
   --break-edge: rgba(255, 255, 255, 0.22);
   --scrim: rgba(8, 5, 20, 0.65);
@@ -94,18 +96,19 @@
     --border: #e1e5ea;
     --border-strong: #cfd5dc;
     --text: #0e1116;
+    --metal: none;
     --text-2: #59616c;
     --text-3: #8b929c;
-    --accent: #0a8fa8;
+    --accent: #c2477f;
     --accent-ink: #ffffff;
-    --accent-soft: rgba(10, 143, 168, 0.1);
-    --accent-line: rgba(10, 143, 168, 0.4);
+    --accent-soft: rgba(194, 71, 127, 0.1);
+    --accent-line: rgba(194, 71, 127, 0.38);
     --warn: #a8761a;
     --warn-soft: rgba(168, 118, 26, 0.1);
     --danger: #c9343e;
     --danger-soft: rgba(201, 52, 62, 0.08);
     --band-a: rgba(0, 0, 0, 0.025);
-    --band-b: rgba(10, 143, 168, 0.06);
+    --band-b: rgba(194, 71, 127, 0.06);
     --break-fill: rgba(0, 0, 0, 0.05);
     --break-edge: rgba(0, 0, 0, 0.2);
     --scrim: rgba(10, 12, 16, 0.35);
@@ -129,18 +132,19 @@
   --border: #e1e5ea;
   --border-strong: #cfd5dc;
   --text: #0e1116;
+  --metal: none;
   --text-2: #59616c;
   --text-3: #8b929c;
-  --accent: #0a8fa8;
+  --accent: #c2477f;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(10, 143, 168, 0.1);
-  --accent-line: rgba(10, 143, 168, 0.4);
+  --accent-soft: rgba(194, 71, 127, 0.1);
+  --accent-line: rgba(194, 71, 127, 0.38);
   --warn: #a8761a;
   --warn-soft: rgba(168, 118, 26, 0.1);
   --danger: #c9343e;
   --danger-soft: rgba(201, 52, 62, 0.08);
   --band-a: rgba(0, 0, 0, 0.025);
-  --band-b: rgba(10, 143, 168, 0.06);
+  --band-b: rgba(194, 71, 127, 0.06);
   --break-fill: rgba(0, 0, 0, 0.05);
   --break-edge: rgba(0, 0, 0, 0.2);
   --scrim: rgba(10, 12, 16, 0.35);
@@ -255,6 +259,29 @@ a {
   }
 }
 
+/* After a tab swipe (SwipeNav), the incoming screen slides in from the side swiped toward */
+html[data-swipe="next"] :is(.screen, .chat) {
+  animation: screen-in-next var(--dur) var(--ease);
+}
+
+html[data-swipe="prev"] :is(.screen, .chat) {
+  animation: screen-in-prev var(--dur) var(--ease);
+}
+
+@keyframes screen-in-next {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+}
+
+@keyframes screen-in-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -268,6 +295,23 @@ a {
   letter-spacing: -0.02em;
   margin: 0;
   flex: 1;
+}
+
+/* Dark mode: titles in brushed metal. Light mode sets --metal to none and keeps plain text. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .header h1 {
+    background-image: var(--metal);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+  :root:not([data-theme="light"]) .header h1 {
+    -webkit-text-fill-color: transparent;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .header h1 {
+      -webkit-text-fill-color: currentColor;
+    }
+  }
 }
 
 .header .back {
@@ -2933,4 +2977,11 @@ button.cal-day:active {
 
 .nl-markets .down {
   color: var(--danger);
+}
+
+.jobs-new-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
 }

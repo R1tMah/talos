@@ -125,7 +125,7 @@ export default function TabsPage() {
           {shown("content") && <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />}
           {shown("journal") && <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />}
           {shown("personal") && <NoteCard title="Personal Journal" href="/tabs/personal" pad={stats?.notes.personal} pending={pending} />}
-          {shown("talos") && <NoteCard title="Talos Improvements" href="/tabs/talos" pad={stats?.notes.talos} pending={pending} />}
+          {shown("talos") && <NoteCard title="Talos Improvements" href="/tabs/talos" pad={stats?.notes.talos} pending={pending} unit="open" />}
         </div>
       )}
 
@@ -147,14 +147,14 @@ export default function TabsPage() {
   );
 }
 
-function NoteCard({ title, href, pad, pending }: { title: string; href: string; pad?: { n: number; last: string | null }; pending: string }) {
+function NoteCard({ title, href, pad, pending, unit }: { title: string; href: string; pad?: { n: number; last: string | null }; pending: string; unit?: string }) {
   return (
     <StatCard
       compact
       title={title}
       href={href}
       value={pad ? pad.n : pending}
-      unit={pad ? (pad.n === 1 ? "entry" : "entries") : undefined}
+      unit={pad ? (unit ?? (pad.n === 1 ? "entry" : "entries")) : undefined}
       rows={[{ label: "Last", value: pad?.last ? fmtDay(pad.last) : "–" }]}
     />
   );

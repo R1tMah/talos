@@ -48,15 +48,16 @@ function Aside({ line, on }: { line: Exclude<WeekLine, { kind: "day" }>; on: Han
 }
 
 /**
- * The weight history the way the owner's notes keep it: oldest first, one block per
- * week with its weigh-ins and average, phases and trips where they happened.
+ * The weight history the way the owner's notes keep it, shown newest first: one block
+ * per week with its weigh-ins and average, phases and trips where they happened.
+ * `items` arrive oldest first (that's how weeks are numbered); this flips them.
  * Numbers and the owner's own words only.
  */
 export function WeightLog({ items, ...on }: { items: LogItem[] } & Handlers) {
   if (!items.length) return <div className="card"><div className="empty">No weigh-ins yet.</div></div>;
   return (
     <div style={{ display: "grid", gap: "var(--s-3)" }}>
-      {items.map((item) => {
+      {[...items].reverse().map((item) => {
         if (item.kind === "phase") {
           const p = item.phase;
           return (
@@ -88,7 +89,7 @@ export function WeightLog({ items, ...on }: { items: LogItem[] } & Handlers) {
               </span>
             </div>
             <div style={{ marginTop: 4 }}>
-              {item.lines.map((l) =>
+              {[...item.lines].reverse().map((l) =>
                 l.kind === "day" ? (
                   <button key={l.entry.id} type="button" style={row} onClick={() => on.onDay(l.entry)}>
                     <span className="faint num" style={{ flex: "none", width: 64, fontSize: "var(--t-sm)" }}>

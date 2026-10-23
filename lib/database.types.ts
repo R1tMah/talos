@@ -121,6 +121,36 @@ export type Database = {
           },
         ]
       }
+      api_usage: {
+        Row: {
+          cache_creation_input_tokens: number
+          cache_read_input_tokens: number
+          created_at: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Insert: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          id?: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Update: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+        }
+        Relationships: []
+      }
       applications: {
         Row: {
           applied_date: string
@@ -442,6 +472,35 @@ export type Database = {
           },
         ]
       }
+      message_followups: {
+        Row: {
+          cards: Json
+          created_at: string
+          id: string
+          message_id: string
+        }
+        Insert: {
+          cards: Json
+          created_at?: string
+          id?: string
+          message_id: string
+        }
+        Update: {
+          cards?: Json
+          created_at?: string
+          id?: string
+          message_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_followups_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "message_log"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_log: {
         Row: {
           client_msg_id: string
@@ -451,6 +510,7 @@ export type Database = {
           model: string | null
           response: Json | null
           route: string | null
+          tab: string | null
           text: string
           tool_calls: Json | null
         }
@@ -462,6 +522,7 @@ export type Database = {
           model?: string | null
           response?: Json | null
           route?: string | null
+          tab?: string | null
           text: string
           tool_calls?: Json | null
         }
@@ -473,6 +534,7 @@ export type Database = {
           model?: string | null
           response?: Json | null
           route?: string | null
+          tab?: string | null
           text?: string
           tool_calls?: Json | null
         }
@@ -483,6 +545,7 @@ export type Database = {
           body: string
           created_at: string
           deleted_at: string | null
+          done_at: string | null
           id: string
           kind: string
           logical_date: string
@@ -491,6 +554,7 @@ export type Database = {
           body: string
           created_at?: string
           deleted_at?: string | null
+          done_at?: string | null
           id?: string
           kind: string
           logical_date: string
@@ -499,6 +563,7 @@ export type Database = {
           body?: string
           created_at?: string
           deleted_at?: string | null
+          done_at?: string | null
           id?: string
           kind?: string
           logical_date?: string
@@ -1203,6 +1268,24 @@ export type Database = {
         }
         Returns: Json
       }
+      chat_day: {
+        Args: { p_day: string }
+        Returns: {
+          created_at: string
+          followups: Json
+          id: string
+          response: Json
+          tab: string
+          text: string
+        }[]
+      }
+      chat_days: {
+        Args: never
+        Returns: {
+          day: string
+          n: number
+        }[]
+      }
       complete_reminder: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -1443,6 +1526,10 @@ export type Database = {
       }
       set_note_body: {
         Args: { p_body: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      set_note_done: {
+        Args: { p_done: boolean; p_id: string; p_tool?: string }
         Returns: Json
       }
       set_tab_archived: {

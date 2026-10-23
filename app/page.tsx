@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FormSheet } from "@/components/FormSheet";
 import { IconArrowUp, IconMic, IconStop } from "@/components/Icons";
 import { ResultCard, type CardHandlers } from "@/components/ResultCard";
@@ -11,6 +11,8 @@ import { dataChanged, showToast, undo } from "@/lib/undo";
 import { useDictation } from "@/lib/useDictation";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { CHAT_TABS, type ChatTab } from "@/lib/tabs";
+import { orderChips } from "@/lib/chipRank";
+import { useTopChips } from "@/lib/chipRankData";
 
 const tabName = (k: ChatTab) => CHAT_TABS.find((t) => t.key === k)!.label;
 
@@ -53,6 +55,9 @@ export default function ChatPage() {
   // Tab chips: every tab chat can log to, minus archived ones.
   const archived = useArchivedTabs() as ReadonlySet<string> | null;
   const chips = CHAT_TABS.filter((t) => !archived?.has(t.key));
+  // The three you're likeliest to use at this time of day go first (lib/chipRank.ts).
+  const top = useTopChips(chips.map((c) => c.key));
+  const { first, rest } = orderChips(chips, top);
   const [chosen, setChosen] = useState<ChatTab | null>(null);
   useEffect(() => {
     if (chosen && archived?.has(chosen)) setChosen(null);
@@ -138,33 +143,54 @@ export default function ChatPage() {
     if (cards.some((c) => c.kind === "saved")) dataChanged();
   };
 
-  const handlers = (m: Extract<Msg, { role: "app" }>): CardHandlers => ({
-    undo: async () => {
-      if (m.card.kind !== "saved" || !m.card.actionId) return;
-      const r = await undo(m.card.actionId);
-      if (r.status === "done") setCard(m.id, (c) => ({ ...c, undone: true }) as ChatCard);
-    },
-    choose: (i) => {
-      if (m.card.kind !== "unsure") return;
-      confirm(m.id, m.card.options[i].proposalId, (c) => ({ ...c, resolved: "picked" }) as ChatCard);
-    },
-    save: () => {
-      if (m.card.kind !== "warning") return;
-      confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "saved" }) as ChatCard);
-    },
-    edit: () => {
-      if (m.card.kind !== "warning") return;
-      setText(m.card.text);
-      setCard(m.id, (c) => ({ ...c, resolved: "edit" }) as ChatCard);
-      taRef.current?.focus();
-    },
-    confirm: () => {
-      if (m.card.kind !== "confirm") return;
-      confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "confirmed" }) as ChatCard);
-    },
-    cancel: () => setCard(m.id, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard),
-    fill: () => setFillFor(m.id),
-  });
+  // The prompt behind a reply: the last user message before it.
+  const promptFor = (id: string) => {
+    const i = msgs.findIndex((x) => x.id === id);
+    for (let j = i - 1; j >= 0; j--) {
+      const x = msgs[j];
+      if (x.role === "user") return x;
+    }
+    return null;
+  };
+
+  const handlers = (m: Extract<Msg, { role: "app" }>): CardHandlers => {
+    const p = m.card.kind === "failed" ? promptFor(m.id) : null;
+    return {
+      retry: p
+        ? () => {
+            setText(p.text);
+            setChosen(p.tab && !archived?.has(p.tab) ? p.tab : null);
+            taRef.current?.focus();
+          }
+        : undefined,
+      undo: async () => {
+        if (m.card.kind !== "saved" || !m.card.actionId) return;
+        const r = await undo(m.card.actionId);
+        if (r.status === "done") setCard(m.id, (c) => ({ ...c, undone: true }) as ChatCard);
+      },
+      choose: (i) => {
+        if (m.card.kind !== "unsure") return;
+        confirm(m.id, m.card.options[i].proposalId, (c) => ({ ...c, resolved: "picked" }) as ChatCard);
+      },
+      save: () => {
+        if (m.card.kind !== "warning") return;
+        confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "saved" }) as ChatCard);
+      },
+      edit: () => {
+        if (m.card.kind !== "warning") return;
+        setText(m.card.text);
+        setCard(m.id, (c) => ({ ...c, resolved: "edit" }) as ChatCard);
+        taRef.current?.focus();
+      },
+      confirm: () => {
+        if (m.card.kind !== "confirm") return;
+        confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "confirmed" }) as ChatCard);
+      },
+      cancel: () => setCard(m.id, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard),
+      fill: () => setFillFor(m.id),
+      dismiss: () => setMsgs((xs) => xs.filter((x) => x.id !== m.id)),
+    };
+  };
 
   const fillMsg = msgs.find((m) => m.id === fillFor);
   const fillCard = fillMsg?.role === "app" && fillMsg.card.kind === "missing" ? fillMsg.card : null;
@@ -214,16 +240,18 @@ export default function ChatPage() {
 
       <div className="composer" ref={composerRef}>
         <div className="tab-chips" role="group" aria-label="Log to a tab">
-          {chips.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              className="tab-chip"
-              aria-pressed={chosen === c.key}
-              onClick={() => setChosen((cur) => (cur === c.key ? null : c.key))}
-            >
-              {c.label}
-            </button>
+          {[...first, ...rest].map((c, i) => (
+            <Fragment key={c.key}>
+              {i === first.length && i > 0 && <span className="tab-chips-sep" aria-hidden />}
+              <button
+                type="button"
+                className="tab-chip"
+                aria-pressed={chosen === c.key}
+                onClick={() => setChosen((cur) => (cur === c.key ? null : c.key))}
+              >
+                {c.label}
+              </button>
+            </Fragment>
           ))}
         </div>
         <form

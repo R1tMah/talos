@@ -13,11 +13,11 @@ import { WeightChart } from "@/components/WeightChart";
 import { WeightLog } from "@/components/WeightLog";
 import { breakEnd, fmtRange, overlaps } from "@/lib/breaks";
 import { addDays, fmtDay, fmtDow, logicalToday, weekStart } from "@/lib/date";
-import type { TabExport } from "@/lib/exportTab";
+import { weightExport } from "@/lib/screenExports";
 import type { Break, WeightEntry } from "@/lib/types";
 import { notesApi } from "@/lib/notesData";
 import { useWeightData, weightApi, type WriteResult } from "@/lib/weightData";
-import { buildWeightLog, weightLogRows, weightLogText, type LogItem, type WeightNote } from "@/lib/weightLog";
+import { buildWeightLog, weightLogText, type LogItem, type WeightNote } from "@/lib/weightLog";
 
 const FIELDS: Field[] = [
   { name: "lb", label: "Weight (lb)", type: "number", full: true },
@@ -55,16 +55,6 @@ interface Conflict {
 }
 
 /** The log as a spreadsheet, oldest first: every weigh-in with its week, plus trips and notes. */
-function exportOf(log: LogItem[]): TabExport {
-  return {
-    title: "Weight",
-    columns: [
-      { key: "week", label: "Week" }, { key: "date", label: "Date" }, { key: "lb", label: "lb" },
-      { key: "week_avg", label: "Week average" }, { key: "note", label: "Note" }, { key: "break", label: "Break" },
-    ],
-    rows: weightLogRows(log),
-  };
-}
 
 export default function WeightPage() {
   const { data, failed, reload } = useWeightData();
@@ -109,7 +99,8 @@ export default function WeightPage() {
     return items.sort((a, b) => b.key.localeCompare(a.key)).map((i) => i.row);
   }, [entries, breaks]);
 
-  // The owner's own layout: numbered weeks, oldest first, with phases, trips and notes.
+  // The owner's own layout: numbered weeks, phases, trips and notes. Built oldest first
+  // (for the numbering and the export); WeightLog shows it newest first.
   const log = useMemo(
     () => (data ? buildWeightLog({ entries, weeks: weeks.map((w) => ({ week: w.week, avg: w.avg, days: w.days })), phases: data.phaseTexts, breaks, notes: data.notes }) : []),
     [data, entries, weeks, breaks],
@@ -150,7 +141,7 @@ export default function WeightPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={exportOf(log)} text={weightLogText(log)} order="oldest first, as in the log" />} />
+      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={weightExport(log)} text={weightLogText(log)} order="oldest first" />} />
 
       <SummaryStrip
         items={[

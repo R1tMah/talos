@@ -189,6 +189,8 @@ export default function SettingsPage() {
       <div className="card list">
         <Row label="Auto-save confidence" value={data.confidence.toFixed(2)} onClick={() => setEdit("confidence")} />
         <Row label="Timezone" value={data.timezone} onClick={() => setEdit("timezone")} />
+        <Row label="Chat history" href="/settings/chat-history" />
+        <Row label="API usage" href="/settings/api-usage" />
       </div>
 
       <span className="label group-title">Appearance</span>

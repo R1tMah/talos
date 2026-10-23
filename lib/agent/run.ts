@@ -30,7 +30,12 @@ export interface RunResult {
 // ---- Rules: deterministic routing that skips the model ------------------------------
 
 // Words that name a tracker outright. Used to settle the tool choice, never to fill fields.
-const NAMED: Record<string, RegExp> = { log_leetcode: /\b(leet\s?code|neet\s?code|lc)\b/i };
+const NAMED: Record<string, RegExp> = {
+  log_leetcode: /\b(leet\s?code|neet\s?code|lc)\b/i,
+  // The verb settles which application tool (settleApplications enforces it).
+  plan_application: /\bapply\b/i,
+  add_application: /\bapplied\b/i,
+};
 const BARE_LEETCODE = /^\s*(?:leet\s?code|lc)(?:\s+problem)?\s*[.!]?\s*$/i;
 
 // "personal journal" is listed before "journal" so it wins.
@@ -62,13 +67,102 @@ export function preRoute(ctx: Ctx): Call[] | null {
   return null;
 }
 
+// ---- Apply vs applied: settled by the owner's verb, not the model ---------------------
+//
+// "apply to Ramp" / "need to apply to Ramp" / "remind me to apply to Ramp" = plan_application
+// (the "To apply" list). "applied to Ramp" = add_application. Code corrects the model's pick.
+
+type Tense = "plan" | "done";
+const VERB = /\b(apply|applied)\b/gi;
+const tenseOf = (verb: string): Tense => (verb.toLowerCase() === "applied" ? "done" : "plan");
+
+/** The verb nearest before the company decides; without one, the message's only verb kind does. */
+export function applyTense(text: string, company?: unknown): Tense | null {
+  const verbs = [...text.matchAll(VERB)];
+  if (!verbs.length) return null;
+  const at = typeof company === "string" && company.trim() ? text.toLowerCase().indexOf(company.trim().toLowerCase()) : -1;
+  const before = at >= 0 ? verbs.filter((v) => v.index! < at) : [];
+  if (before.length) return tenseOf(before[before.length - 1][1]);
+  const kinds = new Set(verbs.map((v) => tenseOf(v[1])));
+  return kinds.size === 1 ? [...kinds][0] : null;
+}
+
+// "apply for SWE at Ramp", "apply to Ramp for/as SWE", "apply to Ramp". Trailing "later",
+// "tomorrow", "by Friday" etc. aren't part of either name.
+const TRAILING = /[\s,]+(?:later|soon|today|tonight|tomorrow|this week|next week|by .+)\s*[.!]?\s*$/i;
+export function postingFrom(text: string): { company: string; position: string | null } | null {
+  const t = text.replace(TRAILING, "").replace(/[.!]+\s*$/, "").trim();
+  const forAt = t.match(/\bapply\s+for\s+(?:the\s+|an?\s+)?(.+?)\s+(?:role\s+|position\s+|job\s+)?at\s+(.+)$/i);
+  if (forAt) return { company: forAt[2].trim(), position: forAt[1].trim() };
+  const toFor = t.match(/\bapply\s+(?:to|at|with)\s+(.+?)(?:\s+(?:for|as)\s+(?:the\s+|an?\s+)?(.+))?$/i);
+  return toFor ? { company: toFor[1].trim(), position: toFor[2]?.trim() || null } : null;
+}
+
+/** Rewrites one proposed call to the tool the verb says; anything else passes through. */
+function retense(name: string, input: Record<string, unknown>, text: string): Call {
+  const confidence = input.confidence;
+  if (name === "add_application" && applyTense(text, input.company) === "plan") {
+    return { name: "plan_application", input: { company: input.company, position: input.position ?? null, confidence } };
+  }
+  if (name === "plan_application" && applyTense(text, input.company) === "done") {
+    return {
+      name: "add_application",
+      input: { company: input.company, position: input.position ?? null, applied_days_ago: null, status: null, resume_name: null, confidence },
+    };
+  }
+  // "remind me to apply to Ramp" is a posting to apply to, not a general reminder.
+  if (name === "add_reminder") {
+    const body = typeof input.text === "string" ? input.text : text;
+    const posting = /\bapply\b/i.test(body) && !/\bapplied\b/i.test(body) ? postingFrom(body) : null;
+    if (posting) return { name: "plan_application", input: { ...posting, confidence } };
+  }
+  return { name, input };
+}
+
+export function settleApplications(calls: Call[], text: string): Call[] {
+  return calls.map((c) => {
+    if (c.name !== "no_match") return retense(c.name, c.input, text);
+    // The "Where does this go?" options follow the same rule.
+    const list = Array.isArray(c.input.candidates) ? (c.input.candidates as { tool?: string; args_json?: string }[]) : [];
+    const candidates = list.map((cand) => {
+      try {
+        const args = JSON.parse(cand.args_json ?? "{}");
+        const r = retense(cand.tool ?? "", args, text);
+        return { ...cand, tool: r.name, args_json: JSON.stringify(r.input) };
+      } catch {
+        return cand;
+      }
+    });
+    return { ...c, input: { ...c.input, candidates } };
+  });
+}
+
 // ---- Model -----------------------------------------------------------------------------
 
 const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
 
+Job applications go by the owner's verb: "apply to X" (want to, need to, remind me to, apply later) is plan_application, the list of postings to apply to; "applied to X" is add_application, an application already sent. Neither is add_reminder.
+
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
 If nothing fits, or you would be guessing, call no_match with your best readings. Always respond with tool calls only.`;
+
+/** Records the call's token counts for Settings > API usage. Never fails the chat. */
+async function logUsage(ctx: Ctx, res: Anthropic.Message) {
+  try {
+    const u = res.usage;
+    const { error } = await ctx.db.from("api_usage").insert({
+      model: res.model ?? MODEL,
+      input_tokens: u.input_tokens ?? 0,
+      output_tokens: u.output_tokens ?? 0,
+      cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0,
+      cache_read_input_tokens: u.cache_read_input_tokens ?? 0,
+    });
+    if (error) console.error(`[agent] usage not logged: ${error.message}`);
+  } catch (e) {
+    console.error(`[agent] usage not logged: ${String((e as Error).message ?? e).slice(0, 200)}`);
+  }
+}
 
 let client: Anthropic | null = null;
 const anthropic = () => (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
@@ -107,6 +201,7 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
         },
       ],
     });
+    await logUsage(ctx, res);
     if (res.stop_reason === "refusal" || res.stop_reason === "max_tokens") {
       console.error(`[agent] model stopped: ${res.stop_reason}`);
       return null;
@@ -247,8 +342,9 @@ export async function run(ctx: Ctx, threshold: number, propose: Propose): Promis
   const ruled = preRoute(ctx);
   // A rule match outside the chosen tab ("168" under Runs) goes to the model instead.
   if (ruled && ruled.every((c) => inScope(ctx.tab, c.name))) return { route: "rule", calls: ruled, cards: await decide(ruled, ctx, threshold, propose) };
-  const calls = await callModel(ctx);
-  if (!calls) return { route: "model", calls: [], cards: [{ kind: "failed" }] };
+  const raw = await callModel(ctx);
+  if (!raw) return { route: "model", calls: [], cards: [{ kind: "failed" }] };
+  const calls = settleApplications(raw, ctx.text).filter((c) => inScope(ctx.tab, c.name));
   return { route: "model", calls, cards: await decide(calls, ctx, threshold, propose) };
 }
 

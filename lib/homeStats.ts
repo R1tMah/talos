@@ -24,7 +24,7 @@ export interface HomeStats {
   applications: { total: number; byStatus: Record<string, number> };
   /** Live callbacks per kind, from the callback_counts view: { OA: 3, Interview: 1 }. */
   callbacks: Record<string, number>;
-  /** Live notepad entries per kind: count and latest logical date. */
+  /** Live notepad entries per kind: count and latest logical date. Talos counts only entries not checked off. */
   notes: Record<"personal" | "content" | "journal" | "talos", { n: number; last: string | null }>;
   /** Finished workouts this logical week, and the latest one. */
   lifts: { week: number; last: { plan: string; date: string } | null };
@@ -57,7 +57,7 @@ export function useHomeStats() {
       db.from("redo_queue").select("id", { count: "exact", head: true }),
       db.from("applications").select("status").is("deleted_at", null),
       db.from("callback_counts").select("*"),
-      db.from("notes").select("kind, logical_date").is("deleted_at", null),
+      db.from("notes").select("kind, logical_date, done_at").is("deleted_at", null),
       db.from("workout_history").select("logical_date, plan_name").eq("status", "done")
         .order("logical_date", { ascending: false }).order("started_at", { ascending: false }).limit(30),
       db.from("runs").select("logical_date, distance_mi, duration_sec").is("deleted_at", null)
@@ -73,9 +73,10 @@ export function useHomeStats() {
         return r ? { avg: Number(r.avg_lb), n: Number(r.n) } : null;
       };
       const count = (rows: { dimension: string; n: number }[], dim: string) => rows.find((r) => r.dimension === dim)?.n ?? 0;
-      const pad = (rows: { kind: string; logical_date: string }[], kind: string) => {
-        const dates = rows.filter((r) => r.kind === kind).map((r) => r.logical_date).sort();
-        return { n: dates.length, last: dates.at(-1) ?? null };
+      const pad = (rows: { kind: string; logical_date: string; done_at: string | null }[], kind: string, openOnly = false) => {
+        const mine = rows.filter((r) => r.kind === kind);
+        const dates = mine.map((r) => r.logical_date).sort();
+        return { n: openOnly ? mine.filter((r) => r.done_at == null).length : dates.length, last: dates.at(-1) ?? null };
       };
       setFailed(false);
       setData({
@@ -102,7 +103,7 @@ export function useHomeStats() {
           content: pad(notes.data, "content"),
           journal: pad(notes.data, "journal"),
           personal: pad(notes.data, "personal"),
-          talos: pad(notes.data, "talos"),
+          talos: pad(notes.data, "talos", true),
         },
         runs: (() => {
           const week = runs.data.filter((r) => r.logical_date >= thisWeek && r.logical_date <= today);

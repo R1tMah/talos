@@ -104,7 +104,33 @@ function typed(n: unknown, text: string): n is number {
   return (text.match(/\d+(?:\.\d+)?/g) ?? []).some((t) => Number(t) === n);
 }
 
-/** "28:14" -> 28.23, "1h 13m" -> 73, "20 minutes" -> 20. Null when unreadable. */
+// A grams number with no macro named is protein, the macro the owner tracks: "40g", "40 grams",
+// "320 calories 40gs snack". Counted when nothing names it otherwise, when it's written "gs", or
+// when it comes after the calories. Not an amount of food ("200g chicken"), not another macro
+// ("30g carbs", "fat 12g"), not more than the calories allow, and only when there's exactly
+// one such number: nothing is guessed.
+const GRAMS = /(\d+(?:\.\d+)?)\s*(gs|g|grams?)\b/gi;
+const OTHER_MACRO_AFTER = /^\s*(?:of\b|carbs?\b|c\b|fats?\b|f\b|fiber\b|sugars?\b|serving\b|portion\b)/i;
+const OTHER_MACRO_BEFORE = /\b(?:carbs?|c|fats?|f|fiber|sugars?|serving|portion)\s*[:=]?\s*$/i;
+const NOT_A_FOOD = /^\s*(?:$|[,.;:)+&]|(?:and|cal|kcal|calories|protein|p)\b|\d)/i;
+const CALORIES = /\d+(?:\.\d+)?\s*(?:cal|kcal|calories)\b/i;
+
+/** Protein from a bare "40g", unless that number already went to another field. */
+export function bareProteinG(text: string, taken: (number | null)[] = []): number | null {
+  const cal = text.match(CALORIES);
+  const hits = [...text.matchAll(GRAMS)].filter((m) => {
+    const after = text.slice(m.index! + m[0].length);
+    if (OTHER_MACRO_AFTER.test(after) || OTHER_MACRO_BEFORE.test(text.slice(0, m.index))) return false;
+    return NOT_A_FOOD.test(after) || m[2].toLowerCase() === "gs" || (cal != null && cal.index! < m.index!);
+  });
+  if (hits.length !== 1) return null;
+  const n = Number(hits[0][1]);
+  // Protein is 4 cal/g: more grams than the calories allow is an amount of food, not protein.
+  const kcal = cal ? Number(cal[0].match(/\d+(?:\.\d+)?/)![0]) : null;
+  if (kcal != null && n * 4 > kcal) return null;
+  return taken.includes(n) ? null : n;
+}
+
 /** "28:14" -> 28.23, "1:02:05" -> 62.08, "1h 13m" -> 73, "20 minutes" -> 20. Null when unreadable. */
 function parseMinutes(t: string | null): number | null {
   const secs = t ? parseDuration(t) : null;
@@ -491,7 +517,7 @@ const logFood: ToolDef = {
     description:
       "Something the owner ate that is not one of their saved meals. If it's in the owner's food list, set food to it and " +
       "servings to how many, and leave the numbers null: code looks them up. Otherwise it's a one-off, e.g. " +
-      "'chicken bowl 650 cal 50p': copy calories and protein only if the owner typed the numbers; never estimate them.",
+      "'chicken bowl 650 cal 50p' or '320 calories 40gs snack' (a bare grams number is protein): copy calories and protein only if the owner typed the numbers; never estimate them.",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
     input_schema: {
@@ -503,7 +529,7 @@ const logFood: ToolDef = {
         food: { type: ["string", "null"], description: "The food-list name or alias it matches, as the owner wrote it. Null if it isn't in the food list." },
         servings: { type: ["number", "null"], description: "How many servings of the food-list food ('two tortillas' = 2, 'half' = 0.5). Null if not said." },
         calories: { type: ["number", "null"], description: "Calories the owner typed. Null if they didn't type a number." },
-        protein_g: { type: ["number", "null"], description: "Grams of protein the owner typed. Null if they didn't type a number." },
+        protein_g: { type: ["number", "null"], description: "Grams of protein the owner typed. A grams number with no macro named ('40g', '40gs') is protein. Null if they didn't type a number." },
         carbs_g: { type: ["number", "null"], description: "Grams of carbs the owner typed. Null if not typed." },
         fat_g: { type: ["number", "null"], description: "Grams of fat the owner typed. Null if not typed." },
         days_ago: daysAgo,
@@ -536,9 +562,9 @@ const logFood: ToolDef = {
     if (!description) return { status: "invalid", detail: "No food named." };
     // Numbers the owner didn't type are treated as missing, never as estimates.
     const calories = typed(input.calories, ctx.text) ? Math.round(input.calories as number) : null;
-    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : null;
     const carbs = typed(input.carbs_g, ctx.text) ? (input.carbs_g as number) : null;
     const fat = typed(input.fat_g, ctx.text) ? (input.fat_g as number) : null;
+    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : bareProteinG(ctx.text, [calories, carbs, fat]);
     const resolved: Resolved = { mode: "typed", date, description, calories, protein_g: protein, carbs_g: carbs, fat_g: fat };
     const missing: MissingField[] = [];
     if (calories == null) missing.push({ name: "calories", label: "Calories" });
@@ -805,7 +831,7 @@ const saveMeal: ToolDef = {
     const name = String(input.name ?? "").trim();
     if (!name) return { status: "invalid", detail: "No meal named." };
     const calories = typed(input.calories, ctx.text) ? Math.round(input.calories as number) : null;
-    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : null;
+    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : bareProteinG(ctx.text, [calories]);
     const unit = typeof input.unit === "string" && input.unit.trim() ? input.unit.trim() : null;
     const aliases = (Array.isArray(input.aliases) ? input.aliases : []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
 
@@ -970,8 +996,8 @@ const saveFood: ToolDef = {
     const name = String(input.name ?? "").trim();
     if (!name) return { status: "invalid", detail: "No food named." };
     const calories = typed(input.calories, ctx.text) ? Math.round(input.calories as number) : null;
-    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : null;
     const amount = typed(input.serving_amount, ctx.text) && (input.serving_amount as number) > 0 ? (input.serving_amount as number) : null;
+    const protein = typed(input.protein_g, ctx.text) ? (input.protein_g as number) : bareProteinG(ctx.text, [calories, amount]);
     const unit = typeof input.serving_unit === "string" && input.serving_unit.trim() ? input.serving_unit.trim() : null;
     const aliases = (Array.isArray(input.aliases) ? input.aliases : []).map((a) => String(a).trim().toLowerCase()).filter(Boolean);
 
@@ -1127,7 +1153,8 @@ const addApplication: ToolDef = {
   definition: {
     name: "add_application",
     description:
-      "A new job application, e.g. 'applied to Stripe for SWE today'. Fill only what the owner said; code asks for the rest. " +
+      "A job application already sent, in the past tense: 'applied to Stripe for SWE today', 'just applied at Ramp'. Fill only what the owner said; code asks for the rest. " +
+      "'Apply to X' (not yet applied) is plan_application. " +
       "Not for status changes on an existing application, and not for OAs or interviews.",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
@@ -1218,8 +1245,8 @@ const planApplication: ToolDef = {
   definition: {
     name: "plan_application",
     description:
-      "A job posting the owner saw and plans to apply to later, but hasn't yet, e.g. 'saw a Ramp SWE posting, apply later', " +
-      "'remind me to apply to Stripe new grad'. Not for applications already sent (that's add_application).",
+      "A job the owner wants to apply to but hasn't yet: 'apply to Ramp for SWE', 'need to apply to Stripe new grad', " +
+      "'remind me to apply to Figma', 'saw a Ramp SWE posting, apply later'. Not add_reminder. Not for applications already sent ('applied to', that's add_application).",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
     input_schema: {
@@ -1440,7 +1467,7 @@ const addReminder: ToolDef = {
     name: "add_reminder",
     description:
       "Something the owner wants to be reminded of, e.g. 'remind me to call the landlord', 'renew passport by Nov 1'. " +
-      "Not for job postings to apply to (that's plan_application), and not for logging something already done.",
+      "Never for job applications: 'apply to X' is plan_application and 'applied to X' is add_application. Not for logging something already done.",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
     input_schema: {

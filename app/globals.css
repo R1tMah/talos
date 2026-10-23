@@ -1412,6 +1412,14 @@ html.kb-open .composer {
   inset: -7px -2px;
 }
 
+/* Between the chips Chat put first for this time of day and the rest. */
+.tab-chips-sep {
+  flex: none;
+  width: 1px;
+  margin: 6px 2px;
+  background: var(--border-strong);
+}
+
 .tab-chip[aria-pressed="true"] {
   background: var(--accent-soft);
   border-color: var(--accent-line);
@@ -1425,6 +1433,19 @@ html.kb-open .composer {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--accent);
+}
+
+/* Chat history (Settings): past days, read-only, laid out like chat. */
+.history-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.msg-time {
+  align-self: flex-end;
+  font-size: var(--t-2xs);
+  color: var(--text-3);
 }
 
 .composer-inner {
@@ -1927,6 +1948,51 @@ html.kb-open .composer {
   font-size: var(--t-md);
   color: var(--text);
   margin-top: 4px;
+}
+
+/* Talos Improvements: a checkbox per entry; done entries are struck through */
+.note-row.checkable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.note-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-check {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  color: var(--accent-ink);
+  padding: 0;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+/* A bigger invisible tap target than the 22px box */
+.note-check::before {
+  content: "";
+  position: absolute;
+  inset: -11px;
+}
+
+.note-row.done .note-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.note-row.done .note-text {
+  text-decoration: line-through;
+  color: var(--text-3);
 }
 
 .editor {

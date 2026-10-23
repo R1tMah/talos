@@ -13,7 +13,7 @@ import {
   applicationsApi, BASE_STATUSES, useApplicationsData, type AppEntry, type AppInput, type WriteResult,
 } from "@/lib/applicationsData";
 import { fmtDay, logicalToday } from "@/lib/date";
-import type { TabExport } from "@/lib/exportTab";
+import { applicationsExport } from "@/lib/screenExports";
 import { countBy } from "@/lib/stats";
 
 function validate(v: Record<string, unknown>) {
@@ -31,16 +31,6 @@ const toInput = (v: Record<string, unknown>): AppInput => ({
   resume: (v.resume as string) || null,
 });
 
-function exportOf(rows: AppEntry[]): TabExport {
-  return {
-    title: "Applications",
-    columns: [
-      { key: "date", label: "Date" }, { key: "company", label: "Company" }, { key: "position", label: "Position" },
-      { key: "status", label: "Status" }, { key: "resume", label: "Resume" },
-    ],
-    rows: rows.map((a) => ({ date: a.date, company: a.company, position: a.position, status: a.status, resume: a.resume ?? "" })),
-  };
-}
 
 export default function ApplicationsPage() {
   const { data, failed, reload } = useApplicationsData();
@@ -95,7 +85,7 @@ export default function ApplicationsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Applications" back="/tabs" right={<><ArchiveButton tab="applications" /><ExportButton tab="applications" source={exportOf(rows)} /></>} />
+      <ScreenHeader title="Applications" back="/tabs" right={<><ArchiveButton tab="applications" /><ExportButton tab="applications" source={applicationsExport(rows)} /></>} />
       <ArchivedBar tab="applications" />
       <ApplyReminders variant="list" />
       <SummaryStrip

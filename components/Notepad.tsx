@@ -6,6 +6,7 @@ import { fmtDay, fmtDow, logicalToday } from "@/lib/date";
 import { notesApi, useNotes, type NoteKind } from "@/lib/notesData";
 import { SwipeRow } from "./DataTable";
 import { FullScreenEditor } from "./Editor";
+import { IconCheck } from "./Icons";
 import { ExportButton } from "./ExportButton";
 import { PageSkeleton } from "./Skeleton";
 import { EmptyState, Fab, ScreenHeader } from "./ui";
@@ -21,9 +22,10 @@ interface Draft {
 /**
  * Dated plain-text entries from Supabase (content ideas, work journal). Tap to edit,
  * swipe to delete. Text is saved exactly as typed, on Done or when the app goes to
- * the background, not on every keystroke.
+ * the background, not on every keystroke. With `checkable`, each entry has a box to
+ * mark it done; done entries stay on the list, struck through, below the open ones.
  */
-export function NotepadScreen({ kind, title }: { kind: NoteKind; title: string }) {
+export function NotepadScreen({ kind, title, checkable }: { kind: NoteKind; title: string; checkable?: boolean }) {
   const { rows, failed, reload } = useNotes(kind);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState(false);
@@ -78,6 +80,8 @@ export function NotepadScreen({ kind, title }: { kind: NoteKind; title: string }
   }
 
   const create = () => setDraft({ id: null, date: logicalToday(), text: "", saved: "" });
+  // Open entries first, then done; newest first within each (the stable sort keeps the query's order).
+  const shown = checkable ? [...rows].sort((a, b) => Number(a.done) - Number(b.done)) : rows;
 
   return (
     <main className="screen">
@@ -89,7 +93,7 @@ export function NotepadScreen({ kind, title }: { kind: NoteKind; title: string }
         </div>
       ) : (
         <div className="card table">
-          {rows.map((n) => (
+          {shown.map((n) => (
             <SwipeRow
               key={n.id}
               cols="1fr"
@@ -99,11 +103,31 @@ export function NotepadScreen({ kind, title }: { kind: NoteKind; title: string }
                 reload();
               }}
             >
-              <div className="note-row" style={{ padding: "4px 0" }}>
-                <span className="label num">
-                  {fmtDow(n.date)} {fmtDay(n.date)}, {n.time}
-                </span>
-                <div className="note-text">{n.body}</div>
+              <div className={`note-row${checkable ? " checkable" : ""}${n.done ? " done" : ""}`} style={{ padding: "4px 0" }}>
+                {checkable && (
+                  <button
+                    type="button"
+                    className="note-check"
+                    role="checkbox"
+                    aria-checked={n.done}
+                    aria-label={n.done ? "Mark not done" : "Mark done"}
+                    // Keep the row from treating the tap as a swipe or an edit.
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setError((await notesApi.setDone(n.id, !n.done)).status !== "saved");
+                      reload();
+                    }}
+                  >
+                    {n.done && <IconCheck size={14} />}
+                  </button>
+                )}
+                <div className="note-main">
+                  <span className="label num">
+                    {fmtDow(n.date)} {fmtDay(n.date)}, {n.time}
+                  </span>
+                  <div className="note-text">{n.body}</div>
+                </div>
               </div>
             </SwipeRow>
           ))}

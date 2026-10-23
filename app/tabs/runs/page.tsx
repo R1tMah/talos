@@ -9,7 +9,7 @@ import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, SectionTitle } from "@/components/ui";
 import { addDays, fmtDay, fmtNum, logicalToday, weekStart } from "@/lib/date";
-import type { TabExport } from "@/lib/exportTab";
+import { mi, runsExport } from "@/lib/screenExports";
 import { fmtDuration, paceOf, parseDuration, runsApi, useRuns, type Run, type RunInput, type WriteResult } from "@/lib/runsData";
 
 const FIELDS: Field[] = [
@@ -19,7 +19,6 @@ const FIELDS: Field[] = [
   { name: "note", label: "Note", placeholder: "Optional" },
 ];
 
-const mi = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, ""));
 const pace = (sec: number) => `${fmtDuration(sec)}/mi`;
 
 function validate(v: Record<string, unknown>) {
@@ -38,19 +37,6 @@ const toInput = (v: Record<string, unknown>): RunInput => ({
   note: String(v.note ?? "").trim() || null,
 });
 
-function exportOf(runs: Run[]): TabExport {
-  return {
-    title: "Runs",
-    columns: [
-      { key: "date", label: "Date" }, { key: "miles", label: "Miles" }, { key: "time", label: "Time" },
-      { key: "pace", label: "Pace (/mi)" }, { key: "cal", label: "Calories (est.)" }, { key: "note", label: "Note" },
-    ],
-    rows: runs.map((r) => ({
-      date: r.date, miles: mi(r.miles), time: fmtDuration(r.seconds), pace: fmtDuration(paceOf(r)),
-      cal: r.calories == null ? "" : String(r.calories), note: r.note ?? "",
-    })),
-  };
-}
 
 export default function RunsPage() {
   const { data, failed, reload } = useRuns();
@@ -91,7 +77,7 @@ export default function RunsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Runs" back="/tabs" right={<><ArchiveButton tab="runs" /><ExportButton tab="runs" source={exportOf(runs)} /></>} />
+      <ScreenHeader title="Runs" back="/tabs" right={<><ArchiveButton tab="runs" /><ExportButton tab="runs" source={runsExport(runs)} /></>} />
       <ArchivedBar tab="runs" />
 
       <SummaryStrip

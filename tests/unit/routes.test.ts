@@ -130,6 +130,15 @@ describe("15. /api/confirm", () => {
     expect(s.tables.message_log[0].corrected).toBe(true);
   });
 
+  it("keeps the cards a tap led to with the message, for Chat history", async () => {
+    await confirm(post({ proposalId: "p-weight" }));
+    await confirm(post({ proposalId: "p-food", values: { calories: "lots" } }));
+    expect(s.tables.message_followups).toMatchObject([
+      { message_id: "m1", cards: [{ kind: "saved" }] },
+      { message_id: "m2", cards: [{ kind: "failed" }] },
+    ]);
+  });
+
   it("#144 without the owner's session it returns 401", async () => {
     state.db = null;
     expect((await confirm(post({ proposalId: "p-weight" }))).status).toBe(401);
@@ -162,6 +171,12 @@ describe("/api/chat", () => {
   it("#144 without the owner's session it returns 401", async () => {
     state.db = null;
     expect((await chat(post({ text: "168.2", clientMsgId: "c2" }))).status).toBe(401);
+  });
+
+  it("logs the tab chip with the message, for Chat history", async () => {
+    await chat(post({ text: "swipe between tabs", clientMsgId: "c5", tab: "talos" }));
+    await chat(post({ text: "168.2", clientMsgId: "c6" }));
+    expect(s.tables.message_log.map((m) => m.tab)).toEqual(["talos", null]);
   });
 
   it("an empty or oversized message is rejected", async () => {

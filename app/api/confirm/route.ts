@@ -3,6 +3,7 @@ import type { ConfirmResponse } from "@/lib/agent/cards";
 import { commitCard } from "@/lib/agent/run";
 import { ownerDb, proposer } from "@/lib/agent/server";
 import { TOOLS, type Resolved } from "@/lib/agent/tools";
+import type { Json } from "@/lib/database.types";
 
 const failed = (detail?: string, status = 200): NextResponse<ConfirmResponse> =>
   NextResponse.json({ cards: [{ kind: "failed", detail }] }, { status });
@@ -47,6 +48,7 @@ export async function POST(req: Request): Promise<NextResponse<ConfirmResponse>>
     if (typeof filled === "string") {
       // Give the proposal back so the owner can fix the value and try again.
       await db.from("pending_proposals").update({ used_at: null }).eq("id", body.proposalId);
+      if (message_id) await db.from("message_followups").insert({ message_id, cards: [{ kind: "failed", detail: filled }] });
       return failed(filled);
     }
     resolved = filled;
@@ -56,5 +58,7 @@ export async function POST(req: Request): Promise<NextResponse<ConfirmResponse>>
   if (_option && message_id) await db.from("message_log").update({ corrected: true }).eq("id", message_id);
 
   const cards = await commitCard(name, resolved, { db }, proposer(db, message_id));
+  // Kept with the message so Chat history shows what the tap led to.
+  if (message_id) await db.from("message_followups").insert({ message_id, cards: cards as unknown as Json });
   return NextResponse.json({ cards });
 }

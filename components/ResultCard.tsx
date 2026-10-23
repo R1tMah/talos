@@ -1,6 +1,6 @@
 import type { ChatCard } from "@/lib/agent/cards";
 import { ChangeList } from "./ChangeList";
-import { IconAlert, IconCheck, IconQuestion } from "./Icons";
+import { IconAlert, IconCheck, IconQuestion, IconX } from "./Icons";
 import { OptionChip } from "./OptionChip";
 
 export interface CardHandlers {
@@ -11,6 +11,9 @@ export interface CardHandlers {
   confirm: () => void;
   cancel: () => void;
   fill: () => void;
+  /** Absent when there's no prompt to bring back. */
+  retry?: () => void;
+  dismiss: () => void;
 }
 
 const Done = ({ children }: { children: string }) => (
@@ -19,8 +22,8 @@ const Done = ({ children }: { children: string }) => (
   </span>
 );
 
-/** Every response in chat is one of these, built by code. No model prose. */
-export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
+/** Every response in chat is one of these, built by code. No model prose. Without `on`, it's read-only (Chat history). */
+export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) {
   switch (card.kind) {
     case "saved":
       return (
@@ -33,7 +36,8 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
             {card.undone ? (
               <Done>Undone</Done>
             ) : (
-              card.actionId && (
+              card.actionId &&
+              on && (
                 <button type="button" className="btn btn-sm" onClick={on.undo}>
                   Undo
                 </button>
@@ -55,11 +59,13 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
           {card.resolved ? (
             <Done>Picked</Done>
           ) : (
-            <div className="rc-chips">
-              {card.options.map((o, i) => (
-                <OptionChip key={o.proposalId} tool={o.tool} fields={o.fields} onClick={() => on.choose(i)} />
-              ))}
-            </div>
+            on && (
+              <div className="rc-chips">
+                {card.options.map((o, i) => (
+                  <OptionChip key={o.proposalId} tool={o.tool} fields={o.fields} onClick={() => on.choose(i)} />
+                ))}
+              </div>
+            )
           )}
         </div>
       );
@@ -77,14 +83,16 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
           {card.resolved ? (
             <Done>{card.resolved === "saved" ? "Saved" : "Editing"}</Done>
           ) : (
-            <div className="rc-actions">
-              <button type="button" className="btn btn-primary" onClick={on.save}>
-                Yes, save
-              </button>
-              <button type="button" className="btn" onClick={on.edit}>
-                Edit
-              </button>
-            </div>
+            on && (
+              <div className="rc-actions">
+                <button type="button" className="btn btn-primary" onClick={on.save}>
+                  Yes, save
+                </button>
+                <button type="button" className="btn" onClick={on.edit}>
+                  Edit
+                </button>
+              </div>
+            )
           )}
         </div>
       );
@@ -97,14 +105,16 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
           {card.resolved ? (
             <Done>{card.resolved === "confirmed" ? "Confirmed" : "Cancelled"}</Done>
           ) : (
-            <div className="rc-actions">
-              <button type="button" className="btn btn-primary" onClick={on.confirm}>
-                Confirm
-              </button>
-              <button type="button" className="btn" onClick={on.cancel}>
-                Cancel
-              </button>
-            </div>
+            on && (
+              <div className="rc-actions">
+                <button type="button" className="btn btn-primary" onClick={on.confirm}>
+                  Confirm
+                </button>
+                <button type="button" className="btn" onClick={on.cancel}>
+                  Cancel
+                </button>
+              </div>
+            )
           )}
         </div>
       );
@@ -129,14 +139,16 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
           {card.resolved ? (
             <Done>{card.resolved === "filled" ? "Filled in" : "Cancelled"}</Done>
           ) : (
-            <div className="rc-actions">
-              <button type="button" className="btn btn-primary" onClick={on.fill}>
-                Fill in
-              </button>
-              <button type="button" className="btn" onClick={on.cancel}>
-                Cancel
-              </button>
-            </div>
+            on && (
+              <div className="rc-actions">
+                <button type="button" className="btn btn-primary" onClick={on.fill}>
+                  Fill in
+                </button>
+                <button type="button" className="btn" onClick={on.cancel}>
+                  Cancel
+                </button>
+              </div>
+            )
           )}
         </div>
       );
@@ -151,6 +163,16 @@ export function ResultCard({ card, on }: { card: ChatCard; on: CardHandlers }) {
             <span className="rc-text" style={{ color: "var(--danger)" }}>
               {card.detail ? `Failed: ${card.detail}` : "Failed"}
             </span>
+            {on?.retry && (
+              <button type="button" className="btn btn-sm" onClick={on.retry}>
+                Retry
+              </button>
+            )}
+            {on && (
+              <button type="button" className="icon-btn" aria-label="Dismiss" onClick={on.dismiss}>
+                <IconX size={18} />
+              </button>
+            )}
           </div>
         </div>
       );

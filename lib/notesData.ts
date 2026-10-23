@@ -13,6 +13,7 @@ export interface NoteEntry {
   date: string;
   time: string; // entry time, for display and ordering
   body: string; // verbatim
+  done: boolean;
 }
 
 export type WriteResult = { status: "saved"; id?: string } | { status: "not_found" } | { status: "failed" };
@@ -31,7 +32,7 @@ export function useNotes(kind: NoteKind) {
       return;
     }
     setFailed(false);
-    setRows(data.map((r) => ({ id: r.id, date: r.logical_date, time: toHM(new Date(r.created_at)), body: r.body })));
+    setRows(data.map((r) => ({ id: r.id, date: r.logical_date, time: toHM(new Date(r.created_at)), body: r.body, done: r.done_at != null })));
   }, [kind]);
 
   useDataChanged(reload);
@@ -58,5 +59,6 @@ export const notesApi = {
   add: async (kind: NoteKind | "weight", date: string, body: string) =>
     parse("notes", await createClient().rpc("add_note", { p_kind: kind, p_date: date, p_body: body })),
   setBody: async (id: string, body: string) => parse("notes", await createClient().rpc("set_note_body", { p_id: id, p_body: body })),
+  setDone: async (id: string, done: boolean) => parse("notes", await createClient().rpc("set_note_done", { p_id: id, p_done: done })),
   remove: async (id: string) => parse("notes", await createClient().rpc("delete_note", { p_id: id })),
 };

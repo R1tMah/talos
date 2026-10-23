@@ -36,7 +36,7 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
     .gte("created_at", new Date(Date.now() - 60_000).toISOString());
   if ((recent.count ?? 0) >= PER_MINUTE) return failed(429);
 
-  const logged = await db.from("message_log").insert({ client_msg_id: clientMsgId, text }).select("id").single();
+  const logged = await db.from("message_log").insert({ client_msg_id: clientMsgId, text, tab: tab ?? null }).select("id").single();
   if (logged.error) {
     // Lost a race with an identical send.
     const again = await db.from("message_log").select("response").eq("client_msg_id", clientMsgId).maybeSingle();

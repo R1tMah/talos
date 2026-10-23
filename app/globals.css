@@ -19,7 +19,7 @@
   --text: #c9cdd6;
   --text-2: #9a96b0;
   --text-3: #726c8f;
-  --metal: linear-gradient(180deg, #ffffff 0%, #dde0e7 45%, #b4b9c4 100%);
+  --metal: linear-gradient(180deg, #eef0f4 0%, #c5c9d2 45%, #9da2ad 100%);
   --accent: #f4a6c8;
   --accent-ink: #2b0f1f;
   --accent-soft: rgba(244, 166, 200, 0.13);
@@ -239,6 +239,12 @@ a {
   color: var(--text-3);
 }
 
+/* Card titles on the Tabs grid: a step stronger than other labels */
+.stat > .label {
+  font-weight: 650;
+  color: var(--text-2);
+}
+
 /* ============================================================
    Shell
    ============================================================ */
@@ -291,7 +297,7 @@ html[data-swipe="prev"] :is(.screen, .chat) {
 
 .header h1 {
   font-size: var(--t-2xl);
-  font-weight: 750;
+  font-weight: 650;
   letter-spacing: -0.02em;
   margin: 0;
   flex: 1;
@@ -314,12 +320,13 @@ html[data-swipe="prev"] :is(.screen, .chat) {
   }
 }
 
-/* Tabs screen wordmark: soft pink, no metal, in both themes */
+/* Tabs screen wordmark: soft pink, no metal, centered, in both themes */
 .header h1.brand,
 :root:not([data-theme="light"]) .header h1.brand {
   color: var(--accent);
   background-image: none;
   -webkit-text-fill-color: currentColor;
+  text-align: center;
 }
 
 .header .back {

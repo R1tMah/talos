@@ -35,7 +35,7 @@ export default function TabsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Tabs" />
+      <ScreenHeader title="TALOS" brand />
       <Reminders />
       {shown("applications") && <ApplyReminders variant="banner" />}
       <div className="grid-2">

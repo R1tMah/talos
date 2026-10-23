@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { IconBack, IconPlus } from "./Icons";
 
-export function ScreenHeader({ title, back, right }: { title: string; back?: string; right?: ReactNode }) {
+export function ScreenHeader({ title, back, right, brand }: { title: string; back?: string; right?: ReactNode; /** Soft pink wordmark instead of metal. */ brand?: boolean }) {
   return (
     <header className="header">
       {back && (
@@ -12,7 +12,7 @@ export function ScreenHeader({ title, back, right }: { title: string; back?: str
           <IconBack />
         </Link>
       )}
-      <h1>{title}</h1>
+      <h1 className={brand ? "brand" : undefined}>{title}</h1>
       {right}
     </header>
   );

@@ -1099,7 +1099,10 @@ export function narrowApps<T extends Pick<AppRow, "position" | "status">>(apps: 
       const pos = roleWords(a.position);
       return words.every((w) => pos.some((p) => p.startsWith(w) || w.startsWith(p)));
     });
-    if (hit.length) out = hit;
+    // "SWE" means the SWE application over "SWE II, AI/ML" when both exist.
+    const exact = hit.filter((a) => roleWords(a.position).join(" ") === words.join(" "));
+    if (exact.length) out = exact;
+    else if (hit.length) out = hit;
   }
   if (status && out.length > 1) {
     const open = out.filter((a) => a.status !== status);

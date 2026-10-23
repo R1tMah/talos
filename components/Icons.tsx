@@ -130,3 +130,16 @@ export const IconArchive = (p: P) => (
     <path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4" />
   </Base>
 );
+
+export const IconEye = (p: P) => (
+  <Base {...p}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Base>
+);
+
+export const IconRefresh = (p: P) => (
+  <Base {...p}>
+    <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4" />
+  </Base>
+);

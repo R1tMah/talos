@@ -29,7 +29,14 @@ export interface RunResult {
 
 // ---- Rules: deterministic routing that skips the model ------------------------------
 
-const NOTE_PREFIX = /^\s*(content ideas?|content|work journal|journal)\s*[:\-–—]/i;
+// Words that name a tracker outright. Used to settle the tool choice, never to fill fields.
+const NAMED: Record<string, RegExp> = { log_leetcode: /\b(leet\s?code|neet\s?code|lc)\b/i };
+const BARE_LEETCODE = /^\s*(?:leet\s?code|lc)(?:\s+problem)?\s*[.!]?\s*$/i;
+
+// "personal journal" is listed before "journal" so it wins.
+const NOTE_PREFIX = /^\s*(content ideas?|content|work journal|personal journal|personal|diary|add to talos|talos improvements?|talos idea|talos|journal)\s*[:\-–—]/i;
+const noteKind = (label: string) =>
+  /^(personal|diary)/i.test(label) ? "personal" : /talos/i.test(label) ? "talos" : /journal/i.test(label) ? "journal" : "content";
 
 export function preRoute(ctx: Ctx): Call[] | null {
   const t = ctx.text.trim();
@@ -45,16 +52,19 @@ export function preRoute(ctx: Ctx): Call[] | null {
   const meal = ctx.meals.find((m) => [m.name, ...m.aliases].some((n) => n.toLowerCase().replace(/\s+/g, " ").trim() === said));
   if (meal) return [{ name: "log_saved_meal", input: { meal: meal.name, portions: null, days_ago: null, confidence: 1 } }];
 
+  // Just "leetcode" / "leetcode problem": ask for the problem's name.
+  if (BARE_LEETCODE.test(t)) return [{ name: "log_leetcode", input: { title: null, confidence: 1 } }];
+
   // "content idea: ..." / "journal: ..."
   const n = t.match(NOTE_PREFIX);
-  if (n) return [{ name: "add_note", input: { kind: /journal/i.test(n[1]) ? "journal" : "content", text: null, confidence: 1 } }];
+  if (n) return [{ name: "add_note", input: { kind: noteKind(n[1]), text: null, confidence: 1 } }];
 
   return null;
 }
 
 // ---- Model -----------------------------------------------------------------------------
 
-const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a content idea or a journal entry.
+const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
 
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
@@ -179,8 +189,11 @@ export async function decide(calls: Call[], ctx: Ctx, threshold: number, propose
     }
 
     // Model confidence alone is poorly calibrated; it also has to clearly lead the alternatives.
+    // The owner named the tracker ("leetcode ...") or picked its chip: which tool is settled,
+    // so model confidence and the runner-up margin don't apply. Fields were still checked above.
+    const named = (ctx.tab != null && inScope(ctx.tab, call.name)) || NAMED[call.name]?.test(ctx.text) === true;
     const conf = confOf(call.input);
-    if (conf < threshold || conf - runnerUp < MARGIN) {
+    if (!named && (conf < threshold || conf - runnerUp < MARGIN)) {
       const options = [...(await optionsFrom(call.name, check, propose))];
       for (const a of alts) if (options.length < 3) options.push(...(await optionsFrom(a.name, a.check, propose)));
       cards.push({ kind: "unsure", options: options.slice(0, 3) });
@@ -225,8 +238,8 @@ export async function commitCard(name: string, resolved: Resolved, ctx: Pick<Ctx
 export async function run(ctx: Ctx, threshold: number, propose: Propose): Promise<RunResult> {
   if (ctx.tab) {
     if (ctx.archived?.has(ctx.tab)) return { route: "rule", calls: [], cards: [{ kind: "failed", detail: archivedMessage(ctx.tab as TabKey) }] };
-    // Content / Work Journal chip: the whole message is the note, saved as typed. No model.
-    if (ctx.tab === "content" || ctx.tab === "journal") {
+    // Content / Work Journal / Personal Journal chip: the whole message is the note, saved as typed. No model.
+    if (ctx.tab === "content" || ctx.tab === "journal" || ctx.tab === "personal" || ctx.tab === "talos") {
       const calls: Call[] = [{ name: "add_note", input: { kind: ctx.tab, text: null, confidence: 1 } }];
       return { route: "rule", calls, cards: await decide(calls, ctx, threshold, propose) };
     }

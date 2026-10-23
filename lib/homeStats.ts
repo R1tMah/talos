@@ -25,7 +25,7 @@ export interface HomeStats {
   /** Live callbacks per kind, from the callback_counts view: { OA: 3, Interview: 1 }. */
   callbacks: Record<string, number>;
   /** Live notepad entries per kind: count and latest logical date. */
-  notes: Record<"content" | "journal", { n: number; last: string | null }>;
+  notes: Record<"personal" | "content" | "journal" | "talos", { n: number; last: string | null }>;
   /** Finished workouts this logical week, and the latest one. */
   lifts: { week: number; last: { plan: string; date: string } | null };
   /** Runs this logical week: count and miles; plus the latest run. */
@@ -101,6 +101,8 @@ export function useHomeStats() {
         notes: {
           content: pad(notes.data, "content"),
           journal: pad(notes.data, "journal"),
+          personal: pad(notes.data, "personal"),
+          talos: pad(notes.data, "talos"),
         },
         runs: (() => {
           const week = runs.data.filter((r) => r.logical_date >= thisWeek && r.logical_date <= today);

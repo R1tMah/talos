@@ -56,3 +56,17 @@ select pg_temp.ok('...and never show up as content or journal',
 select pg_temp.ok('the three imported remarks are there, word for word',
   (select count(*) from public.notes where kind = 'weight' and deleted_at is null and logical_date in ('2026-05-24', '2026-09-27')) = 3
   and exists (select 1 from public.notes where kind = 'weight' and body = 'All weight loss was fat I got stronger since I was 198'));
+
+-- Personal journal entries: their own kind, verbatim, never in the other notepads.
+select pg_temp.put('pj', public.add_note('personal', '2099-03-05', E'  rough day 😞\n  called mom  ')->'row'->>'id');
+select pg_temp.ok('personal journal entries save byte for byte as their own kind',
+  exists (select 1 from public.notes where id = pg_temp.get('pj')::uuid and kind = 'personal' and body = E'  rough day 😞\n  called mom  '));
+select pg_temp.ok('the personal journal can be archived like the other notepads',
+  pg_temp.err($$update public.settings set archived_tabs = array['personal'] where id = 1$$) is null);
+
+-- Talos improvements: their own kind; the moved entry left the Work Journal.
+select pg_temp.ok('Talos improvement notes save as their own kind',
+  public.add_note('talos', '2099-03-06', 'dark mode chart colors')->>'status' = 'saved');
+select pg_temp.ok('the "add to talos" entry moved out of the Work Journal, word for word',
+  exists (select 1 from public.notes where kind = 'talos' and body = 'add to talos: watch tab, any reminders, better ui for the agent' and logical_date = '2026-10-21')
+  and not exists (select 1 from public.notes where kind = 'journal' and body like 'add to talos%' and deleted_at is null));

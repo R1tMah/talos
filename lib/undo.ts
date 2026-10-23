@@ -72,13 +72,15 @@ export function describeRow(table: string, r: Row | null): string {
     case "callbacks":
       return `${str(r.company)} ${str(r.kind)}`;
     case "notes":
-      return r.kind === "journal" ? "journal entry" : r.kind === "weight" ? "weight note" : "content idea";
+      return { journal: "work journal entry", personal: "personal journal entry", talos: "Talos improvement", weight: "weight note" }[str(r.kind)] ?? "content idea";
     case "breaks":
       return `break "${str(r.label)}"`;
     case "applications":
       return `${str(r.company)} application`;
     case "foods":
       return `food ${str(r.name)}`;
+    case "reminders":
+      return `reminder "${str(r.body)}"`;
     case "application_reminders":
       return `reminder to apply to ${str(r.company)}`;
     case "sets":

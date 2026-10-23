@@ -10,7 +10,7 @@ type Row = Database["public"]["Tables"]["leetcode_log"]["Row"];
 
 export type Difficulty = "easy" | "medium" | "hard";
 export type Hints = "none" | "small" | "multiple";
-export type Result = "optimal" | "suboptimal" | "failed";
+export type Result = "solved" | "optimal" | "suboptimal" | "failed";
 
 export interface Attempt {
   id: string;

@@ -3,15 +3,21 @@
    ============================================================ */
 :root {
   /* Color: dark (default) */
-  --bg: #0b0d10;
-  --surface: #121519;
-  --surface-2: #181c21;
-  --surface-3: #1f242a;
-  --border: #23282f;
-  --border-strong: #313740;
+  /* Dark is purple-navy: the page is a purple gradient, and cards, sheets and bars are
+     purple-tinted rather than gray. Text stays white; accents stay cyan. */
+  --bg: #0f0b20;
+  /* Page background: purple at the top fading into --bg, so the bars at the bottom blend in. */
+  --bg-grad: linear-gradient(180deg, #3d1a78 0%, #2b1660 28%, #1d1345 55%, #140f30 80%, #0f0b20 100%);
+  /* Tab bar and composer: see-through so the gradient shows, blurred for legibility. */
+  --bar-bg: rgba(15, 11, 32, 0.82);
+  --surface: #1a1535;
+  --surface-2: #221c42;
+  --surface-3: #2a2350;
+  --border: #2e2754;
+  --border-strong: #3e3570;
   --text: #e9ecef;
-  --text-2: #9aa2ad;
-  --text-3: #646c77;
+  --text-2: #a9a3c4;
+  --text-3: #746d94;
   --accent: #5ad8ec;
   --accent-ink: #061317;
   --accent-soft: rgba(90, 216, 236, 0.12);
@@ -24,7 +30,7 @@
   --band-b: rgba(90, 216, 236, 0.045);
   --break-fill: rgba(255, 255, 255, 0.07);
   --break-edge: rgba(255, 255, 255, 0.22);
-  --scrim: rgba(0, 0, 0, 0.6);
+  --scrim: rgba(8, 5, 20, 0.65);
 
   /* Neutral data tags: hue for identification, never for judgment */
   --tag-1: #7fb7c4;
@@ -80,6 +86,8 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #f5f6f8;
+    --bg-grad: linear-gradient(180deg, #e9e0fb 0%, #f0edfa 40%, #f5f6f8 75%);
+    --bar-bg: #f5f6f8;
     --surface: #ffffff;
     --surface-2: #f0f2f5;
     --surface-3: #e8ebef;
@@ -113,6 +121,8 @@
 
 :root[data-theme="light"] {
   --bg: #f5f6f8;
+  --bg-grad: linear-gradient(180deg, #e9e0fb 0%, #f0edfa 40%, #f5f6f8 75%);
+  --bar-bg: #f5f6f8;
   --surface: #ffffff;
   --surface-2: #f0f2f5;
   --surface-3: #e8ebef;
@@ -150,6 +160,16 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* The gradient sits on a fixed layer: iOS Safari ignores background-attachment: fixed. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-grad);
+  pointer-events: none;
 }
 
 html {
@@ -290,7 +310,9 @@ a {
   padding: 0 var(--s-2) var(--safe-b);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: var(--bg);
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border-top: 1px solid var(--border);
   transition: transform var(--dur) var(--ease);
 }
@@ -1284,7 +1306,9 @@ html.kb-open .chat {
   left: 0;
   right: 0;
   bottom: calc(var(--tabbar-h) + var(--safe-b));
-  background: var(--bg);
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border-top: 1px solid var(--border);
   padding: var(--s-2) var(--gutter);
   transition: bottom var(--dur) var(--ease);
@@ -2325,4 +2349,588 @@ button.cal-day:active {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* ============================================================
+   Watch
+   ============================================================ */
+.watch-card {
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.watch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: 32px;
+}
+
+.watch-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--text-2);
+}
+
+.watch-title svg {
+  color: var(--text-3);
+}
+
+.watch-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--t-sm);
+}
+
+.watch-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: var(--t-sm);
+}
+
+.watch-empty {
+  margin: 0;
+  font-size: var(--t-sm);
+}
+
+.watch-fallback {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--t-sm);
+}
+
+.watch-fallback a,
+.watch-foot a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.watch-foot {
+  margin: 0;
+  font-size: var(--t-xs);
+}
+
+.group-head {
+  padding: var(--s-3) var(--s-4) var(--s-2);
+}
+
+.transit-leg {
+  font-size: var(--t-sm);
+}
+
+.deps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+}
+
+.dep {
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+}
+
+.dep-mins {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dep:first-child .dep-mins {
+  color: var(--accent);
+}
+
+.transit-alert {
+  margin: 0;
+  padding-left: var(--s-3);
+  border-left: 2px solid var(--warn);
+  color: var(--text-2);
+  font-size: var(--t-xs);
+  line-height: 1.4;
+}
+
+.transit-alert.severe {
+  border-color: var(--danger);
+}
+
+.wx-now {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.wx-temp {
+  font-size: var(--t-3xl);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.wx-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--t-sm);
+}
+
+.hours {
+  display: flex;
+  gap: var(--s-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(-1 * var(--s-4));
+  padding: 0 var(--s-4);
+}
+
+.hours::-webkit-scrollbar {
+  display: none;
+}
+
+.hour {
+  flex: none;
+  min-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--s-2) 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: var(--t-2xs);
+}
+
+.hour b {
+  font-size: var(--t-sm);
+}
+
+.news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.news li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2) 0;
+  font-size: var(--t-xs);
+}
+
+.news li + li {
+  border-top: 1px solid var(--border);
+}
+
+.news a {
+  color: var(--text);
+  font-size: var(--t-md);
+  line-height: 1.35;
+}
+
+.news.compact a {
+  font-size: var(--t-sm);
+}
+
+.job {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+}
+
+.job + .job {
+  border-top: 1px solid var(--border);
+}
+
+.job-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.job.closed .job-main {
+  opacity: 0.55;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stat-scroll {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--s-4));
+  padding: 0 var(--s-4);
+}
+
+.stat-scroll .mini-table th,
+.stat-scroll .mini-table td {
+  white-space: nowrap;
+}
+
+/* ============================================================
+   Talos hologram and speech bubbles (chat)
+   ============================================================ */
+
+.holo {
+  flex: none;
+  overflow: visible;
+  filter: drop-shadow(0 0 4px var(--accent-line));
+}
+
+.holo-ring {
+  transform-origin: 32px 32px;
+  animation: holo-spin 14s linear infinite;
+}
+
+.holo-aura {
+  animation: holo-pulse 3.2s var(--ease) infinite;
+}
+
+.holo-figure {
+  animation: holo-flicker 6s steps(1, end) infinite;
+}
+
+.holo-scan {
+  animation: holo-scan 3.6s linear infinite;
+}
+
+.holo-dot {
+  animation: holo-drift 4s ease-in-out infinite;
+}
+
+.holo-dot-2 {
+  animation-delay: -1.4s;
+}
+
+.holo-dot-3 {
+  animation-delay: -2.6s;
+}
+
+/* Thinking: the ring races, the glow brightens, the eyes narrow. */
+.holo-thinking .holo-ring {
+  animation-duration: 1.6s;
+}
+
+.holo-thinking .holo-aura {
+  animation-duration: 0.9s;
+}
+
+.holo-thinking .holo-scan {
+  animation-duration: 1.1s;
+}
+
+.holo-thinking .holo-eyes {
+  animation: holo-blink 1.2s ease-in-out infinite;
+}
+
+/* Speaking: one bright flash as a reply lands. */
+.holo-speaking {
+  animation: holo-flash 900ms var(--ease) 1;
+}
+
+@keyframes holo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes holo-pulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes holo-flicker {
+  0%, 46%, 49%, 100% {
+    opacity: 1;
+  }
+  47% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes holo-scan {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(66px);
+  }
+}
+
+@keyframes holo-drift {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@keyframes holo-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes holo-flash {
+  0% {
+    filter: drop-shadow(0 0 4px var(--accent-line));
+  }
+  35% {
+    filter: drop-shadow(0 0 12px var(--accent)) brightness(1.4);
+  }
+  100% {
+    filter: drop-shadow(0 0 4px var(--accent-line));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .holo,
+  .holo * {
+    animation: none !important;
+  }
+}
+
+/* A reply: avatar on the left, the card as his speech bubble. */
+.talos-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.talos-row .holo-slot {
+  width: 36px;
+  flex: none;
+}
+
+.talos-row .msg-app {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The card becomes a speech bubble: squared corner and a small tail toward Talos. */
+.talos-row .rc {
+  position: relative;
+  border-radius: 4px var(--r-lg) var(--r-lg) var(--r-lg);
+  border-color: var(--accent-line);
+}
+
+.talos-row.first .rc::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border-left: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+  transform: rotate(45deg);
+}
+
+/* Thinking: three dots in a bubble. */
+.talos-dots {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--accent-line);
+  border-radius: 4px var(--r-lg) var(--r-lg) var(--r-lg);
+  background: var(--surface);
+}
+
+.talos-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: talos-dot 1.1s ease-in-out infinite;
+}
+
+.talos-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.talos-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes talos-dot {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talos-dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* Empty chat: Talos larger in the middle, idling. */
+.talos-hello {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--text-3);
+  font-size: var(--t-sm);
+}
+
+/* Newsletter reader */
+.nl-teaser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--t-sm);
+  color: var(--text);
+}
+
+.nl-teaser ul {
+  margin: 0;
+  padding-left: var(--s-5);
+  color: var(--text-2);
+}
+
+.nl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.nl-top h2 {
+  margin: 0 0 var(--s-1);
+  font-size: var(--t-xl);
+}
+
+.nl-top {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--t-sm);
+}
+
+.nl-section {
+  padding: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.nl-kicker {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.nl-h {
+  margin: 0;
+  font-size: var(--t-lg);
+  line-height: 1.3;
+}
+
+.nl-p,
+.nl-list {
+  margin: 0;
+  font-size: var(--t-md);
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.nl-list {
+  padding-left: var(--s-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.nl-p a,
+.nl-list a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent-line);
+  text-underline-offset: 2px;
+}
+
+.nl-fig {
+  margin: 0 calc(-1 * var(--s-4));
+}
+
+.nl-fig img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.nl-fig figcaption {
+  padding: var(--s-1) var(--s-4) 0;
+  font-size: var(--t-2xs);
+}
+
+.nl-markets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+}
+
+.nl-markets > div {
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: var(--t-xs);
+}
+
+.nl-markets b {
+  font-size: var(--t-sm);
+}
+
+.nl-markets .up {
+  color: var(--tag-1);
+}
+
+.nl-markets .down {
+  color: var(--danger);
 }

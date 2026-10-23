@@ -1,7 +1,7 @@
 "use client";
 
 import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ApplyReminders } from "@/components/ApplyReminders";
 import { ExportButton } from "@/components/ExportButton";
@@ -45,6 +45,15 @@ function exportOf(rows: AppEntry[]): TabExport {
 export default function ApplicationsPage() {
   const { data, failed, reload } = useApplicationsData();
   const [sheet, setSheet] = useState<AppEntry | "new" | null>(null);
+  // Watch's job postings link here with ?add=1&company=…&position=… to open the form prefilled.
+  const [prefill, setPrefill] = useState<{ company?: string; position?: string }>({});
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("add") !== "1") return;
+    setPrefill({ company: q.get("company") ?? undefined, position: q.get("position") ?? undefined });
+    setSheet("new");
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [notice, setNotice] = useState<string | null>(null);
 
   const rows = useMemo(() => data ?? [], [data]);
@@ -129,12 +138,13 @@ export default function ApplicationsPage() {
           fields={fields}
           confirm={sheet !== "new"}
           validate={validate}
-          initial={sheet === "new" ? { date: logicalToday(), status: BASE_STATUSES[0], resume: "" } : { ...sheet, resume: sheet.resume ?? "" }}
-          onClose={() => setSheet(null)}
+          initial={sheet === "new" ? { date: logicalToday(), status: BASE_STATUSES[0], resume: "", ...prefill } : { ...sheet, resume: sheet.resume ?? "" }}
+          onClose={() => (setSheet(null), setPrefill({}))}
           onDelete={sheet !== "new" ? () => (run(applicationsApi.remove(sheet.id)), setSheet(null)) : undefined}
           onSubmit={(v) => {
             run(sheet === "new" ? applicationsApi.save(toInput(v)) : applicationsApi.update(sheet.id, toInput(v)));
             setSheet(null);
+            setPrefill({});
           }}
         />
       )}

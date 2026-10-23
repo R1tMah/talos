@@ -8,7 +8,7 @@ import { Sheet } from "./FormSheet";
 import { IconShare } from "./Icons";
 
 const LIVE_TITLES: Record<LiveTab, string> = {
-  nutrition: "Nutrition", leetcode: "LeetCode", callbacks: "Callbacks", content: "Content", journal: "Work Journal",
+  nutrition: "Nutrition", leetcode: "LeetCode", callbacks: "Callbacks", content: "Content", journal: "Work Journal", personal: "Personal Journal", talos: "Talos Improvements",
 };
 
 /**

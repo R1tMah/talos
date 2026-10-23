@@ -642,6 +642,36 @@ export type Database = {
         }
         Relationships: []
       }
+      reminders: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          done_at: string | null
+          due_date: string | null
+          id: string
+          noted_date: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          done_at?: string | null
+          due_date?: string | null
+          id?: string
+          noted_date: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          done_at?: string | null
+          due_date?: string | null
+          id?: string
+          noted_date?: string
+        }
+        Relationships: []
+      }
       runs: {
         Row: {
           calories_est: number | null
@@ -850,6 +880,86 @@ export type Database = {
         }
         Relationships: []
       }
+      watch_items: {
+        Row: {
+          closed_at: string | null
+          data: Json
+          first_seen: string
+          key: string
+          source_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          data: Json
+          first_seen?: string
+          key: string
+          source_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          data?: Json
+          first_seen?: string
+          key?: string
+          source_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watch_items_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "watch_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      watch_sources: {
+        Row: {
+          config: Json
+          created_at: string
+          data: Json | null
+          enabled: boolean
+          error: string | null
+          every_minutes: number
+          fetched_at: string | null
+          id: string
+          kind: string
+          position: number
+          seen_at: string | null
+          title: string
+          tried_at: string | null
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          data?: Json | null
+          enabled?: boolean
+          error?: string | null
+          every_minutes?: number
+          fetched_at?: string | null
+          id?: string
+          kind: string
+          position?: number
+          seen_at?: string | null
+          title: string
+          tried_at?: string | null
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          data?: Json | null
+          enabled?: boolean
+          error?: string | null
+          every_minutes?: number
+          fetched_at?: string | null
+          id?: string
+          kind?: string
+          position?: number
+          seen_at?: string | null
+          title?: string
+          tried_at?: string | null
+        }
+        Relationships: []
+      }
       weights: {
         Row: {
           created_at: string
@@ -974,6 +1084,30 @@ export type Database = {
         }
         Relationships: []
       }
+      open_reminders: {
+        Row: {
+          body: string | null
+          created_at: string | null
+          due_date: string | null
+          id: string | null
+          noted_date: string | null
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          noted_date?: string | null
+        }
+        Update: {
+          body?: string | null
+          created_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          noted_date?: string | null
+        }
+        Relationships: []
+      }
       redo_queue: {
         Row: {
           catalog_id: string | null
@@ -1055,6 +1189,10 @@ export type Database = {
         }
         Returns: Json
       }
+      add_reminder: {
+        Args: { p_body: string; p_date: string; p_due: string; p_tool?: string }
+        Returns: Json
+      }
       application_for: { Args: { p_company: string }; Returns: string }
       apply_application_reminder: {
         Args: {
@@ -1063,6 +1201,10 @@ export type Database = {
           p_resume_name?: string
           p_tool?: string
         }
+        Returns: Json
+      }
+      complete_reminder: {
+        Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
       delete_application: {
@@ -1093,7 +1235,15 @@ export type Database = {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
+      dismiss_reminder: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       is_owner: { Args: never; Returns: boolean }
+      lc_add_alias: {
+        Args: { p_alias: string; p_title: string }
+        Returns: Json
+      }
       lc_lookup: {
         Args: { p_title: string }
         Returns: {
@@ -1411,6 +1561,10 @@ export type Database = {
         }
         Returns: Json
       }
+      update_reminder: {
+        Args: { p_body: string; p_due: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
       update_run: {
         Args: {
           p_date: string
@@ -1457,6 +1611,7 @@ export type Database = {
         }
         Returns: Json
       }
+      watch_tick: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never

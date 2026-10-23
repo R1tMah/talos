@@ -12,7 +12,7 @@ import type { Database } from "./database.types";
 const TABLES = [
   "settings", "weights", "phases", "breaks",
   "food_log", "foods", "saved_meals", "saved_meal_items",
-  "leetcode_log", "applications", "application_reminders", "callbacks", "notes",
+  "leetcode_log", "applications", "application_reminders", "reminders", "callbacks", "notes",
   "runs", "workouts", "sets", "exercises", "plans", "plan_exercises",
 ] as const satisfies readonly (keyof Database["public"]["Tables"])[];
 

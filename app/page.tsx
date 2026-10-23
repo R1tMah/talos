@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FormSheet } from "@/components/FormSheet";
 import { IconArrowUp, IconMic, IconStop } from "@/components/Icons";
 import { ResultCard, type CardHandlers } from "@/components/ResultCard";
+import { TalosAvatar } from "@/components/TalosAvatar";
 import type { ChatCard, ChatResponse, ConfirmResponse } from "@/lib/agent/cards";
 import { logicalToday, uid } from "@/lib/date";
 import { dataChanged, showToast, undo } from "@/lib/undo";
@@ -98,6 +99,14 @@ export default function ChatPage() {
 
   const append = (...m: Msg[]) => setMsgs((xs) => [...xs, ...m]);
   const reply = (card: ChatCard): Msg => ({ id: uid(), role: "app", card, ts: Date.now() });
+
+  // Talos "speaks" (one flash) on the first card of each new reply.
+  const [speaking, setSpeaking] = useState<string | null>(null);
+  const speak = (replies: Msg[]) => {
+    append(...replies);
+    setSpeaking(replies[0]?.id ?? null);
+    setTimeout(() => setSpeaking(null), 900);
+  };
   const setCard = (id: string, fn: (c: ChatCard) => ChatCard) =>
     setMsgs((xs) => xs.map((m) => (m.id === id && m.role === "app" ? { ...m, card: fn(m.card) } : m)));
 
@@ -115,7 +124,7 @@ export default function ChatPage() {
     const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id, tab });
     setBusy(false);
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
-    append(...cards.map(reply));
+    speak(cards.map(reply));
     if (cards.some((c) => c.kind === "saved")) dataChanged();
   };
 
@@ -125,7 +134,7 @@ export default function ChatPage() {
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
     // A bad value on a fill card leaves it open to try again.
     if (!(values && cards[0].kind === "failed")) setCard(msgId, mark);
-    append(...cards.map(reply));
+    speak(cards.map(reply));
     if (cards.some((c) => c.kind === "saved")) dataChanged();
   };
 
@@ -163,20 +172,44 @@ export default function ChatPage() {
   return (
     <>
       <main className="chat">
-        {msgs.length === 0 && <p className="chat-empty">Log anything.</p>}
-        {msgs.map((m) =>
-          m.role === "user" ? (
-            <div key={m.id} className="msg-user">
-              {m.tab && <span className="msg-tab">{tabName(m.tab)}</span>}
-              <span>{m.text}</span>
-            </div>
-          ) : (
-            <div key={m.id} className="msg-app">
-              <ResultCard card={m.card} on={handlers(m)} />
-            </div>
-          ),
+        {msgs.length === 0 && !busy && (
+          <div className="talos-hello">
+            <TalosAvatar size={96} />
+            <span>Log anything.</span>
+          </div>
         )}
-        {busy && <p className="chat-empty faint">…</p>}
+        {msgs.map((m, i) => {
+          if (m.role === "user") {
+            return (
+              <div key={m.id} className="msg-user">
+                {m.tab && <span className="msg-tab">{tabName(m.tab)}</span>}
+                <span>{m.text}</span>
+              </div>
+            );
+          }
+          // One avatar per reply: on its first card, a spacer beside the rest.
+          const first = msgs[i - 1]?.role !== "app";
+          return (
+            <div key={m.id} className={`talos-row${first ? " first" : ""}`}>
+              <span className="holo-slot">{first && <TalosAvatar state={speaking === m.id ? "speaking" : "idle"} />}</span>
+              <div className="msg-app">
+                <ResultCard card={m.card} on={handlers(m)} />
+              </div>
+            </div>
+          );
+        })}
+        {busy && (
+          <div className="talos-row first" role="status" aria-label="Talos is working">
+            <span className="holo-slot">
+              <TalosAvatar state="thinking" />
+            </span>
+            <span className="talos-dots" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        )}
       </main>
 
       <div className="composer" ref={composerRef}>

@@ -14,6 +14,7 @@ import { fmtDuration, parseDuration } from "@/lib/duration";
 import { foodWarnings, leetcodeWarnings, portionWarnings, runWarnings, weightWarnings } from "@/lib/validate";
 import type { MissingField } from "./cards";
 import { closest, nameScore } from "./fuzzy";
+import { matchTitle } from "./lcMatch";
 
 export type Db = SupabaseClient<Database>;
 
@@ -104,14 +105,10 @@ function typed(n: unknown, text: string): n is number {
 }
 
 /** "28:14" -> 28.23, "1h 13m" -> 73, "20 minutes" -> 20. Null when unreadable. */
+/** "28:14" -> 28.23, "1:02:05" -> 62.08, "1h 13m" -> 73, "20 minutes" -> 20. Null when unreadable. */
 function parseMinutes(t: string | null): number | null {
-  if (!t) return null;
-  let m = t.match(/(\d+)\s*h(?:ours?|rs?)?\b\s*(?:(\d+)\s*m)?/i);
-  if (m) return Number(m[1]) * 60 + Number(m[2] ?? 0);
-  m = t.match(/(\d+):(\d{2})/);
-  if (m) return Math.round((Number(m[1]) + Number(m[2]) / 60) * 100) / 100;
-  m = t.match(/(\d+(?:\.\d+)?)\s*(?:m|mins?|minutes?)?\b/i);
-  return m ? Number(m[1]) : null;
+  const secs = t ? parseDuration(t) : null;
+  return secs == null ? null : Math.round((secs / 60) * 100) / 100;
 }
 
 type RpcOut = { status?: string; row?: Record<string, unknown>; action_id?: string | null; existing?: Record<string, unknown> };
@@ -605,10 +602,14 @@ const logLeetcode: ToolDef = {
       additionalProperties: false,
       required: ["title", "time_text", "hints", "result", "redo", "notes", "difficulty", "topic", "days_ago", "confidence"],
       properties: {
-        title: { type: "string", description: "Problem name as the owner wrote it." },
+        title: { type: ["string", "null"], description: "Problem name as the owner wrote it. Null if they didn't name one." },
         time_text: { type: ["string", "null"], description: "The time exactly as written, e.g. '10:00', '25 minutes'. Null if none." },
         hints: { anyOf: [{ type: "string", enum: ["none", "small", "multiple"] }, { type: "null" }], description: "'no hints' = none; one or two small hints = small; a few or more = multiple." },
-        result: { anyOf: [{ type: "string", enum: ["optimal", "suboptimal", "failed"] }, { type: "null" }], description: "Only from the owner's words: optimal; unoptimal/not optimal = suboptimal; failed/gave up/looked at the answer = failed." },
+        result: {
+          anyOf: [{ type: "string", enum: ["solved", "optimal", "suboptimal", "failed"] }, { type: "null" }],
+          description: "Only from the owner's words: solved/completed/done/got it = solved; optimal only if they say optimal; " +
+            "unoptimal/not optimal = suboptimal; failed/gave up/looked at the answer = failed.",
+        },
         redo: { type: ["boolean", "null"], description: "True only if the owner says to redo it or put it in the redo queue." },
         notes: { type: ["string", "null"], description: "Any remark beyond the facts above, copied exactly from the message. Null if none." },
         difficulty: { anyOf: [{ type: "string", enum: ["easy", "medium", "hard"] }, { type: "null" }], description: "Only used if the problem isn't in the catalog." },
@@ -620,7 +621,6 @@ const logLeetcode: ToolDef = {
   },
   async check(input, ctx) {
     const title = String(input.title ?? "").trim();
-    if (!title) return { status: "invalid", detail: "No problem named." };
     const timeText = verbatim(input.time_text, ctx.text);
     const minutes = parseMinutes(timeText);
     const date = dateFor(input, ctx.today);
@@ -629,12 +629,14 @@ const logLeetcode: ToolDef = {
     const base = {
       date, minutes,
       hints: oneOf(input.hints, ["none", "small", "multiple"]),
-      result: oneOf(input.result, ["optimal", "suboptimal", "failed"]),
+      result: oneOf(input.result, ["solved", "optimal", "suboptimal", "failed"]),
       redo: input.redo === true,
       notes: verbatim(input.notes, ctx.text),
       difficulty: oneOf(input.difficulty, ["easy", "medium", "hard"]),
       topic: typeof input.topic === "string" && input.topic.trim() ? input.topic.trim() : null,
     };
+    // No name ("leetcode problem"): ask for it rather than fail.
+    if (!title) return { status: "missing", resolved: { ...base, title: null }, title: "LeetCode", missing: [{ name: "title", label: "Problem", type: "text" }] };
     const { data: hits } = await ctx.db.rpc("lc_lookup", { p_title: title });
     const fieldsFor = (t: string, d: string | null): [string, string][] => {
       const f: [string, string][] = [["Problem", t]];
@@ -647,13 +649,36 @@ const logLeetcode: ToolDef = {
     if (hits && hits.length > 1) {
       return { status: "ambiguous", options: hits.slice(0, 3).map((h) => ({ resolved: { ...base, title: h.title }, fields: fieldsFor(h.title, h.difficulty) })) };
     }
-    const known = hits?.[0];
+    let known: { title: string; difficulty: string | null } | undefined = hits?.[0];
+    if (!known) {
+      // Not an exact title or alias: match by words ("encode decode string" -> Encode and Decode Strings).
+      const { data: catalog } = await ctx.db.from("lc_catalog").select("title, aliases, difficulty");
+      const m = matchTitle(title, catalog ?? []);
+      if (m.kind === "match") known = m.entry;
+      if (m.kind === "options") {
+        // Close but not certain: the owner picks. Picking a catalog problem saves their wording as an alias;
+        // the last option keeps the name exactly as typed.
+        const said = verbatim(input.title, ctx.text)?.trim() ?? title;
+        return {
+          status: "ambiguous",
+          title: "Did you mean…",
+          options: [
+            ...m.entries.slice(0, 2).map((e) => ({ resolved: { ...base, title: e.title, alias: said } as Resolved, fields: fieldsFor(e.title, e.difficulty) })),
+            { resolved: { ...base, title }, fields: [["Problem", `${title} (as typed)`], ...fieldsFor(title, base.difficulty).slice(1)] as [string, string][] },
+          ],
+        };
+      }
+    }
     return {
       status: "ready",
       resolved: { ...base, title: known?.title ?? title },
       fields: fieldsFor(known?.title ?? title, known?.difficulty ?? base.difficulty),
       warnings: leetcodeWarnings(minutes),
     };
+  },
+  fill(r, values) {
+    const t = String(values.title ?? "").trim();
+    return t ? { ...r, title: t } : "Problem is required.";
   },
   async commit(r, db) {
     const out = await rpc(db, "log_leetcode", {
@@ -663,12 +688,18 @@ const logLeetcode: ToolDef = {
     if (out?.status !== "saved" || !out.row) return { status: "failed", detail: out?.status === "ambiguous" ? "That name matches more than one problem." : undefined };
     const row = out.row;
     const bits = [row.difficulty, row.minutes != null ? `${g(row.minutes)} min` : null, row.result].filter(Boolean);
-    return { status: "saved", label: `LeetCode: ${row.title}${bits.length ? ` (${bits.join(", ")})` : ""}`, actionId: out.action_id ?? null };
+    const saved: Commit = { status: "saved", label: `LeetCode: ${row.title}${bits.length ? ` (${bits.join(", ")})` : ""}`, actionId: out.action_id ?? null };
+    // Picked from "Did you mean": remember the owner's wording for that problem.
+    if (typeof r.alias === "string" && r.alias && row.catalog_id) {
+      const added = await rpc(db, "lc_add_alias", { p_title: row.title, p_alias: r.alias });
+      if (added?.status === "saved") saved.also = [{ label: `"${r.alias}" will match ${row.title} next time`, actionId: null }];
+    }
+    return saved;
   },
 };
 
 // "content idea: ...", "journal - ..." prefixes. Everything after is saved byte for byte.
-const NOTE_PREFIX = /^\s*(?:content ideas?|content|work journal|journal)\s*[:\-–—]?\s*/i;
+const NOTE_PREFIX = /^\s*(?:content ideas?|content|work journal|personal journal|personal|diary|add to talos|talos improvements?|talos idea|talos|journal)\s*[:\-–—]?\s*/i;
 
 const addNote: ToolDef = {
   name: "add_note",
@@ -676,7 +707,8 @@ const addNote: ToolDef = {
   definition: {
     name: "add_note",
     description:
-      "A content idea or a work journal entry, e.g. 'content idea: day in the life', 'journal: shipped the auth fix'. " +
+      "A content idea, a work journal entry or a personal journal entry, e.g. 'content idea: day in the life', " +
+      "'journal: shipped the auth fix', 'personal: rough day, called mom', 'add to talos: a watch tab'. " +
       "Copy the note's words exactly; don't rewrite, shorten or fix them.",
     strict: true,
     input_schema: {
@@ -684,14 +716,14 @@ const addNote: ToolDef = {
       additionalProperties: false,
       required: ["kind", "text", "confidence"],
       properties: {
-        kind: { type: "string", enum: ["content", "journal"], description: "content = an idea for content to make; journal = a work journal entry." },
+        kind: { type: "string", enum: ["content", "journal", "personal", "talos"], description: "content = an idea for content to make; journal = a work journal entry; personal = a personal (non-work) journal entry; talos = an idea, fix or feature for this app (Talos)." },
         text: { type: ["string", "null"], description: "The note's words copied exactly from the message, without a 'content idea:' or 'journal:' label. Null if the whole message is the note." },
         confidence,
       },
     },
   },
   async check(input, ctx) {
-    const kind = input.kind === "journal" ? "journal" : "content";
+    const kind = input.kind === "journal" || input.kind === "personal" || input.kind === "talos" ? input.kind : "content";
     // The owner's own words: the model's span if it appears verbatim in the message
     // (needed when the note shares a message with other items), else the whole
     // message minus a leading label.
@@ -702,7 +734,7 @@ const addNote: ToolDef = {
     return {
       status: "ready",
       resolved: { kind, date: ctx.today, body },
-      fields: [["Kind", kind === "journal" ? "Work journal" : "Content idea"], ["Text", body]],
+      fields: [["Kind", { journal: "Work journal", personal: "Personal journal", talos: "Talos improvement", content: "Content idea" }[kind]], ["Text", body]],
       warnings: [],
     };
   },
@@ -712,7 +744,7 @@ const addNote: ToolDef = {
     const body = String(r.body);
     return {
       status: "saved",
-      label: `${r.kind === "journal" ? "Journal" : "Content idea"}: ${body.length > 60 ? `${body.slice(0, 60)}…` : body}`,
+      label: `${{ journal: "Work journal", personal: "Personal journal", talos: "Talos improvement" }[String(r.kind)] ?? "Content idea"}: ${body.length > 60 ? `${body.slice(0, 60)}…` : body}`,
       actionId: out.action_id ?? null,
     };
   },
@@ -1325,9 +1357,93 @@ const logCallback: ToolDef = {
   },
 };
 
+// ---- General reminders -----------------------------------------------------------------
+
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/**
+ * A due date from the owner's own words, worked out by code (the model never computes
+ * dates): "today", "tomorrow", "in 3 days", "friday" (the next one), "11/1", "Nov 1".
+ * Anything else is null, never a guess.
+ */
+export function dueFrom(text: string | null, today: string): string | null {
+  const t = (text ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (/\btoday\b|\btonight\b/.test(t)) return today;
+  if (/\btomorrow\b/.test(t)) return addDays(today, 1);
+  let m = t.match(/\bin\s+(\d+)\s+days?\b/);
+  if (m) return addDays(today, Number(m[1]));
+  m = t.match(/\bin\s+(\d+)\s+weeks?\b/);
+  if (m) return addDays(today, 7 * Number(m[1]));
+  const wd = WEEKDAYS.findIndex((d) => new RegExp(`\\b${d.slice(0, 3)}(${d.slice(3)})?\\b`).test(t));
+  if (wd >= 0) {
+    const now = new Date(`${today}T12:00:00`).getDay();
+    return addDays(today, ((wd - now + 7) % 7) || 7);
+  }
+  const year = Number(today.slice(0, 4));
+  const iso = (mo: number, d: number) => {
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const date = `${year}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    // A date already past this year means next year's.
+    return date < today ? `${year + 1}${date.slice(4)}` : date;
+  };
+  m = t.match(/\b(\d{1,2})\/(\d{1,2})\b/);
+  if (m) return iso(Number(m[1]), Number(m[2]));
+  m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/);
+  if (m) return iso(MONTH_NAMES.indexOf(m[1]) + 1, Number(m[2]));
+  return null;
+}
+
+// "remind me to ...", "reminder: ..." prefixes. Everything after is the owner's text.
+const REMIND_PREFIX = /^\s*(?:remind\s+me\s+(?:to\s+)?|reminder\s*[:\-–—]?\s*|don'?t\s+forget\s+(?:to\s+)?)/i;
+
+const addReminder: ToolDef = {
+  name: "add_reminder",
+  display: "Reminder",
+  definition: {
+    name: "add_reminder",
+    description:
+      "Something the owner wants to be reminded of, e.g. 'remind me to call the landlord', 'renew passport by Nov 1'. " +
+      "Not for job postings to apply to (that's plan_application), and not for logging something already done.",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["text", "due_text", "confidence"],
+      properties: {
+        text: { type: "string", description: "What to remember, copied exactly from the message, without 'remind me to' and without the due date." },
+        due_text: { type: ["string", "null"], description: "The due date exactly as the owner wrote it ('tomorrow', 'friday', 'Nov 1'). Null if none." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    // The owner's own words: the model's span if it appears verbatim, else the message
+    // minus a leading "remind me to".
+    const m = ctx.text.match(REMIND_PREFIX);
+    const body = verbatim(input.text, ctx.text) ?? (m ? ctx.text.slice(m[0].length) : ctx.text);
+    if (!body.trim()) return { status: "invalid", detail: "The reminder is empty." };
+    const dueText = verbatim(input.due_text, ctx.text);
+    const due = dueFrom(dueText, ctx.today);
+    const fields: [string, string][] = [["Reminder", body]];
+    if (due) fields.push(["Due", fmtDay(due)]);
+    else if (dueText) fields.push(["Due", `"${dueText}" (not read as a date)`]);
+    return { status: "ready", resolved: { body, due, date: ctx.today }, fields, warnings: [] };
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "add_reminder", { p_body: r.body, p_due: r.due, p_date: r.date, p_tool: "add_reminder" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const body = String(out.row.body);
+    const short = body.length > 60 ? `${body.slice(0, 60)}…` : body;
+    return { status: "saved", label: `Reminder: ${short}${out.row.due_date ? `, due ${fmtDay(String(out.row.due_date))}` : ""}`, actionId: out.action_id ?? null };
+  },
+};
+
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
-  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run",
+  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -1361,6 +1477,7 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
+    addReminder,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
   ].map((t) => [t.name, t]),

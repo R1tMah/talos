@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ApplyReminders } from "@/components/ApplyReminders";
+import { Reminders } from "@/components/Reminders";
 import { IconChevron } from "@/components/Icons";
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
@@ -35,6 +36,7 @@ export default function TabsPage() {
   return (
     <main className="screen">
       <ScreenHeader title="Tabs" />
+      <Reminders />
       {shown("applications") && <ApplyReminders variant="banner" />}
       <div className="grid-2">
         <StatCard
@@ -118,10 +120,12 @@ export default function TabsPage() {
         )}
       </div>
 
-      {(shown("content") || shown("journal")) && (
+      {(shown("content") || shown("journal") || shown("personal") || shown("talos")) && (
         <div className="grid-2">
           {shown("content") && <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />}
           {shown("journal") && <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />}
+          {shown("personal") && <NoteCard title="Personal Journal" href="/tabs/personal" pad={stats?.notes.personal} pending={pending} />}
+          {shown("talos") && <NoteCard title="Talos Improvements" href="/tabs/talos" pad={stats?.notes.talos} pending={pending} />}
         </div>
       )}
 

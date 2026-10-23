@@ -37,6 +37,9 @@ export const updateSession = async (request: NextRequest) => {
   // Without this call, the client above is created but the session never refreshes.
   const { data } = await supabase.auth.getClaims();
 
+  // The scheduled Watch refresh has no session; the route checks its own secret.
+  if (request.nextUrl.pathname === "/api/watch/refresh") return supabaseResponse;
+
   // Signed out: API calls get a plain 401; pages redirect to the login page.
   if (!data?.claims && request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

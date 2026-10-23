@@ -20,7 +20,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0b0d10" },
+    { media: "(prefers-color-scheme: dark)", color: "#3d1a78" }, // top of the purple gradient
     { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
   ],
 };

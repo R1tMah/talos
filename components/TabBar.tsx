@@ -6,12 +6,13 @@ import { useEffect, useState } from "react";
 import { fmtClock } from "@/lib/date";
 import { FLAGS } from "@/lib/flags";
 import { useWorkoutClock } from "@/lib/workoutClock";
-import { IconChat, IconDumbbell, IconGrid, IconSliders } from "./Icons";
+import { IconChat, IconDumbbell, IconEye, IconGrid, IconSliders } from "./Icons";
 
 const ITEMS = [
   { href: "/", label: "Chat", Icon: IconChat, match: (p: string) => p === "/", primary: true },
   { href: "/workout", label: "Workout", Icon: IconDumbbell, match: (p: string) => p.startsWith("/workout") },
   { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
+  { href: "/watch", label: "Watch", Icon: IconEye, match: (p: string) => p.startsWith("/watch") },
   { href: "/settings", label: "Settings", Icon: IconSliders, match: (p: string) => p.startsWith("/settings") },
 ].filter((i) => i.href !== "/workout" || FLAGS.workout);
 

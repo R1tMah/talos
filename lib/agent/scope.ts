@@ -11,6 +11,8 @@ export const TAB_TOOLS: Record<ChatTab, readonly string[]> = {
   callbacks: ["log_callback"],
   content: ["add_note"],
   journal: ["add_note"],
+  personal: ["add_note"],
+  talos: ["add_note"],
 };
 
 /** True when the tool may run for this message (always, when no chip was picked). */

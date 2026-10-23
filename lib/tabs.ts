@@ -7,6 +7,8 @@ export const ARCHIVABLE = [
   { key: "callbacks", label: "Callbacks", href: "/tabs/callbacks" },
   { key: "content", label: "Content", href: "/tabs/content" },
   { key: "journal", label: "Work Journal", href: "/tabs/journal" },
+  { key: "personal", label: "Personal Journal", href: "/tabs/personal" },
+  { key: "talos", label: "Talos Improvements", href: "/tabs/talos" },
 ] as const;
 
 export type TabKey = (typeof ARCHIVABLE)[number]["key"];

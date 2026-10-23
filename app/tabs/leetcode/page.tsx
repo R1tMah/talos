@@ -15,7 +15,8 @@ import {
 } from "@/lib/leetcodeData";
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"];
-const RESULTS: Result[] = ["optimal", "suboptimal", "failed"];
+// "solved" = done, optimality not stated; "optimal" only when the owner says so.
+const RESULTS: Result[] = ["solved", "optimal", "suboptimal", "failed"];
 const HINTS: Hints[] = ["none", "small", "multiple"];
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -262,7 +263,7 @@ export default function LeetCodePage() {
           },
           {
             key: "result", label: "Result", width: "auto",
-            render: (r) => (r.result ? <Tag tone={r.result === "optimal" ? "" : "tag-outline"}>{cap(r.result)}</Tag> : <span className="faint">–</span>),
+            render: (r) => (r.result ? <Tag tone={r.result === "optimal" || r.result === "solved" ? "" : "tag-outline"}>{cap(r.result)}</Tag> : <span className="faint">–</span>),
           },
           { key: "minutes", label: "Min", width: "auto", align: "right", render: (r) => <span className="muted num">{fmtMin(r.minutes)}</span> },
         ]}

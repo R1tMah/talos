@@ -16,7 +16,7 @@ const TOOL_TAB: Record<string, TabKey> = {
 
 /** The archivable tab a tool call (or stored proposal) writes to, if any. */
 export function tabOf(tool: string, args: Record<string, unknown>): TabKey | null {
-  if (tool === "add_note") return args.kind === "journal" ? "journal" : "content";
+  if (tool === "add_note") return args.kind === "journal" || args.kind === "personal" || args.kind === "talos" ? args.kind : "content";
   return TOOL_TAB[tool] ?? null;
 }
 

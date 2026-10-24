@@ -9,4 +9,6 @@ export const FLAGS = {
   workout: flag(process.env.NEXT_PUBLIC_FLAG_WORKOUT, false),
   /** Finances tab. On everywhere unless set to off; to be removed once it's settled. */
   finances: flag(process.env.NEXT_PUBLIC_FLAG_FINANCES, true),
+  /** Vanguard inside Finances: the total, holdings and its Plaid connection. Off for now. */
+  vanguard: flag(process.env.NEXT_PUBLIC_FLAG_VANGUARD, false),
 };

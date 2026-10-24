@@ -11,6 +11,7 @@ import { Fab, ScreenHeader, SectionTitle, Tag } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
 import { flow, fmtMoney, monthStart, vanguardTotal, type Holding, type Transaction } from "@/lib/finances";
 import { financesApi, useFinances, type TransactionInput, type WriteResult } from "@/lib/financesData";
+import { FLAGS } from "@/lib/flags";
 import { financesExport } from "@/lib/screenExports";
 
 // Finances: PNC checking (balance + transactions) and Vanguard holdings, synced from
@@ -96,7 +97,9 @@ export default function FinancesPage() {
       <SummaryStrip
         items={[
           { label: "Checking", value: checking == null ? "–" : fmtMoney(checking), sub: data.balance ? `as of ${fmtDay(data.balance.date)}` : "not entered" },
-          { label: "Vanguard", value: vanguard == null ? "–" : fmtMoney(vanguard), sub: `${data.holdings.length} ${data.holdings.length === 1 ? "fund" : "funds"}` },
+          ...(FLAGS.vanguard
+            ? [{ label: "Vanguard", value: vanguard == null ? "–" : fmtMoney(vanguard), sub: `${data.holdings.length} ${data.holdings.length === 1 ? "fund" : "funds"}` }]
+            : []),
         ]}
       />
 
@@ -147,27 +150,31 @@ export default function FinancesPage() {
         ]}
       />
 
-      <SectionTitle
-        right={
-          <button type="button" className="btn btn-sm" onClick={() => setHoldingSheet("new")}>
-            Add fund
-          </button>
-        }
-      >
-        Vanguard
-      </SectionTitle>
-      <DataTable
-        rows={data.holdings}
-        empty="No holdings yet."
-        onAdd={() => setHoldingSheet("new")}
-        onRowClick={(h) => setHoldingSheet(h)}
-        onDelete={(h) => run(financesApi.removeHolding(h.id))}
-        columns={[
-          { key: "fund", label: "Fund", width: "1fr", render: (h) => <div className="cell-main">{h.fund}</div> },
-          { key: "shares", label: "Shares", width: "auto", align: "right", render: (h) => <span className="num muted">{h.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span> },
-          { key: "value", label: "Value", width: "auto", align: "right", render: (h) => <span className="num">{fmtMoney(h.value)}</span> },
-        ]}
-      />
+      {FLAGS.vanguard && (
+        <>
+          <SectionTitle
+            right={
+              <button type="button" className="btn btn-sm" onClick={() => setHoldingSheet("new")}>
+                Add fund
+              </button>
+            }
+          >
+            Vanguard
+          </SectionTitle>
+          <DataTable
+            rows={data.holdings}
+            empty="No holdings yet."
+            onAdd={() => setHoldingSheet("new")}
+            onRowClick={(h) => setHoldingSheet(h)}
+            onDelete={(h) => run(financesApi.removeHolding(h.id))}
+            columns={[
+              { key: "fund", label: "Fund", width: "1fr", render: (h) => <div className="cell-main">{h.fund}</div> },
+              { key: "shares", label: "Shares", width: "auto", align: "right", render: (h) => <span className="num muted">{h.shares.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span> },
+              { key: "value", label: "Value", width: "auto", align: "right", render: (h) => <span className="num">{fmtMoney(h.value)}</span> },
+            ]}
+          />
+        </>
+      )}
 
       <Fab onClick={() => setTxnSheet("new")} label="Add transaction" />
 
@@ -208,7 +215,7 @@ export default function FinancesPage() {
         />
       )}
 
-      {holdingSheet && (
+      {FLAGS.vanguard && holdingSheet && (
         <FormSheet
           title={holdingSheet === "new" ? "Add fund" : "Edit fund"}
           fields={HOLDING_FIELDS}

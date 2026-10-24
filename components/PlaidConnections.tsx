@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDay, toISO } from "@/lib/date";
 import type { Connection } from "@/lib/finances";
+import { FLAGS } from "@/lib/flags";
 import { plaidApi } from "@/lib/financesData";
 import { clearPending, openLink, pendingOAuth } from "@/lib/plaidLink";
 import { showToast } from "@/lib/undo";
@@ -10,10 +11,10 @@ import { Tag } from "./ui";
 
 type Context = { kind: Connection["kind"] } | { id: string };
 
-const SLOTS: { kind: Connection["kind"]; label: string }[] = [
+const SLOTS = ([
   { kind: "checking", label: "PNC Checking" },
   { kind: "investments", label: "Vanguard" },
-];
+] satisfies { kind: Connection["kind"]; label: string }[]).filter((s) => s.kind !== "investments" || FLAGS.vanguard);
 
 const STATUS: Record<Connection["status"], string | null> = {
   ok: null,

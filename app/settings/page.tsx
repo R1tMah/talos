@@ -115,7 +115,7 @@ export default function SettingsPage() {
   if (!data) {
     return failed ? (
       <main className="screen">
-        <ScreenHeader title="Settings" />
+        <ScreenHeader title="SETTINGS" brand />
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -130,7 +130,7 @@ export default function SettingsPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Settings" />
+      <ScreenHeader title="SETTINGS" brand />
 
       {notice && (
         <p role={notice.ok ? "status" : "alert"} style={{ color: notice.ok ? "var(--text-2)" : "var(--danger)", fontSize: "var(--t-sm)", margin: 0 }}>

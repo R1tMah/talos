@@ -59,3 +59,22 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   await db.from("message_log").update({ ...meta, response: response as unknown as Json }).eq("id", logged.data.id);
   return NextResponse.json(response);
 }
+
+const STALE_MS = 3 * 60_000; // past this, a message with no answer stopped partway
+
+/**
+ * Where a sent message stands, for the client to pick up a reply it never got (the app
+ * was closed or reloaded mid-request): GET ?clientMsgId=…
+ * { status: "done", cards } | { status: "working" } | { status: "unknown" } (never arrived) | { status: "failed" }.
+ */
+export async function GET(req: Request) {
+  const db = await ownerDb();
+  if (!db) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const clientMsgId = new URL(req.url).searchParams.get("clientMsgId");
+  if (!clientMsgId) return NextResponse.json({ error: "clientMsgId required" }, { status: 400 });
+  const { data, error } = await db.from("message_log").select("response, created_at").eq("client_msg_id", clientMsgId).maybeSingle();
+  if (error) return NextResponse.json({ error: "failed" }, { status: 500 });
+  if (!data) return NextResponse.json({ status: "unknown" });
+  if (data.response) return NextResponse.json({ status: "done", ...(data.response as unknown as ChatResponse) });
+  return NextResponse.json({ status: Date.now() - new Date(data.created_at).getTime() < STALE_MS ? "working" : "failed" });
+}

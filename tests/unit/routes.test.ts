@@ -12,7 +12,7 @@ vi.mock("@/lib/agent/server", () => ({
 }));
 vi.mock("@/lib/agent/run", async (orig) => ({ ...(await orig<typeof import("@/lib/agent/run")>()), run: state.run }));
 
-import { POST as chat } from "@/app/api/chat/route";
+import { GET as chatStatus, POST as chat } from "@/app/api/chat/route";
 import { POST as confirm } from "@/app/api/confirm/route";
 
 type Row = Record<string, unknown>;
@@ -171,6 +171,17 @@ describe("/api/chat", () => {
   it("#144 without the owner's session it returns 401", async () => {
     state.db = null;
     expect((await chat(post({ text: "168.2", clientMsgId: "c2" }))).status).toBe(401);
+  });
+
+  it("reports a sent message's reply so a reloaded app can pick it up", async () => {
+    const status = async (id: string) => (await chatStatus(new Request(`http://test/api/chat?clientMsgId=${id}`))).json();
+    await chat(post({ text: "168.2", clientMsgId: "c7" }));
+    expect(await status("c7")).toMatchObject({ status: "done", cards: [{ kind: "saved" }] });
+    s.tables.message_log.push({ id: "m-run", client_msg_id: "c8", created_at: new Date().toISOString(), response: null });
+    expect(await status("c8")).toEqual({ status: "working" });
+    s.tables.message_log.push({ id: "m-old", client_msg_id: "c9", created_at: new Date(Date.now() - 10 * 60_000).toISOString(), response: null });
+    expect(await status("c9")).toEqual({ status: "failed" });
+    expect(await status("never-sent")).toEqual({ status: "unknown" });
   });
 
   it("logs the tab chip with the message, for Chat history", async () => {

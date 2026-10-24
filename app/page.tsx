@@ -13,26 +13,9 @@ import { useArchivedTabs } from "@/lib/archivedTabs";
 import { CHAT_TABS, tabFromReply, type ChatTab } from "@/lib/tabs";
 import { orderChips } from "@/lib/chipRank";
 import { useTopChips } from "@/lib/chipRankData";
+import { chatStore, useChat, type Msg } from "@/lib/chatStore";
 
 const tabName = (k: ChatTab) => CHAT_TABS.find((t) => t.key === k)!.label;
-
-type Msg = { id: string; role: "user"; text: string; tab?: ChatTab; ts: number } | { id: string; role: "app"; card: ChatCard; ts: number };
-
-// The transcript is a per-device convenience; the data itself lives in Supabase.
-// It only covers one logical day (the app's 4am rule): a new day starts empty.
-const KEY = "talos.chat.v3";
-const MAX_KEPT = 200;
-
-function loadChat(day: string): Msg[] {
-  try {
-    localStorage.removeItem("talos.chat.v2"); // the old, never-cleared transcript
-    const raw = localStorage.getItem(KEY);
-    const saved = raw ? (JSON.parse(raw) as { day?: string; msgs?: Msg[] }) : null;
-    return saved?.day === day && Array.isArray(saved.msgs) ? saved.msgs : [];
-  } catch {
-    return [];
-  }
-}
 
 async function post<T>(url: string, body: unknown): Promise<T | null> {
   try {
@@ -44,9 +27,10 @@ async function post<T>(url: string, body: unknown): Promise<T | null> {
 }
 
 export default function ChatPage() {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  // Kept outside this page, so a reply that lands while you're on another tab isn't lost.
+  const { msgs, busy } = useChat();
+  const { setMsgs } = chatStore;
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
   const [fillFor, setFillFor] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -64,12 +48,7 @@ export default function ChatPage() {
   }, [archived, chosen]);
 
   const [day, setDay] = useState(() => logicalToday());
-  useEffect(() => setMsgs(loadChat(day)), [day]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify({ day, msgs: msgs.slice(-MAX_KEPT) }));
-    } catch {}
-  }, [day, msgs]);
+  useEffect(() => chatStore.open(day), [day]);
 
   // The app can sit open overnight: when it comes back to the foreground on a new
   // day, start fresh. Never mid-conversation, only on return.
@@ -107,8 +86,9 @@ export default function ChatPage() {
 
   // Talos "speaks" (one flash) on the first card of each new reply.
   const [speaking, setSpeaking] = useState<string | null>(null);
-  const speak = (replies: Msg[]) => {
-    append(...replies);
+  const speak = (replies: Msg[], after?: string) => {
+    if (after) chatStore.resolve(after, replies);
+    else append(...replies);
     setSpeaking(replies[0]?.id ?? null);
     setTimeout(() => setSpeaking(null), 900);
   };
@@ -128,13 +108,13 @@ export default function ChatPage() {
     // A picked tab chip goes with this one message, then clears.
     const tab = prompt ? named! : (chosen ?? undefined);
     setChosen(null);
-    const user: Msg = { id: uid(), role: "user", text: t, tab, ts: Date.now() };
+    const user: Msg = { id: uid(), role: "user", text: t, tab, ts: Date.now(), pending: true };
     append(user);
-    setBusy(true);
+    chatStore.wait(1);
     const res = await post<ChatResponse>("/api/chat", { text: prompt ? prompt.text : t, clientMsgId: user.id, tab });
-    setBusy(false);
+    chatStore.wait(-1);
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
-    speak(cards.map(reply));
+    speak(cards.map(reply), user.id);
     if (cards.some((c) => c.kind === "saved")) dataChanged();
   };
 
@@ -233,6 +213,7 @@ export default function ChatPage() {
             <div key={m.id} className={`talos-row${first ? " first" : ""}`}>
               <span className="holo-slot">{first && <TalosAvatar state={speaking === m.id ? "speaking" : "idle"} />}</span>
               <div className="msg-app">
+                {first && <span className="talos-name">TALOS</span>}
                 <ResultCard card={m.card} on={handlers(m)} />
               </div>
             </div>
@@ -243,11 +224,14 @@ export default function ChatPage() {
             <span className="holo-slot">
               <TalosAvatar state="thinking" />
             </span>
-            <span className="talos-dots" aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
+            <div>
+              <span className="talos-name">TALOS</span>
+              <span className="talos-dots" aria-hidden>
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
           </div>
         )}
       </main>

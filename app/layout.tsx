@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { KeyboardInset } from "@/components/KeyboardInset";
 import { TabBar } from "@/components/TabBar";
@@ -26,12 +27,15 @@ export const viewport: Viewport = {
   ],
 };
 
+// The TALOS wordmark's typeface, self-hosted at build time (the rest of the app uses the system font).
+const wordmark = Space_Grotesk({ subsets: ["latin"], display: "swap", variable: "--font-wordmark" });
+
 // Applies a saved theme override before first paint.
 const themeScript = `try{var t=localStorage.getItem("talos.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={wordmark.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

@@ -10,6 +10,7 @@ import { ScreenHeader } from "@/components/ui";
 import { DEFAULTS, KIND_LABELS, SourceForm } from "@/components/watch/SourceForm";
 import { WatchCard } from "@/components/watch/Views";
 import { useWatchSources, watchApi } from "@/lib/watch/data";
+import { blockAt, fmtHHMM, orderByTime } from "@/lib/watch/schedule";
 import type { WatchKind } from "@/lib/watch/types";
 
 /**
@@ -21,6 +22,12 @@ export default function WatchPage() {
   const router = useRouter();
   const [adding, setAdding] = useState<WatchKind | "pick" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Re-render each minute so the order switches when a block of the day starts.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Back from Google sign-in while adding a calendar (?add=calendar&google=…): reopen the form.
   useEffect(() => {
@@ -49,7 +56,9 @@ export default function WatchPage() {
     );
   }
 
-  const shown = data.filter((s) => s.enabled);
+  // Ordered by the block of the day (lib/watch/schedule.ts), not the set position.
+  const shown = orderByTime(data.filter((s) => s.enabled), now);
+  const { block, until } = blockAt(now);
   const hidden = data.filter((s) => !s.enabled);
   const adder = adding && adding !== "pick" ? DEFAULTS[adding] : null;
 
@@ -64,6 +73,10 @@ export default function WatchPage() {
           </button>
         }
       />
+      <p className="faint watch-block">
+        {block.name}
+        {until && ` · until ${fmtHHMM(until)}`}
+      </p>
       {notice && <p role="alert" className="watch-fallback">{notice}</p>}
       {shown.map((s) => <WatchCard key={s.id} s={s} />)}
       {!shown.length && <p className="muted">Nothing to watch. Add a source with +.</p>}

@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { IconBack, IconPlus } from "./Icons";
+import { TalosAvatar } from "./TalosAvatar";
 
-export function ScreenHeader({ title, back, right, brand }: { title: string; back?: string; right?: ReactNode; /** Soft pink wordmark instead of metal. */ brand?: boolean }) {
+export function ScreenHeader({
+  title, back, right, brand,
+}: {
+  title: string;
+  back?: string;
+  right?: ReactNode;
+  /** The hologram lockup: Talos beside the title in the shimmering wordmark, instead of metal. */
+  brand?: boolean;
+}) {
   return (
     <header className="header">
       {back && (
@@ -12,9 +21,18 @@ export function ScreenHeader({ title, back, right, brand }: { title: string; bac
           <IconBack />
         </Link>
       )}
-      {/* Balances a right-side control so a centered wordmark stays centered. */}
-      {brand && right && !back && <span className="header-spacer" aria-hidden />}
-      <h1 className={brand ? "brand" : undefined}>{title}</h1>
+      {brand ? (
+        <>
+          {/* Balances a right-side control so the lockup stays centered. */}
+          {right && !back && <span className="header-spacer" aria-hidden />}
+          <div className="talos-lockup" style={{ "--len": title.length, "--sides": right || back ? 1 : 0 } as CSSProperties}>
+            <TalosAvatar size={44} />
+            <h1 className="brand wordmark holo-text">{title}</h1>
+          </div>
+        </>
+      ) : (
+        <h1>{title}</h1>
+      )}
       {right}
     </header>
   );

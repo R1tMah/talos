@@ -121,27 +121,62 @@ export async function fetchTeam(c: TeamConfig): Promise<TeamSnap> {
 
 const nameKey = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
 
-/** Season and career averages for the followed players, found by name on the team's roster. */
+interface EspnRoster {
+  season?: { year: number };
+  athletes: { id: string; displayName: string; shortName: string }[];
+}
+
+/** The team's current roster, as ESPN lists it (also what the settings form picks from). */
+export const fetchRoster = (c: Pick<TeamConfig, "sport" | "league" | "team">) =>
+  getJson<EspnRoster>(`${ESPN}/site/v2/sports/${c.sport}/${c.league}/teams/${c.team}/roster`);
+
+interface EspnAthleteStats {
+  categories?: { name: string; labels: string[]; statistics?: { season: { year: number }; stats: string[] }[] }[];
+}
+
+/**
+ * One season's line: per-game PTS/REB/AST/TO and ESPN's FG%, 3P%, FT% and AST/TO, plus
+ * eFG% and TS% worked out from the season totals. Null if they haven't played that season.
+ */
+export function seasonLine(s: EspnAthleteStats, year: number): StatLine | null {
+  const row = (cat: string): StatLine | null => {
+    const c = s.categories?.find((x) => x.name === cat);
+    const r = c?.statistics?.find((x) => x.season.year === year);
+    return c && r ? Object.fromEntries(c.labels.map((l, i) => [l, r.stats[i]])) : null;
+  };
+  const avg = row("averages");
+  if (!avg) return null;
+  const tot = row("totals");
+  const misc = row("miscellaneous");
+  const madeOf = (v?: string) => (v ?? "").split("-").map(Number); // "7-16" -> [7, 16]
+  const [fgm, fga] = madeOf(tot?.FG);
+  const [tpm] = madeOf(tot?.["3PT"]);
+  const [, fta] = madeOf(tot?.FT);
+  const pct = (n: number, d: number) => (d > 0 && Number.isFinite(n) ? ((100 * n) / d).toFixed(1) : "–");
+  return {
+    GP: avg.GP, PTS: avg.PTS, REB: avg.REB, AST: avg.AST, TO: avg.TO,
+    "FG%": avg["FG%"], "3P%": avg["3P%"], "FT%": avg["FT%"],
+    "eFG%": pct(fgm + 0.5 * tpm, fga),
+    "TS%": pct(Number(tot?.PTS), 2 * (fga + 0.44 * fta)),
+    "AST/TO": misc?.["AST/TO"] ?? "–",
+  };
+}
+
+/** This season's line for each followed player, found by name on the team's roster. */
 async function fetchPlayers(c: TeamConfig): Promise<{ players: PlayerSnap[]; missing: string[] }> {
   const wanted = (c.players ?? []).filter((n) => n.trim());
   if (!wanted.length) return { players: [], missing: [] };
   // Like standings, player stats are extra: a failure here leaves the rest of the team card intact.
-  const roster = await getJson<{ athletes: { id: string; displayName: string; shortName: string }[] }>(
-    `${ESPN}/site/v2/sports/${c.sport}/${c.league}/teams/${c.team}/roster`,
-  ).catch(() => null);
-  if (!roster) return { players: [], missing: [] };
+  const roster = await fetchRoster(c).catch(() => null);
+  if (!roster?.season) return { players: [], missing: [] };
+  const year = roster.season.year;
   const found = wanted.map((n) => ({ n, a: roster.athletes.find((a) => nameKey(a.displayName) === nameKey(n)) }));
   const players = await Promise.all(
     found.filter((f) => f.a).map(async ({ a }) => {
-      const o = await getJson<{ statistics?: { labels: string[]; splits: { displayName: string; stats: string[] }[] } }>(
-        `https://site.web.api.espn.com/apis/common/v3/sports/${c.sport}/${c.league}/athletes/${a!.id}/overview`,
+      const st = await getJson<EspnAthleteStats>(
+        `https://site.web.api.espn.com/apis/common/v3/sports/${c.sport}/${c.league}/athletes/${a!.id}/stats`,
       ).catch(() => null);
-      const st = o?.statistics;
-      const line = (split: string): StatLine | null => {
-        const row = st?.splits.find((x) => x.displayName === split);
-        return row && st ? Object.fromEntries(st.labels.map((l, i) => [l, row.stats[i]])) : null;
-      };
-      return { name: a!.displayName, short: a!.shortName, season: line("Regular Season"), career: line("Career") };
+      return { name: a!.displayName, short: a!.shortName, season: st ? seasonLine(st, year) : null };
     }),
   );
   return { players, missing: found.filter((f) => !f.a).map((f) => f.n) };

@@ -258,6 +258,30 @@ export type Database = {
           },
         ]
       }
+      checking_balances: {
+        Row: {
+          balance: number
+          created_at: string
+          deleted_at: string | null
+          id: string
+          logical_date: string
+        }
+        Insert: {
+          balance: number
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date?: string
+        }
+        Relationships: []
+      }
       exercises: {
         Row: {
           aliases: string[]
@@ -279,6 +303,39 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+        }
+        Relationships: []
+      }
+      finance_transactions: {
+        Row: {
+          amount: number
+          category: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string
+          id: string
+          logical_date: string
+          note: string | null
+        }
+        Insert: {
+          amount: number
+          category?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description: string
+          id?: string
+          logical_date: string
+          note?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string
+          id?: string
+          logical_date?: string
+          note?: string | null
         }
         Relationships: []
       }
@@ -413,6 +470,30 @@ export type Database = {
         }
         Relationships: []
       }
+      google_auth: {
+        Row: {
+          email: string | null
+          id: number
+          refresh_token: string
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          email?: string | null
+          id?: number
+          refresh_token: string
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          email?: string | null
+          id?: number
+          refresh_token?: string
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       leetcode_log: {
         Row: {
           catalog_id: string | null
@@ -537,6 +618,30 @@ export type Database = {
           tab?: string | null
           text?: string
           tool_calls?: Json | null
+        }
+        Relationships: []
+      }
+      net_worth_snapshots: {
+        Row: {
+          checking: number | null
+          created_at: string
+          snapshot_date: string
+          total: number
+          vanguard: number | null
+        }
+        Insert: {
+          checking?: number | null
+          created_at?: string
+          snapshot_date: string
+          total: number
+          vanguard?: number | null
+        }
+        Update: {
+          checking?: number | null
+          created_at?: string
+          snapshot_date?: string
+          total?: number
+          vanguard?: number | null
         }
         Relationships: []
       }
@@ -945,6 +1050,36 @@ export type Database = {
         }
         Relationships: []
       }
+      vanguard_holdings: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          fund: string
+          id: string
+          shares: number
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          fund: string
+          id?: string
+          shares: number
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          fund?: string
+          id?: string
+          shares?: number
+          updated_at?: string
+          value?: number
+        }
+        Relationships: []
+      }
       watch_items: {
         Row: {
           closed_at: string | null
@@ -1245,6 +1380,10 @@ export type Database = {
         Args: { p_aliases?: string[]; p_name: string; p_tool?: string }
         Returns: Json
       }
+      add_holding: {
+        Args: { p_fund: string; p_shares: number; p_tool?: string; p_value: number }
+        Returns: Json
+      }
       add_note: {
         Args: {
           p_body: string
@@ -1300,7 +1439,15 @@ export type Database = {
         Returns: Json
       }
       delete_food: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_checking_balance: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_food_entry: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      delete_holding: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
@@ -1312,6 +1459,10 @@ export type Database = {
       delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_run: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_set: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_transaction: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_weight: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_workout: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       dismiss_application_reminder: {
@@ -1321,6 +1472,14 @@ export type Database = {
       dismiss_reminder: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
+      }
+      google_status: {
+        Args: never
+        Returns: {
+          email: string
+          scope: string
+          updated_at: string
+        }[]
       }
       is_owner: { Args: never; Returns: boolean }
       lc_add_alias: {
@@ -1412,6 +1571,10 @@ export type Database = {
         }
         Returns: Json
       }
+      log_transaction: {
+        Args: { p_amount: number; p_category?: string; p_date: string; p_description: string; p_note?: string; p_tool?: string }
+        Returns: Json
+      }
       log_saved_meal: {
         Args: {
           p_date: string
@@ -1496,6 +1659,10 @@ export type Database = {
       }
       set_debrief: {
         Args: { p_debrief: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      set_checking_balance: {
+        Args: { p_balance: number; p_date: string; p_tool?: string }
         Returns: Json
       }
       set_exercise_skipped: {
@@ -1616,6 +1783,14 @@ export type Database = {
           p_protein_g: number
           p_tool?: string
         }
+        Returns: Json
+      }
+      update_holding: {
+        Args: { p_fund: string; p_id: string; p_shares: number; p_tool?: string; p_value: number }
+        Returns: Json
+      }
+      update_transaction: {
+        Args: { p_amount: number; p_category: string; p_date: string; p_description: string; p_id: string; p_note: string; p_tool?: string }
         Returns: Json
       }
       update_leetcode: {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sheet } from "@/components/FormSheet";
 import { IconChevron, IconPlus } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
@@ -21,6 +21,17 @@ export default function WatchPage() {
   const router = useRouter();
   const [adding, setAdding] = useState<WatchKind | "pick" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Back from Google sign-in while adding a calendar (?add=calendar&google=…): reopen the form.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const g = q.get("google");
+    if (!g) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (g === "connected") {
+      if (q.get("add") === "calendar") setAdding("calendar");
+    } else setNotice(g === "denied" ? "Google sign-in was cancelled." : "Google sign-in failed. Try again.");
+  }, []);
 
   if (!data) {
     return failed ? (

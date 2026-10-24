@@ -4,6 +4,7 @@
 import type { AppEntry } from "./applicationsData";
 import { fmtDuration } from "./duration";
 import type { TabExport } from "./exportTab";
+import type { Transaction } from "./finances";
 import { paceOf, type Run } from "./runsData";
 import { weightLogRows, type LogItem } from "./weightLog";
 
@@ -31,6 +32,20 @@ export function runsExport(runs: Run[]): TabExport {
     rows: runs.map((r) => ({
       date: r.date, miles: mi(r.miles), time: fmtDuration(r.seconds), pace: fmtDuration(paceOf(r)),
       cal: r.calories == null ? "" : String(r.calories), note: r.note ?? "",
+    })),
+  };
+}
+
+/** PNC checking transactions, newest first. Amounts are signed: negative = spent. */
+export function financesExport(txns: Transaction[]): TabExport {
+  return {
+    title: "Finances",
+    columns: [
+      { key: "date", label: "Date" }, { key: "amount", label: "Amount" }, { key: "description", label: "What" },
+      { key: "category", label: "Category" }, { key: "note", label: "Note" },
+    ],
+    rows: txns.map((t) => ({
+      date: t.date, amount: t.amount.toFixed(2), description: t.description, category: t.category ?? "", note: t.note ?? "",
     })),
   };
 }

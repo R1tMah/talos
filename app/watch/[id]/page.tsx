@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { IconRefresh, IconSliders } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader } from "@/components/ui";
+import { CalendarCard } from "@/components/watch/Calendar";
 import { JobsView } from "@/components/watch/Jobs";
 import { NewsletterView } from "@/components/watch/Newsletter";
 import { SourceForm } from "@/components/watch/SourceForm";
@@ -24,6 +25,15 @@ export default function WatchSourcePage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // Back from Google sign-in (?google=…): say how it went, reopen the settings to pick calendars.
+  useEffect(() => {
+    const g = new URLSearchParams(window.location.search).get("google");
+    if (!g) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (g === "connected") setEditing(true);
+    else setNotice(g === "denied" ? "Google sign-in was cancelled." : "Google sign-in failed. Try again.");
+  }, []);
 
   if (s === undefined) return <PageSkeleton />;
   if (s === null) {
@@ -67,6 +77,7 @@ export default function WatchSourcePage() {
 
       {s.kind === "transit" && <TransitCard s={s} full />}
       {s.kind === "weather" && <WeatherCard s={s} full />}
+      {s.kind === "calendar" && <CalendarCard s={s} full />}
       {s.kind === "espn_team" && (
         <>
           <Fallback s={s} />

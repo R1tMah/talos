@@ -6,15 +6,16 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
+import { fetchCalendar } from "@/lib/google/calendar";
 import { fetchHeadlines, fetchJobs, fetchNews, fetchNewsletter, fetchTeam, fetchWeather } from "./adapters";
-import type { HeadlinesConfig, JobsConfig, JobsSnap, NewsConfig, NewsletterConfig, TeamConfig, WatchKind, WeatherConfig } from "./types";
+import type { CalendarConfig, HeadlinesConfig, JobsConfig, JobsSnap, NewsConfig, NewsletterConfig, TeamConfig, WatchKind, WeatherConfig } from "./types";
 import { fallbackLink } from "./types";
 
 type Admin = SupabaseClient<Database>;
 type Source = Database["public"]["Tables"]["watch_sources"]["Row"];
 
 // Everything but transit, which is fetched live while its card is open.
-const SCHEDULED: ReadonlySet<WatchKind> = new Set(["espn_team", "espn_news", "headlines", "jobs", "weather", "newsletter"]);
+const SCHEDULED: ReadonlySet<WatchKind> = new Set(["espn_team", "espn_news", "headlines", "jobs", "weather", "newsletter", "calendar"]);
 const SLACK_MS = 2 * 60_000; // cron ticks drift; don't skip a source for being a minute early
 const CLOSED_KEPT_DAYS = 30;
 
@@ -58,6 +59,7 @@ function snapshot(db: Admin, s: Source): Promise<unknown> {
     case "weather": return fetchWeather(c as unknown as WeatherConfig);
     case "jobs": return storeJobs(db, s, c as unknown as JobsConfig);
     case "newsletter": return fetchNewsletter(c as unknown as NewsletterConfig, s.title);
+    case "calendar": return fetchCalendar(db, c as unknown as CalendarConfig);
     default: throw new Error(`${s.kind} isn't fetched on a schedule`);
   }
 }

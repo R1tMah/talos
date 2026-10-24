@@ -4,17 +4,19 @@
 // out per kind. Lists are typed comma-separated (feeds one per line).
 
 import { FormSheet, type Field } from "@/components/FormSheet";
+import { CalendarForm } from "./Calendar";
+import { TeamForm } from "./TeamForm";
 import type { SourceInput, WatchSource } from "@/lib/watch/data";
-import type { HeadlinesConfig, JobsConfig, NewsConfig, NewsletterConfig, TeamConfig, TransitConfig, WatchKind, WeatherConfig } from "@/lib/watch/types";
+import type { CalendarConfig, HeadlinesConfig, JobsConfig, NewsConfig, NewsletterConfig, TeamConfig, TransitConfig, WatchKind, WeatherConfig } from "@/lib/watch/types";
 
-const LEAGUES: Record<string, string> = {
+export const LEAGUES: Record<string, string> = {
   nba: "basketball", wnba: "basketball", nfl: "football", "college-football": "football", mlb: "baseball", nhl: "hockey",
   "eng.1": "soccer", "usa.1": "soccer",
 };
 
 export const KIND_LABELS: Partial<Record<WatchKind, string>> = {
   espn_team: "Team", espn_news: "Sports headlines", headlines: "Tech headlines", jobs: "Job postings", weather: "Weather", transit: "Train departures",
-  newsletter: "Newsletter",
+  newsletter: "Newsletter", calendar: "Google Calendar",
 };
 
 /** Starting settings for a source added from the form. */
@@ -23,6 +25,7 @@ export const DEFAULTS: Partial<Record<WatchKind, { title: string; every: number;
   espn_news: { title: "Sports", every: 60, config: { sport: "football", league: "nfl", limit: 15 } satisfies NewsConfig },
   headlines: { title: "Headlines", every: 60, config: { hn: false, feeds: [], limit: 15 } satisfies HeadlinesConfig },
   jobs: { title: "Jobs", every: 240, config: { categories: ["Software"], locations: [], exclude: [] } satisfies JobsConfig },
+  calendar: { title: "Calendar", every: 15, config: { calendars: [], timezone: "America/New_York", days: 7 } satisfies CalendarConfig },
   newsletter: { title: "Morning Brew", every: 60, config: { url: "https://www.morningbrew.com/issues/latest", markets: true } satisfies NewsletterConfig },
   weather: { title: "Weather", every: 30, config: { place: "Boston", lat: 42.3601, lon: -71.0589, timezone: "America/New_York" } satisfies WeatherConfig },
   transit: {
@@ -44,10 +47,6 @@ function fieldsFor(kind: WatchKind): Field[] {
   const every: Field = { name: "every", label: "Refresh every (min)", type: "number" };
   const show: Field = { name: "enabled", label: "Show on Watch", type: "toggle" };
   switch (kind) {
-    case "espn_team":
-      return [...common, { name: "league", label: "League", type: "select", options: Object.keys(LEAGUES) },
-        { name: "team", label: "Team (ESPN code, e.g. por)" },
-        { name: "players", label: "Players to follow", full: true, placeholder: "Damian Lillard" }, every, show];
     case "espn_news":
       return [...common, { name: "league", label: "League", type: "select", options: Object.keys(LEAGUES) },
         { name: "limit", label: "Headlines", type: "number" }, every, show];
@@ -83,7 +82,6 @@ function toValues(s: Pick<WatchSource, "kind" | "title" | "config" | "enabled" |
   const c = s.config as Record<string, unknown>;
   const base = { title: s.title, enabled: s.enabled, every: s.everyMinutes };
   switch (s.kind) {
-    case "espn_team": return { ...base, league: c.league, team: c.team, players: ((c.players as string[] | undefined) ?? []).join(", ") };
     case "espn_news": return { ...base, league: c.league, limit: c.limit };
     case "headlines": return { ...base, hn: c.hn, feeds: (c.feeds as string[]).join("\n"), limit: c.limit };
     case "jobs": {
@@ -108,7 +106,6 @@ function toValues(s: Pick<WatchSource, "kind" | "title" | "config" | "enabled" |
 function fromValues(kind: WatchKind, prev: Record<string, unknown>, v: Values): SourceInput {
   const base = { title: str(v.title), enabled: Boolean(v.enabled), everyMinutes: Number(v.every) || 30 };
   switch (kind) {
-    case "espn_team": return { ...base, config: { ...prev, league: v.league, sport: LEAGUES[v.league as string], team: str(v.team).toLowerCase(), players: list(v.players) } };
     case "espn_news": return { ...base, config: { ...prev, league: v.league, sport: LEAGUES[v.league as string], limit: Number(v.limit) } };
     case "headlines": return { ...base, config: { ...prev, hn: Boolean(v.hn), feeds: list(v.feeds), limit: Number(v.limit) } };
     case "jobs": return { ...base, config: { ...prev, categories: list(v.categories), locations: list(v.locations), exclude: list(v.exclude),
@@ -132,7 +129,6 @@ function validate(kind: WatchKind, v: Values): string | null {
   const every = Number(v.every);
   if (kind !== "transit" && (!Number.isInteger(every) || every < 15 || every > 1440)) return "Refresh every 15 to 1440 minutes.";
   if ((kind === "espn_news" || kind === "headlines") && !(Number(v.limit) >= 1 && Number(v.limit) <= 50)) return "Show 1 to 50 headlines.";
-  if (kind === "espn_team" && !/^[a-z0-9]{2,6}$/i.test(str(v.team))) return "Team is ESPN's short code, like por.";
   if (kind === "headlines") {
     if (!v.hn && !list(v.feeds).length) return "Turn on Hacker News or add a feed.";
     if (list(v.feeds).some((f) => !/^https?:\/\/\S+$/.test(f))) return "Each feed must be a full http(s) link.";
@@ -154,6 +150,10 @@ export function SourceForm({
   onSubmit: (v: SourceInput) => void;
   onClose: () => void;
 }) {
+  // The calendar picks from the Google account's own calendar list.
+  if (source.kind === "calendar") return <CalendarForm source={source} onSubmit={onSubmit} onClose={onClose} />;
+  // A team picks its players from the live roster.
+  if (source.kind === "espn_team") return <TeamForm source={source} onSubmit={onSubmit} onClose={onClose} />;
   return (
     <FormSheet
       title={source.id ? `${source.title} settings` : `Add ${KIND_LABELS[source.kind]?.toLowerCase() ?? "source"}`}

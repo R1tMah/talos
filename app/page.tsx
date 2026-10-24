@@ -10,7 +10,7 @@ import { logicalToday, uid } from "@/lib/date";
 import { dataChanged, showToast, undo } from "@/lib/undo";
 import { useDictation } from "@/lib/useDictation";
 import { useArchivedTabs } from "@/lib/archivedTabs";
-import { CHAT_TABS, type ChatTab } from "@/lib/tabs";
+import { CHAT_TABS, tabFromReply, type ChatTab } from "@/lib/tabs";
 import { orderChips } from "@/lib/chipRank";
 import { useTopChips } from "@/lib/chipRankData";
 
@@ -120,13 +120,18 @@ export default function ChatPage() {
     if (!t || busy) return;
     dictation.stop();
     setText("");
+    // Naming a tab under an open "Where does this go?" sends the original message to that tab.
+    const open = chosen ? null : openUnsure();
+    const named = open ? tabFromReply(t) : null;
+    const prompt = open && named ? promptFor(open.id) : null;
+    if (open && prompt) setCard(open.id, (c) => ({ ...c, resolved: "picked" }) as ChatCard);
     // A picked tab chip goes with this one message, then clears.
-    const tab = chosen ?? undefined;
+    const tab = prompt ? named! : (chosen ?? undefined);
     setChosen(null);
     const user: Msg = { id: uid(), role: "user", text: t, tab, ts: Date.now() };
     append(user);
     setBusy(true);
-    const res = await post<ChatResponse>("/api/chat", { text: t, clientMsgId: user.id, tab });
+    const res = await post<ChatResponse>("/api/chat", { text: prompt ? prompt.text : t, clientMsgId: user.id, tab });
     setBusy(false);
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
     speak(cards.map(reply));
@@ -141,6 +146,15 @@ export default function ChatPage() {
     if (!(values && cards[0].kind === "failed")) setCard(msgId, mark);
     speak(cards.map(reply));
     if (cards.some((c) => c.kind === "saved")) dataChanged();
+  };
+
+  // An unanswered "Where does this go?" in the latest reply, if any.
+  const openUnsure = () => {
+    for (let j = msgs.length - 1; j >= 0 && msgs[j].role === "app"; j--) {
+      const m = msgs[j];
+      if (m.role === "app" && m.card.kind === "unsure" && !m.card.resolved) return m;
+    }
+    return null;
   };
 
   // The prompt behind a reply: the last user message before it.

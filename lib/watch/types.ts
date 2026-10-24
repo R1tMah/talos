@@ -1,7 +1,7 @@
 // Shapes shared by the Watch adapters (server) and the Watch screens (client).
 // A snapshot is exactly what a source returned, trimmed to what the tab shows.
 
-export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter";
+export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter" | "calendar";
 
 // ---- Settings, one shape per adapter ----------------------------------------------------
 
@@ -24,6 +24,12 @@ export interface JobsConfig {
 export interface NewsletterConfig {
   url: string; // the newsletter's "latest issue" page, e.g. https://www.morningbrew.com/issues/latest
   markets: boolean; // show the markets numbers card
+}
+/** Google calendars to show, by id as Google gives it, with the name to label them by. */
+export interface CalendarConfig {
+  calendars: { id: string; name: string }[];
+  timezone: string; // days start and end here
+  days: number; // how far ahead the week view goes, today included
 }
 export interface WeatherConfig { place: string; lat: number; lon: number; timezone: string }
 
@@ -61,13 +67,12 @@ export interface Game {
   detail: string; // ESPN's short status, e.g. "Final/OT", "Q3 4:12"
   tv: string | null;
 }
-/** One line of ESPN's per-game averages: "GP", "MIN", "PTS", "REB", "AST", "FG%", "3P%", "FT%", … as given. */
+/** A player's season line: "GP", "PTS", "REB", "AST", "TO", "FG%", "3P%", "FT%", "eFG%", "TS%", "AST/TO". */
 export type StatLine = Record<string, string>;
 export interface PlayerSnap {
   name: string;
   short: string; // "D. Lillard"
   season: StatLine | null; // null before their first game of the season
-  career: StatLine | null;
 }
 
 export interface TeamSnap {
@@ -104,6 +109,26 @@ export interface NewsletterSnap {
   sections: NewsletterSection[];
   dropped: number; // sponsored cards and ad blocks left out
   link: string; // the issue on the web
+}
+
+export interface CalEvent {
+  id: string;
+  title: string; // as written in Google Calendar; "(No title)" when it has none
+  allDay: boolean;
+  /** Timed: ISO start/end. All-day: "YYYY-MM-DD" dates, end exclusive (as Google gives them). */
+  start: string;
+  end: string;
+  calendar: string; // the calendar's name
+  color: string | null; // the calendar's color in Google, "#RRGGBB"
+  location: string | null;
+  link: string; // the event in Google Calendar
+}
+export interface CalendarSnap {
+  timezone: string;
+  from: string; // "YYYY-MM-DD", the first day fetched
+  days: number;
+  events: CalEvent[]; // soonest first
+  link: string;
 }
 
 export interface WeatherHour { at: string; temp: number; code: number; precip: number | null }
@@ -151,5 +176,6 @@ export function fallbackLink(kind: WatchKind, config: Record<string, unknown>): 
     case "weather": return `https://forecast.weather.gov/MapClick.php?lat=${c.lat}&lon=${c.lon}`;
     case "transit": return `https://www.mbta.com/schedules/${c.route}/line`;
     case "newsletter": return c.url || "https://www.morningbrew.com/issues/latest";
+    case "calendar": return "https://calendar.google.com/calendar/r";
   }
 }

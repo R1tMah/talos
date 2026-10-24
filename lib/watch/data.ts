@@ -152,3 +152,22 @@ export const watchApi = {
     }
   },
 };
+
+export interface GoogleStatus {
+  configured: boolean; // GOOGLE_CLIENT_ID/SECRET set on the server
+  connected: boolean;
+  email?: string | null;
+  calendars: { id: string; name: string; color: string | null; primary: boolean }[];
+  error?: string;
+}
+
+/** Google sign-in for the calendar source. The token itself stays on the server. */
+export const googleApi = {
+  status: async (): Promise<GoogleStatus | null> => {
+    const res = await fetch("/api/google/calendars", { cache: "no-store" }).catch(() => null);
+    return res?.ok ? ((await res.json()) as GoogleStatus) : null;
+  },
+  /** Full-page redirect to Google; comes back to `back` with ?google=connected|denied|failed. */
+  connect: (back: string) => window.location.assign(`/api/google/connect?next=${encodeURIComponent(back)}`),
+  disconnect: async () => (await fetch("/api/google/disconnect", { method: "POST" }).catch(() => null))?.ok ?? false,
+};

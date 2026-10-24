@@ -89,6 +89,12 @@ export function describeRow(table: string, r: Row | null): string {
       return `workout, ${fmtDay(str(r.logical_date))}`;
     case "exercises":
       return `exercise ${str(r.name)}`;
+    case "finance_transactions":
+      return `transaction ${str(r.description)}`;
+    case "checking_balances":
+      return "checking balance";
+    case "vanguard_holdings":
+      return `fund ${str(r.fund)}`;
     default:
       return table;
   }

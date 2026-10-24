@@ -9,6 +9,7 @@ import { Tag } from "@/components/ui";
 import { IconChevron } from "@/components/Icons";
 import { isStale, watchApi, type WatchSource } from "@/lib/watch/data";
 import { fallbackLink, type Game, type PlayerSnap, type NewsSnap, type TeamSnap, type TransitConfig, type TransitSnap, type WeatherSnap } from "@/lib/watch/types";
+import { CalendarCard } from "./Calendar";
 import { NewsletterCard } from "./Newsletter";
 import { ago, clock, dayClock, deg, hostOf, hourLabel, localClock, localHour, shortDate, sky } from "./format";
 
@@ -246,35 +247,30 @@ export function TeamView({ s }: { s: WatchSource }) {
   );
 }
 
-const STAT_COLS = ["GP", "MIN", "PTS", "REB", "AST", "STL", "BLK", "TO", "FG%", "3P%", "FT%"];
+const STAT_COLS = ["GP", "PTS", "REB", "AST", "TO", "FG%", "3P%", "FT%", "eFG%", "TS%", "AST/TO"];
 
-/** A followed player's per-game averages, this season and career, as ESPN gives them. */
+/** A followed player's averages and shooting efficiency this season. */
 function PlayerStats({ p }: { p: PlayerSnap }) {
-  const rows = ([["Season", p.season], ["Career", p.career]] as const).filter(([, line]) => line);
   return (
     <section className="card watch-card">
       <span className="label">{p.name}</span>
-      {rows.length ? (
+      {p.season ? (
         <div className="stat-scroll">
           <table className="mini-table num">
             <thead>
               <tr>
-                <th />
                 {STAT_COLS.map((k) => <th key={k}>{k}</th>)}
               </tr>
             </thead>
             <tbody>
-              {rows.map(([label, line]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  {STAT_COLS.map((k) => <td key={k}>{line![k] ?? "–"}</td>)}
-                </tr>
-              ))}
+              <tr>
+                {STAT_COLS.map((k) => <td key={k}>{p.season![k] ?? "–"}</td>)}
+              </tr>
             </tbody>
           </table>
         </div>
       ) : (
-        <p className="muted watch-empty">No stats yet.</p>
+        <p className="muted watch-empty">No games this season yet.</p>
       )}
     </section>
   );
@@ -353,6 +349,7 @@ export function WatchCard({ s }: { s: WatchSource }) {
     case "headlines": return <NewsCard s={s} />;
     case "jobs": return <JobsCard s={s} />;
     case "newsletter": return <NewsletterCard s={s} />;
+    case "calendar": return <CalendarCard s={s} />;
     default: return null;
   }
 }

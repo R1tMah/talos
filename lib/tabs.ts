@@ -25,3 +25,35 @@ export const CHAT_TABS = [
 export type ChatTab = (typeof CHAT_TABS)[number]["key"];
 
 export const isChatTab = (v: unknown): v is ChatTab => typeof v === "string" && CHAT_TABS.some((t) => t.key === v);
+
+// Other words for each tab, for a typed answer to "Where does this go?".
+const ALIASES: Record<ChatTab, string[]> = {
+  weight: ["weigh in", "weigh-in"],
+  nutrition: ["food", "meal", "meals", "calories", "protein"],
+  leetcode: ["lc", "leet code"],
+  runs: ["run", "running"],
+  applications: ["application", "apps", "applied"],
+  callbacks: ["callback", "interview", "oa"],
+  content: ["content idea", "content ideas"],
+  journal: ["work", "work journal", "journal"],
+  personal: ["personal", "personal journal", "diary"],
+  talos: ["talos", "talos improvement", "talos idea"],
+};
+
+/**
+ * The tab a whole reply names ("weight", "it goes in food", "Work Journal."), or null.
+ * Only the entire message counts, so "168 weight" is still an ordinary message.
+ */
+export function tabFromReply(text: string): ChatTab | null {
+  const said = text
+    .toLowerCase()
+    .replace(/[.!?,"']/g, " ")
+    .replace(/^\s*(?:(?:it\s+)?(?:goes|go|put it|log it|save it)\s+)?(?:(?:in|into|to|under)\s+)?(?:the\s+)?/, "")
+    .replace(/\s+tab\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  for (const t of CHAT_TABS) {
+    if (said === t.key || said === t.label.toLowerCase() || ALIASES[t.key].includes(said)) return t.key;
+  }
+  return null;
+}

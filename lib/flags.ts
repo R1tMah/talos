@@ -7,4 +7,6 @@ const flag = (v: string | undefined, fallback: boolean) =>
 export const FLAGS = {
   /** Workout tab, Lifts progress page, Lifts card on Tabs, workout settings. Off for now. */
   workout: flag(process.env.NEXT_PUBLIC_FLAG_WORKOUT, false),
+  /** Finances tab and its Tabs card. On locally (.env.local) only for now; to be removed once it's live. */
+  finances: flag(process.env.NEXT_PUBLIC_FLAG_FINANCES, false),
 };

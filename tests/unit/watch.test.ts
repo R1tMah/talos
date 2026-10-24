@@ -103,3 +103,23 @@ describe("Watch: US-only and degree filters", async () => {
     expect(needsGradDegree({ title: "Software Engineer", degrees: [] })).toBe(false);
   });
 });
+
+describe("weather icons", () => {
+  it("every documented weather code gets an icon kind; unknown codes get none", async () => {
+    const { skyKind } = await import("@/components/watch/format");
+    const kinds = [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99].map(skyKind);
+    expect(kinds.every(Boolean)).toBe(true);
+    expect([skyKind(0), skyKind(2), skyKind(63), skyKind(65), skyKind(66), skyKind(73), skyKind(95)])
+      .toEqual(["clear", "partly", "rain", "heavy", "freezing", "snow", "storm"]);
+    expect(skyKind(42)).toBeNull();
+  });
+
+  it("night is before today's sunrise or from sunset on", async () => {
+    const { isNight } = await import("@/components/watch/format");
+    const rise = "2026-10-24T07:12", set = "2026-10-24T17:58";
+    expect(isNight("2026-10-24T06:00", rise, set)).toBe(true);
+    expect(isNight("2026-10-24T12:00", rise, set)).toBe(false);
+    expect(isNight("2026-10-24T18:00", rise, set)).toBe(true);
+    expect(isNight("2026-10-25T03:00", rise, set)).toBe(true); // tomorrow's early hours
+  });
+});

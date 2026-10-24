@@ -92,7 +92,7 @@ export default function FinancesPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="FINANCES" brand right={<ExportButton tab="finances" source={financesExport(txns)} />} />
+      <ScreenHeader title="FINANCES" brand />
 
       <SummaryStrip
         items={[
@@ -176,6 +176,7 @@ export default function FinancesPage() {
         </>
       )}
 
+      <ExportButton tab="finances" source={financesExport(txns)} variant="button" />
       <Fab onClick={() => setTxnSheet("new")} label="Add transaction" />
 
       {txnSheet && (

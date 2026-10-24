@@ -27,6 +27,16 @@ export const IconChat = (p: P) => (
   </Base>
 );
 
+/** The Talos logo (components/TalosAvatar.tsx) as a line icon: HUD ring, head and shoulders, eyes. */
+export const IconTalos = (p: P) => (
+  <Base {...p}>
+    <circle cx="12" cy="12" r="10" strokeWidth={1.5} strokeDasharray="5.2 2.2 1.1 2.2" />
+    <ellipse cx="12" cy="9.6" rx="3.4" ry="4.2" />
+    <path d="M5.8 19.4C6.9 17.4 9.2 16.6 12 16.6s5.1.8 6.2 2.8" />
+    <path d="M10.4 9.6h.9M12.7 9.6h.9" strokeWidth={1.4} />
+  </Base>
+);
+
 export const IconGrid = (p: P) => (
   <Base {...p}>
     <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />

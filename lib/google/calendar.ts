@@ -7,13 +7,18 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { addDay, dayIn, midnightIn } from "@/lib/watch/calendarDays";
+import { addDay, dayIn, eventBody, midnightIn, type EventInput } from "@/lib/watch/calendarDays";
+
+export type { EventInput };
 import type { CalEvent, CalendarConfig, CalendarSnap } from "@/lib/watch/types";
 
 type Admin = SupabaseClient<Database>;
 
-/** Read-only for now. Writing events later adds "https://www.googleapis.com/auth/calendar.events". */
-export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly"];
+/** Lets Talos add, change and delete events (calendar.readonly alone only reads). */
+export const WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly", WRITE_SCOPE];
+/** True when the stored grant includes writing. Connections made before writes existed don't. */
+export const canWrite = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(WRITE_SCOPE);
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -111,27 +116,57 @@ async function accessToken(admin: Admin): Promise<string> {
   return t.access_token;
 }
 
-async function api<T>(admin: Admin, path: string, query: Record<string, string> = {}): Promise<T> {
+/** Thrown when the grant is read-only: the owner has to reconnect to allow writing. */
+export class NeedsWriteAccess extends Error {
+  constructor() {
+    super("Reconnect Google Calendar to allow adding and changing events.");
+  }
+}
+
+async function api<T>(
+  admin: Admin, path: string, query: Record<string, string> = {}, init: { method?: string; body?: unknown } = {},
+): Promise<T> {
   const url = `${API}${path}${Object.keys(query).length ? `?${new URLSearchParams(query)}` : ""}`;
   const res = await fetch(url, {
-    headers: { authorization: `Bearer ${await accessToken(admin)}` },
+    method: init.method ?? "GET",
+    headers: { authorization: `Bearer ${await accessToken(admin)}`, ...(init.body ? { "content-type": "application/json" } : {}) },
+    body: init.body ? JSON.stringify(init.body) : undefined,
     cache: "no-store",
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (res.status === 401) cached = null; // try a fresh token next time
+  if (res.status === 403 && init.method && init.method !== "GET") {
+    const why = (await res.json().catch(() => ({}))) as { error?: { details?: { reason?: string }[]; errors?: { reason?: string }[] } };
+    const reasons = [...(why.error?.details ?? []), ...(why.error?.errors ?? [])].map((d) => d.reason);
+    if (reasons.some((r) => r === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" || r === "insufficientPermissions")) throw new NeedsWriteAccess();
+    throw new Error("Google Calendar refused the change (403). That calendar may be read-only for you.");
+  }
+  if (res.status === 404 || res.status === 410) throw new Error("That event no longer exists in Google Calendar.");
   if (!res.ok) throw new Error(`Google Calendar returned ${res.status}`);
-  return res.json() as Promise<T>;
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-export interface CalendarListItem { id: string; name: string; color: string | null; primary: boolean }
+export interface CalendarListItem {
+  id: string;
+  name: string;
+  color: string | null;
+  primary: boolean;
+  /** The owner can add and change events on it (owner or writer access). */
+  writable: boolean;
+}
 
-interface GCalendarList { items: { id: string; summary: string; summaryOverride?: string; backgroundColor?: string; primary?: boolean; selected?: boolean }[] }
+interface GCalendarList {
+  items: { id: string; summary: string; summaryOverride?: string; backgroundColor?: string; primary?: boolean; accessRole?: string }[];
+}
 
 /** The account's calendars, primary first, for picking which to show. */
 export async function listCalendars(admin: Admin): Promise<CalendarListItem[]> {
   const out = await api<GCalendarList>(admin, "/users/me/calendarList", { minAccessRole: "reader" });
   return out.items
-    .map((c) => ({ id: c.id, name: c.summaryOverride ?? c.summary, color: c.backgroundColor ?? null, primary: Boolean(c.primary) }))
+    .map((c) => ({
+      id: c.id, name: c.summaryOverride ?? c.summary, color: c.backgroundColor ?? null, primary: Boolean(c.primary),
+      writable: c.accessRole === "owner" || c.accessRole === "writer",
+    }))
     .sort((a, b) => Number(b.primary) - Number(a.primary) || a.name.localeCompare(b.name));
 }
 
@@ -141,6 +176,7 @@ interface GEvent {
   summary?: string;
   location?: string;
   htmlLink: string;
+  recurringEventId?: string;
   start: { date?: string; dateTime?: string };
   end: { date?: string; dateTime?: string };
 }
@@ -162,7 +198,11 @@ export async function fetchCalendar(admin: Admin, c: CalendarConfig, now = new D
         .filter((e) => e.status !== "cancelled")
         .map((e): CalEvent => ({
           id: `${cal.id}:${e.id}`,
+          calendarId: cal.id,
+          eventId: e.id,
           title: e.summary?.trim() ? e.summary : "(No title)",
+          ...(e.summary?.trim() ? {} : { untitled: true as const }),
+          ...(e.recurringEventId ? { recurring: true as const } : {}),
           allDay: !e.start.dateTime,
           start: e.start.dateTime ?? e.start.date!,
           end: e.end.dateTime ?? e.end.date!,
@@ -178,4 +218,32 @@ export async function fetchCalendar(admin: Admin, c: CalendarConfig, now = new D
   const sortKey = (e: CalEvent) => (e.allDay ? midnightIn(c.timezone, e.start) : new Date(e.start).toISOString());
   const events = lists.flat().sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || Number(b.allDay) - Number(a.allDay));
   return { timezone: c.timezone, from, days: c.days, events, link: "https://calendar.google.com/calendar/r" };
+}
+
+// ---- Writes ------------------------------------------------------------------------------
+
+const eventsPath = (calendarId: string, eventId?: string) =>
+  `/calendars/${encodeURIComponent(calendarId)}/events${eventId ? `/${encodeURIComponent(eventId)}` : ""}`;
+
+/** Adds an event. Returns its link in Google Calendar. */
+export async function createEvent(admin: Admin, tz: string, e: EventInput): Promise<{ id: string; link: string }> {
+  const b = eventBody(e, tz);
+  if ("error" in b) throw new Error(b.error);
+  const out = await api<GEvent>(admin, eventsPath(e.calendarId), {}, { method: "POST", body: b.body });
+  return { id: out.id, link: out.htmlLink };
+}
+
+/**
+ * Changes an event in place. For a repeating event, `eventId` is the one occurrence
+ * (Watch fetches with singleEvents), so only that occurrence changes.
+ */
+export async function updateEvent(admin: Admin, tz: string, eventId: string, e: EventInput): Promise<void> {
+  const b = eventBody(e, tz);
+  if ("error" in b) throw new Error(b.error);
+  await api(admin, eventsPath(e.calendarId, eventId), {}, { method: "PATCH", body: b.body });
+}
+
+/** Deletes an event (one occurrence, for a repeating event). */
+export async function deleteEvent(admin: Admin, calendarId: string, eventId: string): Promise<void> {
+  await api(admin, eventsPath(calendarId, eventId), {}, { method: "DELETE" });
 }

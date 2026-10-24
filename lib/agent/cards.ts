@@ -15,7 +15,7 @@ export interface CardOption {
 export interface MissingField {
   name: string;
   label: string;
-  type?: "number" | "text" | "date" | "select"; // default number
+  type?: "number" | "text" | "date" | "time" | "select"; // default number
   options?: string[]; // for select
   optional?: boolean; // asked, but may be left blank
 }

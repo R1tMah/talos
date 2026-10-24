@@ -15,6 +15,7 @@ import { foodWarnings, leetcodeWarnings, portionWarnings, runWarnings, weightWar
 import type { MissingField } from "./cards";
 import { closest, nameScore } from "./fuzzy";
 import { matchTitle } from "./lcMatch";
+import { CADENCES, cadenceIn, priceLabel, type Cadence } from "@/lib/subscriptions";
 
 export type Db = SupabaseClient<Database>;
 
@@ -276,6 +277,126 @@ const logRun: ToolDef = {
       label: `Run ${g(miles)} mi in ${fmtDuration(secs)} (${fmtDuration(secs / miles)}/mi)${cal}, ${fmtDay(String(row.logical_date))}`,
       actionId: out.action_id ?? null,
     };
+  },
+};
+
+// ---- Subscriptions (the only part of Finances chat can reach) ----------------------
+// These read and write public.subscriptions alone, through its own functions; nothing
+// else in Finances (transactions, balances, holdings) is read or written from chat.
+
+const CADENCE_OPTIONS = ["Monthly", "Yearly", "Weekly"];
+
+const addSubscription: ToolDef = {
+  name: "add_subscription",
+  display: "Subscription",
+  definition: {
+    name: "add_subscription",
+    description:
+      "A recurring subscription the owner started paying for, e.g. 'bought Spotify premium, $11.99 a month', 'subscribed to ChatGPT Plus', " +
+      "'got YouTube Premium 13.99/mo'. Not a one-off purchase, and not food.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "amount", "cadence", "days_ago", "confidence"],
+      properties: {
+        name: { type: "string", description: "The subscription's name, copied exactly as the owner wrote it ('Spotify premium')." },
+        amount: { type: ["number", "null"], description: "The price the owner typed, unchanged. Null if not said." },
+        cadence: {
+          anyOf: [{ type: "string", enum: ["monthly", "yearly", "weekly"] }, { type: "null" }],
+          description: "How often it bills, only if the owner said ('a month', 'yearly', '/wk'). Null if not said.",
+        },
+        days_ago: daysAgo,
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const name = verbatim(input.name, ctx.text);
+    if (!name) return { status: "invalid", detail: "No subscription name found in the message." };
+    const date = dateFor(input, ctx.today);
+    const amount = typed(input.amount, ctx.text) && (input.amount as number) > 0 ? (input.amount as number) : null;
+    // Only a billing period the message actually names; never a default.
+    const said = cadenceIn(ctx.text);
+    const cadence = said && input.cadence === said ? said : null;
+    const existing = await ctx.db.from("subscriptions").select("name, amount, cadence").is("deleted_at", null).is("cancelled_on", null);
+    const dupe = existing.data?.find((s) => s.name.toLowerCase() === name.toLowerCase());
+    if (dupe) return { status: "invalid", detail: `${dupe.name} is already in Subscriptions (${priceLabel({ amount: Number(dupe.amount), cadence: dupe.cadence as Cadence })}).` };
+    const resolved: Resolved = { name, amount, cadence, date };
+    const missing: MissingField[] = [];
+    if (amount == null) missing.push({ name: "amount", label: "Price ($)" });
+    if (cadence == null) missing.push({ name: "cadence", label: "Billed", type: "select", options: CADENCE_OPTIONS });
+    if (missing.length) return { status: "missing", resolved, title: `Add ${name}`, missing };
+    const fields: [string, string][] = [["Name", name], ["Price", priceLabel({ amount: amount!, cadence: cadence! })], ["Started", fmtDay(date)]];
+    return { status: "ready", resolved, fields, warnings: amount! > 1000 ? [`$${amount} is a lot for a subscription.`] : [] };
+  },
+  fill(r, values) {
+    const out = { ...r };
+    if (out.amount == null) {
+      const v = Number(values.amount);
+      if (!Number.isFinite(v) || v <= 0) return "Price must be more than 0.";
+      out.amount = Math.round(v * 100) / 100;
+    }
+    if (out.cadence == null) {
+      const c = String(values.cadence ?? "").toLowerCase();
+      if (!CADENCES.includes(c as Cadence)) return "Pick how often it bills.";
+      out.cadence = c;
+    }
+    return out;
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "add_subscription", { p_name: r.name, p_amount: r.amount, p_cadence: r.cadence, p_date: r.date, p_tool: "add_subscription" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const row = out.row;
+    return {
+      status: "saved",
+      label: `Subscription ${String(row.name)}, ${priceLabel({ amount: num(row.amount), cadence: row.cadence as Cadence })}`,
+      actionId: out.action_id ?? null,
+    };
+  },
+};
+
+const cancelSubscription: ToolDef = {
+  name: "cancel_subscription",
+  display: "Cancel subscription",
+  definition: {
+    name: "cancel_subscription",
+    description: "The owner cancelled or stopped a subscription, e.g. 'cancelled Netflix', 'unsubscribed from Hulu', 'stopped paying for ChatGPT'.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "days_ago", "confidence"],
+      properties: {
+        name: { type: "string", description: "The subscription's name, copied exactly as the owner wrote it." },
+        days_ago: daysAgo,
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const name = verbatim(input.name, ctx.text);
+    if (!name) return { status: "invalid", detail: "No subscription name found in the message." };
+    const date = dateFor(input, ctx.today);
+    const res = await ctx.db.from("subscriptions").select("id, name, amount, cadence").is("deleted_at", null).is("cancelled_on", null);
+    const subs = (res.data ?? []).map((s) => ({ ...s, amount: Number(s.amount), cadence: s.cadence as Cadence }));
+    const hits = closest(name, subs, (s) => [s.name]);
+    if (!hits.length) return { status: "invalid", detail: `No active subscription called "${name}".` };
+    const option = (s: (typeof subs)[number]) => ({
+      resolved: { id: s.id, name: s.name, date },
+      fields: [["Name", s.name], ["Price", priceLabel(s)], ["Cancelled", fmtDay(date)]] as [string, string][],
+    });
+    // A clear match goes ahead; close calls are asked.
+    if (hits.length > 1 && hits[1].score > hits[0].score - 0.15) {
+      return { status: "ambiguous", title: "Which subscription?", options: hits.map((h) => option(h.item)) };
+    }
+    const o = option(hits[0].item);
+    return { status: "ready", resolved: o.resolved, fields: o.fields, warnings: [] };
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "set_subscription_cancelled", { p_id: r.id, p_date: r.date, p_tool: "cancel_subscription" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    return { status: "saved", label: `Cancelled ${String(out.row.name)}, ${fmtDay(String(out.row.cancelled_on))}`, actionId: out.action_id ?? null };
   },
 };
 
@@ -1503,9 +1624,134 @@ const addReminder: ToolDef = {
   },
 };
 
+// ---- Google Calendar -------------------------------------------------------------------
+
+/**
+ * A clock time from the owner's words: "3pm", "3:30 pm", "15:00", "noon", "midnight".
+ * A bare hour ("at 3") takes `meridiem` if given (from the other end of "3-4pm"), else null:
+ * code doesn't guess between 3 AM and 3 PM.
+ */
+export function clockFrom(text: string | null, meridiem?: "am" | "pm" | null): string | null {
+  const t = (text ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (/\bnoon\b/.test(t)) return "12:00";
+  if (/\bmidnight\b/.test(t)) return "00:00";
+  const m = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?|a|p)?\b/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2] ?? 0);
+  const mer = m[3] ? (m[3].startsWith("a") ? "am" : "pm") : meridiem ?? null;
+  if (min > 59) return null;
+  if (mer) {
+    if (h < 1 || h > 12) return null;
+    h = (h % 12) + (mer === "pm" ? 12 : 0);
+  } else if (!(h === 0 || (h >= 13 && h <= 23))) {
+    return null; // "3" or "9:30" with no am/pm: ask rather than guess. "15:00" and "0:30" are clear.
+  }
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+const meridiemOf = (text: string | null) => {
+  const m = (text ?? "").toLowerCase().match(/\b\d{1,2}(?::\d{2})?\s*(a|p)\.?m?\.?\b/);
+  return m ? (m[1] === "a" ? "am" : "pm") : null;
+};
+const fmtClock12 = (hhmm: string) => {
+  const h = Number(hhmm.slice(0, 2));
+  return `${h % 12 || 12}:${hhmm.slice(3)} ${h < 12 ? "AM" : "PM"}`;
+};
+
+const addEvent: ToolDef = {
+  name: "add_event",
+  display: "Calendar event",
+  definition: {
+    name: "add_event",
+    description:
+      "Something to put on the owner's Google Calendar at a date (and usually a time): 'dentist friday 3pm', " +
+      "'dinner with Sam tomorrow 7-9pm at Tatte', 'flight to SF Nov 3'. Not for reminders without a calendar slot ('remind me to…' is add_reminder).",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "date_text", "start_text", "end_text", "location", "confidence"],
+      properties: {
+        title: { type: "string", description: "What the event is, copied exactly from the message, without the date, time or place." },
+        date_text: { type: ["string", "null"], description: "The day exactly as written ('friday', 'tomorrow', 'Nov 3', '11/3'). Null if none." },
+        start_text: { type: ["string", "null"], description: "The start time exactly as written ('3pm', '7', 'noon'). Null if no time (an all-day event)." },
+        end_text: { type: ["string", "null"], description: "The end time exactly as written ('9pm' in '7-9pm'). Null if not said." },
+        location: { type: ["string", "null"], description: "Where, copied exactly ('at Tatte' = 'Tatte'). Null if not said." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const title = verbatim(input.title, ctx.text) ?? (typeof input.title === "string" ? input.title.trim() : "");
+    if (!title) return { status: "invalid", detail: "The event needs a name." };
+    const dateText = verbatim(input.date_text, ctx.text);
+    const date = dueFrom(dateText, ctx.today);
+    const startText = verbatim(input.start_text, ctx.text);
+    const endText = verbatim(input.end_text, ctx.text);
+    // "7-9pm": the start takes the end's am/pm.
+    const start = clockFrom(startText, meridiemOf(endText));
+    const end = clockFrom(endText, meridiemOf(startText));
+    const location = verbatim(input.location, ctx.text);
+    const resolved: Resolved = { title, date, start, end, allDay: !startText, location };
+    const missing: MissingField[] = [];
+    if (!date) missing.push({ name: "date", label: "Date", type: "date" });
+    if (startText && !start) missing.push({ name: "start", label: `Start time ("${startText}")`, type: "time" });
+    if (missing.length) return { status: "missing", resolved, title: `Calendar: ${title}`, missing };
+
+    const when = resolved.allDay ? "all day" : end ? `${fmtClock12(start!)}–${fmtClock12(end)}` : fmtClock12(start!);
+    const fields: [string, string][] = [["Event", title], ["Date", fmtDay(date!)], ["Time", when]];
+    if (location) fields.push(["Where", location]);
+    // Always asked first: it writes to Google, outside the app, and chat Undo can't reach it.
+    return {
+      status: "ready", resolved, fields,
+      warnings: [`Add “${title}” to your Google Calendar on ${fmtDay(date!)}, ${when}${location ? `, at ${location}` : ""}?`],
+    };
+  },
+  fill(r, values) {
+    const out = { ...r };
+    if (!out.date) {
+      const v = String(values.date ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return "Pick a date.";
+      out.date = v;
+    }
+    if (!out.allDay && !out.start) {
+      const v = String(values.start ?? "").trim();
+      if (!/^\d{2}:\d{2}$/.test(v)) return "Pick a start time.";
+      out.start = v;
+    }
+    return out;
+  },
+  async commit(r, db) {
+    const { createAdminClient } = await import("@/utils/supabase/admin");
+    const { createEvent } = await import("@/lib/google/calendar");
+    const { refreshWatch } = await import("@/lib/watch/refresh");
+    const admin = createAdminClient();
+    if (!admin) return { status: "failed", detail: "SUPABASE_SECRET_KEY is not set on the server." };
+    const { data: settings } = await db.from("settings").select("timezone").eq("id", 1).single();
+    try {
+      await createEvent(admin, settings?.timezone ?? "America/New_York", {
+        calendarId: "primary", title: String(r.title), allDay: Boolean(r.allDay), date: String(r.date),
+        start: (r.start as string | null) ?? null, end: (r.end as string | null) ?? null, location: (r.location as string | null) ?? null,
+      });
+    } catch (e) {
+      return { status: "failed", detail: e instanceof Error ? e.message : "Google Calendar didn't take it." };
+    }
+    // Show it on Watch right away.
+    const { data: cals } = await admin.from("watch_sources").select("id").eq("kind", "calendar");
+    if (cals?.length) await refreshWatch(admin, { ids: cals.map((c) => c.id), force: true }).catch(() => {});
+    const when = r.allDay ? "all day" : fmtClock12(String(r.start));
+    // Not in the actions log: Undo can't delete from Google. Delete it from the Watch card instead.
+    return { status: "saved", label: `Calendar: ${r.title}, ${fmtDay(String(r.date))}, ${when}`, actionId: null };
+  },
+};
+
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
-  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder",
+  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_event",
+  "add_subscription", "cancel_subscription",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -1539,9 +1785,10 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
-    addReminder,
+    addReminder, addEvent,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
+    addSubscription, cancelSubscription,
   ].map((t) => [t.name, t]),
 );
 

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Sheet } from "@/components/FormSheet";
-import { IconChevron, IconPlus } from "@/components/Icons";
+import { IconChevron } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
-import { ScreenHeader } from "@/components/ui";
+import { Fab, ScreenHeader } from "@/components/ui";
 import { DEFAULTS, KIND_LABELS, SourceForm } from "@/components/watch/SourceForm";
 import { WatchCard } from "@/components/watch/Views";
 import { useWatchSources, watchApi } from "@/lib/watch/data";
@@ -64,15 +64,8 @@ export default function WatchPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader
-        title="WATCH"
-        brand
-        right={
-          <button type="button" className="icon-btn" aria-label="Add source" onClick={() => setAdding("pick")}>
-            <IconPlus />
-          </button>
-        }
-      />
+      <ScreenHeader title="WATCH" brand />
+      <Fab onClick={() => setAdding("pick")} label="Add source" />
       <p className="faint watch-block">
         {block.name}
         {until && ` · until ${fmtHHMM(until)}`}

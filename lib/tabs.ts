@@ -15,11 +15,15 @@ export type TabKey = (typeof ARCHIVABLE)[number]["key"];
 
 export const tabLabel = (key: TabKey) => ARCHIVABLE.find((t) => t.key === key)!.label;
 
-/** Every tab chat can log to, in Chat's chip order. Weight and Nutrition can't be archived. */
+/**
+ * Every tab chat can log to, in Chat's chip order. Weight, Nutrition and Subscriptions can't be
+ * archived. Subscriptions (in Finances) is the one part of Finances chat can reach.
+ */
 export const CHAT_TABS = [
   { key: "weight", label: "Weight" },
   { key: "nutrition", label: "Nutrition" },
   ...ARCHIVABLE.map(({ key, label }) => ({ key, label })),
+  { key: "subscriptions", label: "Subscriptions" },
 ] as const;
 
 export type ChatTab = (typeof CHAT_TABS)[number]["key"];
@@ -38,6 +42,7 @@ const ALIASES: Record<ChatTab, string[]> = {
   journal: ["work", "work journal", "journal"],
   personal: ["personal", "personal journal", "diary"],
   talos: ["talos", "talos improvement", "talos idea"],
+  subscriptions: ["subscription", "subs", "finances"],
 };
 
 /**

@@ -164,7 +164,9 @@ export interface GoogleStatus {
   configured: boolean; // GOOGLE_CLIENT_ID/SECRET set on the server
   connected: boolean;
   email?: string | null;
-  calendars: { id: string; name: string; color: string | null; primary: boolean }[];
+  /** The grant allows adding and changing events (connected after writes were added). */
+  canWrite?: boolean;
+  calendars: { id: string; name: string; color: string | null; primary: boolean; writable: boolean }[];
   error?: string;
 }
 
@@ -176,5 +178,16 @@ export const googleApi = {
   },
   /** Full-page redirect to Google; comes back to `back` with ?google=connected|denied|failed. */
   connect: (back: string) => window.location.assign(`/api/google/connect?next=${encodeURIComponent(back)}`),
+  /** Adds, changes or deletes an event; the server refetches the calendar afterwards. */
+  event: async (
+    op: "create" | "update" | "delete",
+    body: { sourceId: string; eventId?: string; event: Record<string, unknown> },
+  ): Promise<{ ok: true } | { error: string; reconnect?: boolean }> => {
+    const method = op === "create" ? "POST" : op === "update" ? "PATCH" : "DELETE";
+    const res = await fetch("/api/google/events", { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    if (!res) return { error: "Couldn't reach the server." };
+    const out = (await res.json().catch(() => ({}))) as { ok?: true; error?: string; reconnect?: boolean };
+    return res.ok ? { ok: true } : { error: out.error ?? "Failed.", reconnect: out.reconnect };
+  },
   disconnect: async () => (await fetch("/api/google/disconnect", { method: "POST" }).catch(() => null))?.ok ?? false,
 };

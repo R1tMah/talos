@@ -1,13 +1,31 @@
 // Display helpers for Watch. Times show in the phone's timezone unless a source has its own.
 
-const WMO: [number[], string][] = [
-  [[0], "Clear"], [[1], "Mostly clear"], [[2], "Partly cloudy"], [[3], "Cloudy"], [[45, 48], "Fog"],
-  [[51, 53, 55, 56, 57], "Drizzle"], [[61, 63, 80, 81], "Rain"], [[65, 82], "Heavy rain"], [[66, 67], "Freezing rain"],
-  [[71, 73, 75, 77, 85, 86], "Snow"], [[95, 96, 99], "Thunderstorms"],
+/** Which icon a weather code gets (components/watch/WeatherIcon.tsx). */
+export type SkyKind = "clear" | "partly" | "cloudy" | "fog" | "drizzle" | "rain" | "heavy" | "freezing" | "snow" | "storm";
+
+const WMO: [number[], string, SkyKind][] = [
+  [[0], "Clear", "clear"], [[1], "Mostly clear", "partly"], [[2], "Partly cloudy", "partly"], [[3], "Cloudy", "cloudy"],
+  [[45, 48], "Fog", "fog"], [[51, 53, 55, 56, 57], "Drizzle", "drizzle"], [[61, 63, 80, 81], "Rain", "rain"],
+  [[65, 82], "Heavy rain", "heavy"], [[66, 67], "Freezing rain", "freezing"], [[71, 73, 75, 77, 85, 86], "Snow", "snow"],
+  [[95, 96, 99], "Thunderstorms", "storm"],
 ];
 
+const wmo = (code: number) => WMO.find(([codes]) => codes.includes(code));
+
 /** Open-Meteo's WMO weather code as a word or two. */
-export const sky = (code: number) => WMO.find(([codes]) => codes.includes(code))?.[1] ?? "–";
+export const sky = (code: number) => wmo(code)?.[1] ?? "–";
+
+/** The icon for a weather code; null for a code Open-Meteo doesn't document. */
+export const skyKind = (code: number): SkyKind | null => wmo(code)?.[2] ?? null;
+
+/**
+ * Whether a local time ("2026-10-24T19:00") is after dark, judged by today's sunrise and
+ * sunset times of day (close enough for tomorrow's early hours too).
+ */
+export function isNight(at: string, sunrise: string, sunset: string) {
+  const t = at.slice(11, 16);
+  return t < sunrise.slice(11, 16) || t >= sunset.slice(11, 16);
+}
 
 export const deg = (t: number) => `${Math.round(t)}°`;
 

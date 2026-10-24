@@ -11,7 +11,8 @@ import { isStale, watchApi, type WatchSource } from "@/lib/watch/data";
 import { fallbackLink, type Game, type PlayerSnap, type NewsSnap, type TeamSnap, type TransitConfig, type TransitSnap, type WeatherSnap } from "@/lib/watch/types";
 import { CalendarCard } from "./Calendar";
 import { NewsletterCard } from "./Newsletter";
-import { ago, clock, dayClock, deg, hostOf, hourLabel, localClock, localHour, shortDate, sky } from "./format";
+import { ago, clock, dayClock, deg, hostOf, hourLabel, isNight, localClock, localHour, shortDate, sky } from "./format";
+import { WeatherIcon } from "./WeatherIcon";
 
 const linkOut = { target: "_blank", rel: "noopener noreferrer" } as const;
 
@@ -145,6 +146,8 @@ export function WeatherCard({ s, full }: { s: WatchSource; full?: boolean }) {
   const hours = w?.hours.filter((h) => h.at >= from).slice(0, full ? 24 : 12) ?? [];
   // A stale snapshot's "now" is the forecast for this hour, not the reading from hours ago.
   const nowTemp = w && (w.current.at.slice(0, 13) === from.slice(0, 13) ? w.current.temp : hours[0]?.temp ?? w.current.temp);
+  const nowCode = hours[0]?.code ?? w?.current.code;
+  const night = (at: string) => !!w && isNight(at, w.today.sunrise, w.today.sunset);
   return (
     <section className="card watch-card">
       <CardHead s={s} full={full} right={w && <span className="faint">{w.place}</span>} />
@@ -152,9 +155,10 @@ export function WeatherCard({ s, full }: { s: WatchSource; full?: boolean }) {
       {w && (
         <>
           <div className="wx-now">
+            {nowCode != null && <WeatherIcon code={nowCode} night={night(hours[0]?.at ?? w.current.at)} size={36} />}
             <span className="wx-temp num">{deg(nowTemp!)}</span>
             <span className="wx-side">
-              <span>{sky(hours[0]?.code ?? w.current.code)}</span>
+              <span>{sky(nowCode!)}</span>
               <span className="faint num">
                 H {deg(w.today.hi)} · L {deg(w.today.lo)}{w.today.precip != null ? ` · ${w.today.precip}% rain` : ""}
               </span>
@@ -164,6 +168,7 @@ export function WeatherCard({ s, full }: { s: WatchSource; full?: boolean }) {
             {hours.map((h) => (
               <div key={h.at} className="hour">
                 <span className="faint">{h.at === from ? "Now" : hourLabel(h.at)}</span>
+                <WeatherIcon code={h.code} night={night(h.at)} size={20} />
                 <b className="num">{deg(h.temp)}</b>
                 <span className="faint num">{h.precip ? `${h.precip}%` : ""}</span>
               </div>

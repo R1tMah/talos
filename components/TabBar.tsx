@@ -6,11 +6,11 @@ import { useEffect, useState } from "react";
 import { fmtClock } from "@/lib/date";
 import { FLAGS } from "@/lib/flags";
 import { useWorkoutClock } from "@/lib/workoutClock";
-import { IconChat, IconDumbbell, IconEye, IconGrid, IconSliders, IconWallet } from "./Icons";
+import { IconDumbbell, IconEye, IconGrid, IconSliders, IconTalos, IconWallet } from "./Icons";
 
 /** Main tabs in bar order; SwipeNav moves between neighbours. */
 export const NAV_ITEMS = [
-  { href: "/", label: "Chat", Icon: IconChat, match: (p: string) => p === "/", primary: true },
+  { href: "/", label: "Chat", Icon: IconTalos, match: (p: string) => p === "/", primary: true },
   { href: "/workout", label: "Workout", Icon: IconDumbbell, match: (p: string) => p.startsWith("/workout") },
   
   { href: "/watch", label: "Watch", Icon: IconEye, match: (p: string) => p.startsWith("/watch") },

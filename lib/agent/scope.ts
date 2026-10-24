@@ -13,6 +13,7 @@ export const TAB_TOOLS: Record<ChatTab, readonly string[]> = {
   journal: ["add_note"],
   personal: ["add_note"],
   talos: ["add_note"],
+  subscriptions: ["add_subscription", "cancel_subscription"],
 };
 
 /** True when the tool may run for this message (always, when no chip was picked). */

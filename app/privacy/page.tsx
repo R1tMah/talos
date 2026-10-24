@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Privacy policy · TALOS" };
 
-const UPDATED = "October 23, 2026";
+const UPDATED = "October 24, 2026";
 const CONTACT = "rimahapatra7@gmail.com";
 
 /** Public (no login), so Google's OAuth consent screen can link to it. */
@@ -18,7 +18,7 @@ export default function PrivacyPage() {
       </p>
 
       <h2>Google user data</h2>
-      <p>When the owner connects Google Calendar, TALOS asks Google for read-only access to their calendars:</p>
+      <p>When the owner connects Google Calendar, TALOS asks Google for access to read their calendars and to add, change and delete their events:</p>
       <ul>
         <li>
           <b>What it reads:</b> the list of the owner&rsquo;s calendars (names and colors) and events on the
@@ -27,8 +27,13 @@ export default function PrivacyPage() {
           is connected.
         </li>
         <li>
-          <b>How it&rsquo;s used:</b> only to show those events to the owner on the Watch tab of this app. Events
-          are shown as Google gives them; nothing is rewritten, summarized or analyzed.
+          <b>How it&rsquo;s used:</b> to show those events to the owner on the Watch tab of this app, as Google
+          gives them; nothing is rewritten, summarized or analyzed.
+        </li>
+        <li>
+          <b>Changes to the calendar:</b> TALOS adds, edits or deletes an event only when the owner asks for it,
+          either by saving the event form on the Watch tab or by confirming a calendar card in Chat. It never
+          changes events on its own.
         </li>
         <li>
           <b>Where it&rsquo;s stored:</b> the latest week of events and Google&rsquo;s refresh token are stored in
@@ -55,7 +60,8 @@ export default function PrivacyPage() {
       <p>
         Everything else in TALOS (weight, food, notes, journals, applications and similar entries) is typed in by the
         owner and stored in the same private database. Chat messages are sent to Anthropic&rsquo;s API to work out
-        where an entry belongs; Google data is not sent there.
+        where an entry belongs (including a message like &ldquo;dentist friday 3pm&rdquo; that becomes a calendar
+        event); data read from Google is not sent there.
       </p>
 
       <h2>Contact</h2>

@@ -112,8 +112,12 @@ export interface NewsletterSnap {
 }
 
 export interface CalEvent {
-  id: string;
+  id: string; // "<calendarId>:<eventId>", unique across calendars
+  calendarId: string;
+  eventId: string; // for a repeating event, this one occurrence
   title: string; // as written in Google Calendar; "(No title)" when it has none
+  untitled?: true; // Google has no title for it (the title above is a placeholder)
+  recurring?: true; // one occurrence of a repeating event
   allDay: boolean;
   /** Timed: ISO start/end. All-day: "YYYY-MM-DD" dates, end exclusive (as Google gives them). */
   start: string;

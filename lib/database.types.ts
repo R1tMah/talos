@@ -1120,6 +1120,42 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          amount: number
+          cadence: string
+          cancelled_on: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          note: string | null
+          started_on: string
+        }
+        Insert: {
+          amount: number
+          cadence: string
+          cancelled_on?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          note?: string | null
+          started_on: string
+        }
+        Update: {
+          amount?: number
+          cadence?: string
+          cancelled_on?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          note?: string | null
+          started_on?: string
+        }
+        Relationships: []
+      }
       vanguard_holdings: {
         Row: {
           created_at: string
@@ -1486,6 +1522,10 @@ export type Database = {
         Args: { p_body: string; p_date: string; p_due: string; p_tool?: string }
         Returns: Json
       }
+      add_subscription: {
+        Args: { p_amount: number; p_cadence: string; p_date: string; p_name: string; p_note?: string; p_tool?: string }
+        Returns: Json
+      }
       application_for: { Args: { p_company: string }; Returns: string }
       apply_application_reminder: {
         Args: {
@@ -1545,6 +1585,7 @@ export type Database = {
       delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_run: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_set: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_subscription: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_transaction: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -1805,6 +1846,10 @@ export type Database = {
         Args: { p_done: boolean; p_id: string; p_tool?: string }
         Returns: Json
       }
+      set_subscription_cancelled: {
+        Args: { p_date: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
       set_tab_archived: {
         Args: { p_archived: boolean; p_tab: string; p_tool?: string }
         Returns: Json
@@ -1958,6 +2003,10 @@ export type Database = {
       }
       update_settings: {
         Args: { p_changes: Json; p_tool?: string }
+        Returns: Json
+      }
+      update_subscription: {
+        Args: { p_amount: number; p_cadence: string; p_date: string; p_id: string; p_name: string; p_note: string; p_tool?: string }
         Returns: Json
       }
       update_transaction: {

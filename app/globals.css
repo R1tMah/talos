@@ -337,8 +337,6 @@ html[data-swipe="prev"] :is(.screen, .chat) {
   background-image: none;
   -webkit-text-fill-color: currentColor;
   text-align: center;
-  font-size: 48px;
-  line-height: 1.1;
 }
 
 /* The TALOS wordmark on the Tabs screen has its own typeface. */
@@ -350,6 +348,7 @@ html[data-swipe="prev"] :is(.screen, .chat) {
 .talos-lockup {
   flex: 1;
   min-width: 0;
+  padding: 0 var(--s-2); /* a clear gap before any side button */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -357,11 +356,16 @@ html[data-swipe="prev"] :is(.screen, .chat) {
 }
 
 /* 48px, shrunk for long words so the lockup fits a phone: the room left beside the
-   hologram (and the side buttons, when --sides is 1), over the word's length (--len)
-   at ~0.8em a letter. */
+   hologram, the lockup's padding and (when --sides is 1) the side buttons with their
+   gaps, over the word's length (--len) at ~0.75em a letter (Space Grotesk caps, bold, plus letter spacing; measured ~0.72). */
 .header .talos-lockup h1 {
   flex: none;
-  font-size: min(48px, calc((min(100vw, 560px) - 2 * var(--gutter) - 56px - 2 * var(--tap) * var(--sides)) / (var(--len) * 0.8)));
+  line-height: 1.1;
+  /* The only size rule for brand titles, so nothing more specific can pin it back to 48px. */
+  font-size: min(
+    48px,
+    calc((min(100vw, 560px) - 2 * var(--gutter) - 56px - 2 * var(--s-2) - 2 * (var(--tap) + var(--s-2)) * var(--sides)) / (var(--len) * 0.75))
+  );
 }
 
 /* The wordmark in a slowly drifting hologram gradient. Both selectors are needed to
@@ -2780,9 +2784,21 @@ button.cal-day:active {
   flex-direction: column;
 }
 
+.cal-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.cal-out {
+  color: var(--text-3);
+  font-size: var(--t-sm);
+  padding: 0 var(--s-1);
+}
+
 .cal-event {
   display: grid;
-  grid-template-columns: 8px 64px 1fr;
+  grid-template-columns: 8px 64px 1fr auto;
   align-items: baseline;
   gap: var(--s-2);
   padding: 6px 0;
@@ -2817,6 +2833,12 @@ button.cal-day:active {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .cal-title {
@@ -2981,6 +3003,15 @@ button.cal-day:active {
 
 .hour b {
   font-size: var(--t-sm);
+}
+
+.wx-icon {
+  flex: none;
+  color: var(--text-2);
+}
+
+.wx-now .wx-icon {
+  color: var(--text);
 }
 
 .news {

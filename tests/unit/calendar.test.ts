@@ -25,7 +25,7 @@ describe("days in the calendar's timezone", () => {
 });
 
 const ev = (over: Partial<CalEvent>): CalEvent => ({
-  id: "x", title: "t", allDay: false, start: "", end: "", calendar: "Me", color: null, location: null, link: "", ...over,
+  id: "x", calendarId: "c", eventId: "x", title: "t", allDay: false, start: "", end: "", calendar: "Me", color: null, location: null, link: "", ...over,
 });
 
 describe("which day an event is on", () => {

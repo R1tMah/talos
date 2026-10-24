@@ -16,9 +16,11 @@ const LIVE_TITLES: Record<LiveTab, string> = {
  * (`source`), or the full history fetched when the sheet opens (`live`).
  */
 export function ExportButton({
-  tab, text, order = "newest first", ...from
+  tab, text, order = "newest first", variant = "icon", ...from
 }: {
   tab: ExportTab;
+  /** "icon" for a header, "button" for a full-width Export button at the bottom of a screen. */
+  variant?: "icon" | "button";
   /** Replaces the generated markdown for "Copy" (e.g. Weight's week-by-week log). */
   text?: string;
   /** How the rows are ordered, shown under the buttons. */
@@ -72,9 +74,15 @@ export function ExportButton({
 
   return (
     <>
-      <button type="button" className="icon-btn" aria-label={`Export ${title}`} onClick={() => setOpen(true)}>
-        <IconShare />
-      </button>
+      {variant === "button" ? (
+        <button type="button" className="btn" style={{ width: "100%" }} onClick={() => setOpen(true)}>
+          <IconShare size={16} /> Export {title}
+        </button>
+      ) : (
+        <button type="button" className="icon-btn" aria-label={`Export ${title}`} onClick={() => setOpen(true)}>
+          <IconShare />
+        </button>
+      )}
       {open && (
         <Sheet title={`Export ${title}`} onClose={() => setOpen(false)}>
           <div className="card list">

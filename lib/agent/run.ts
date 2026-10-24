@@ -35,6 +35,8 @@ const NAMED: Record<string, RegExp> = {
   // The verb settles which application tool (settleApplications enforces it).
   plan_application: /\bapply\b/i,
   add_application: /\bapplied\b/i,
+  add_subscription: /\bsubscri(?:be|bed|bing|ption)s?\b/i,
+  cancel_subscription: /\b(?:cancel(?:l?ed)?|unsubscribed)\b/i,
 };
 const BARE_LEETCODE = /^\s*(?:leet\s?code|lc)(?:\s+problem)?\s*[.!]?\s*$/i;
 
@@ -139,7 +141,7 @@ export function settleApplications(calls: Call[], text: string): Call[] {
 
 // ---- Model -----------------------------------------------------------------------------
 
-const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
+const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a subscription started or cancelled, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
 
 Job applications go by the owner's verb: "apply to X" (want to, need to, remind me to, apply later) is plan_application, the list of postings to apply to; "applied to X" is add_application, an application already sent. Neither is add_reminder.
 

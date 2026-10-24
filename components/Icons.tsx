@@ -138,6 +138,14 @@ export const IconEye = (p: P) => (
   </Base>
 );
 
+export const IconWallet = (p: P) => (
+  <Base {...p}>
+    <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h12a1 1 0 0 1 1 1v2" />
+    <path d="M3.5 7.5v10a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-14a2 2 0 0 1-2-2Z" />
+    <circle cx="16.5" cy="14" r="1.2" />
+  </Base>
+);
+
 export const IconRefresh = (p: P) => (
   <Base {...p}>
     <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4" />

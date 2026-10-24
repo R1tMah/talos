@@ -247,28 +247,43 @@ export function TeamView({ s }: { s: WatchSource }) {
   );
 }
 
-const STAT_COLS = ["GP", "PTS", "REB", "AST", "TO", "FG%", "3P%", "FT%", "eFG%", "TS%", "AST/TO"];
+// A player's season in three groups, each stat with its name spelled out.
+const STAT_GROUPS: { title?: string; big?: boolean; stats: [key: string, label: string][] }[] = [
+  { big: true, stats: [["PTS", "Points"], ["REB", "Rebounds"], ["AST", "Assists"], ["TO", "Turnovers"]] },
+  { title: "Shooting", stats: [["FG%", "Field goal"], ["3P%", "Three point"], ["FT%", "Free throw"]] },
+  { title: "Efficiency", stats: [["eFG%", "Effective FG"], ["TS%", "True shooting"], ["AST/TO", "Assist to TO"]] },
+];
 
 /** A followed player's averages and shooting efficiency this season. */
 function PlayerStats({ p }: { p: PlayerSnap }) {
+  const line = p.season;
   return (
     <section className="card watch-card">
-      <span className="label">{p.name}</span>
-      {p.season ? (
-        <div className="stat-scroll">
-          <table className="mini-table num">
-            <thead>
-              <tr>
-                {STAT_COLS.map((k) => <th key={k}>{k}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {STAT_COLS.map((k) => <td key={k}>{p.season![k] ?? "–"}</td>)}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <div className="pstats-head">
+        <span className="label">{p.name}</span>
+        {line && <span className="faint num">{line.GP} {line.GP === "1" ? "game" : "games"}</span>}
+      </div>
+      {line ? (
+        STAT_GROUPS.map((g, i) => (
+          <div key={i} className="pstats-group">
+            {g.title && <span className="pstats-title">{g.title}</span>}
+            <div className={`pstats${g.big ? " big" : ""}`}>
+              {g.stats.map(([k, label]) => {
+                const v = line[k] ?? "–";
+                const pct = k.endsWith("%") && v !== "–";
+                return (
+                  <div key={k}>
+                    <span className="pstats-value num">
+                      {v}
+                      {pct && <small>%</small>}
+                    </span>
+                    <span className="pstats-label">{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))
       ) : (
         <p className="muted watch-empty">No games this season yet.</p>
       )}

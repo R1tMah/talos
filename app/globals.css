@@ -762,6 +762,73 @@ html.kb-open .tabbar {
   margin-left: 2px;
 }
 
+/* Watch: a followed player's season, grouped tiles with spelled-out labels. */
+.pstats-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.pstats-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.pstats-title {
+  font-size: var(--t-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.pstats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+}
+
+.pstats.big {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.pstats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+.pstats-value {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.pstats.big .pstats-value {
+  font-size: var(--t-xl);
+}
+
+.pstats-value small {
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--text-3);
+  margin-left: 1px;
+}
+
+.pstats-label {
+  font-size: var(--t-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .strip-sub {
   font-size: var(--t-2xs);
   color: var(--text-3);
@@ -2530,6 +2597,39 @@ button.cal-day:active {
 .watch-empty {
   margin: 0;
   font-size: var(--t-sm);
+}
+
+/* ---- Privacy policy and terms: plain reading pages ---- */
+.legal {
+  gap: var(--s-3);
+  line-height: 1.55;
+}
+
+.legal h1 {
+  font-size: var(--t-2xl);
+  margin: var(--s-4) 0 0;
+}
+
+.legal h2 {
+  font-size: var(--t-lg);
+  margin: var(--s-3) 0 0;
+}
+
+.legal p,
+.legal ul {
+  margin: 0;
+}
+
+.legal ul {
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.legal a {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 /* ---- Calendar: Today and Week pages, swiped sideways inside the card ---- */

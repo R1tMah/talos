@@ -126,6 +126,13 @@ export const watchApi = {
     return res.data?.id ?? null;
   },
 
+  /** Deletes the source and everything it stored. Not undoable; hiding is the soft option. */
+  async remove(id: string): Promise<boolean> {
+    // Asking for the deleted row back tells "deleted" apart from "matched nothing".
+    const res = await createClient().from("watch_sources").delete().eq("id", id).select("id");
+    return !res.error && res.data.length === 1;
+  },
+
   async markSeen(id: string): Promise<void> {
     await createClient().from("watch_sources").update({ seen_at: new Date().toISOString() }).eq("id", id);
   },

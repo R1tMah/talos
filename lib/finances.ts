@@ -9,6 +9,8 @@ export interface Transaction {
   description: string;
   category: string | null;
   note: string | null;
+  pending: boolean; // Plaid: not posted yet, may still change
+  synced: boolean; // from Plaid rather than entered by hand
 }
 
 export interface BalanceReading {
@@ -23,13 +25,18 @@ export interface Holding {
   shares: number;
   value: number;
   updatedAt: string;
+  synced: boolean;
 }
 
-export interface Snapshot {
-  date: string;
-  checking: number | null;
-  vanguard: number | null;
-  total: number;
+/** A Plaid bank connection as the app may see it (never the token). */
+export interface Connection {
+  id: string;
+  env: "sandbox" | "production";
+  kind: "checking" | "investments";
+  institution: string | null;
+  status: "ok" | "login_required" | "pending_expiration" | "error";
+  errorCode: string | null;
+  lastSyncedAt: string | null;
 }
 
 /** "$1,234.56", "−$12.00" (a real minus sign), "+$50.00" with `sign`. */
@@ -43,12 +50,6 @@ export function fmtMoney(n: number, opts: { sign?: boolean; cents?: boolean } = 
 /** The Vanguard total: the sum of its holdings. Null with no holdings entered. */
 export const vanguardTotal = (holdings: Pick<Holding, "value">[]) =>
   holdings.length ? Math.round(holdings.reduce((a, h) => a + h.value, 0) * 100) / 100 : null;
-
-/** Checking + Vanguard, counting whichever has been entered. Null when neither has. */
-export function netWorth(checking: number | null, vanguard: number | null) {
-  if (checking == null && vanguard == null) return null;
-  return Math.round(((checking ?? 0) + (vanguard ?? 0)) * 100) / 100;
-}
 
 /** Money out and in over the transactions from `from` (inclusive) on. Out is positive. */
 export function flow(txns: Transaction[], from: string) {

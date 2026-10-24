@@ -144,16 +144,18 @@ function validate(kind: WatchKind, v: Values): string | null {
 }
 
 export function SourceForm({
-  source, onSubmit, onClose,
+  source, onSubmit, onClose, onDelete,
 }: {
   source: Pick<WatchSource, "kind" | "title" | "config" | "enabled" | "everyMinutes"> & { id?: string };
   onSubmit: (v: SourceInput) => void;
   onClose: () => void;
+  /** Deletes the source for good (teams only, for now). */
+  onDelete?: () => void;
 }) {
   // The calendar picks from the Google account's own calendar list.
   if (source.kind === "calendar") return <CalendarForm source={source} onSubmit={onSubmit} onClose={onClose} />;
   // A team picks its players from the live roster.
-  if (source.kind === "espn_team") return <TeamForm source={source} onSubmit={onSubmit} onClose={onClose} />;
+  if (source.kind === "espn_team") return <TeamForm source={source} onSubmit={onSubmit} onClose={onClose} onDelete={onDelete} />;
   return (
     <FormSheet
       title={source.id ? `${source.title} settings` : `Add ${KIND_LABELS[source.kind]?.toLowerCase() ?? "source"}`}

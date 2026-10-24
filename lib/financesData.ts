@@ -4,40 +4,43 @@ import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Json } from "./database.types";
 import { toHM } from "./date";
-import { netWorth, vanguardTotal, type BalanceReading, type Holding, type Snapshot, type Transaction } from "./finances";
+import { type BalanceReading, type Connection, type Holding, type Transaction } from "./finances";
 import { announceWrite, useDataChanged } from "./undo";
 
 export interface FinancesData {
   transactions: Transaction[]; // newest first
   balance: BalanceReading | null; // the latest checking reading
   holdings: Holding[]; // largest first
-  snapshots: Snapshot[]; // oldest first
+  connections: Connection[]; // Plaid, oldest first
 }
 
 export type WriteResult = { status: "saved" } | { status: "not_found" } | { status: "failed" };
 
 async function load(): Promise<FinancesData | null> {
   const db = createClient();
-  const [txns, bal, holds, snaps] = await Promise.all([
+  const [txns, bal, holds, conns] = await Promise.all([
     db.from("finance_transactions").select("*").is("deleted_at", null)
       .order("logical_date", { ascending: false }).order("created_at", { ascending: false }),
     db.from("checking_balances").select("*").is("deleted_at", null)
       .order("logical_date", { ascending: false }).order("created_at", { ascending: false }).limit(1),
     db.from("vanguard_holdings").select("*").is("deleted_at", null).order("value", { ascending: false }),
-    db.from("net_worth_snapshots").select("*").order("snapshot_date"),
+    db.rpc("plaid_status"),
   ]);
-  if (txns.error || bal.error || holds.error || snaps.error) return null;
+  if (txns.error || bal.error || holds.error) return null;
   const b = bal.data[0];
   return {
     transactions: txns.data.map((r) => ({
       id: r.id, date: r.logical_date, time: toHM(new Date(r.created_at)), amount: Number(r.amount),
-      description: r.description, category: r.category, note: r.note,
+      description: r.description, category: r.category, note: r.note, pending: r.pending, synced: r.plaid_item != null,
     })),
     balance: b ? { id: b.id, date: b.logical_date, balance: Number(b.balance) } : null,
-    holdings: holds.data.map((r) => ({ id: r.id, fund: r.fund, shares: Number(r.shares), value: Number(r.value), updatedAt: r.updated_at })),
-    snapshots: snaps.data.map((r) => ({
-      date: r.snapshot_date, checking: r.checking == null ? null : Number(r.checking),
-      vanguard: r.vanguard == null ? null : Number(r.vanguard), total: Number(r.total),
+    holdings: holds.data.map((r) => ({
+      id: r.id, fund: r.fund, shares: Number(r.shares), value: Number(r.value), updatedAt: r.updated_at, synced: r.plaid_item != null,
+    })),
+    // Without Plaid set up the list is just empty; it never blocks the rest of the tab.
+    connections: (conns.data ?? []).map((c) => ({
+      id: c.id, env: c.env as Connection["env"], kind: c.kind as Connection["kind"], institution: c.institution_name,
+      status: c.status as Connection["status"], errorCode: c.error_code, lastSyncedAt: c.last_synced_at,
     })),
   };
 }
@@ -59,38 +62,6 @@ export function useFinances() {
   }, [reload]);
 
   return { data, failed, reload };
-}
-
-/**
- * The Tabs-page card's numbers, read on their own so a Finances problem can't blank
- * the other cards (lib/homeStats.ts is all-or-nothing).
- */
-export function useFinanceSummary() {
-  const [data, setData] = useState<{ checking: number | null; vanguard: number | null; net: number | null } | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [tick, setTick] = useState(0);
-  useDataChanged(useCallback(() => setTick((t) => t + 1), []));
-
-  useEffect(() => {
-    let live = true;
-    const db = createClient();
-    Promise.all([
-      db.from("checking_balances").select("balance").is("deleted_at", null)
-        .order("logical_date", { ascending: false }).order("created_at", { ascending: false }).limit(1),
-      db.from("vanguard_holdings").select("value").is("deleted_at", null),
-    ]).then(([bal, holds]) => {
-      if (!live) return;
-      if (bal.error || holds.error) return setFailed(true);
-      const checking = bal.data[0] ? Number(bal.data[0].balance) : null;
-      const vanguard = vanguardTotal(holds.data.map((r) => ({ value: Number(r.value) })));
-      setData({ checking, vanguard, net: netWorth(checking, vanguard) });
-    });
-    return () => {
-      live = false;
-    };
-  }, [tick]);
-
-  return { data, failed };
 }
 
 function parse(table: string, res: { data: Json | null; error: unknown }): WriteResult {
@@ -136,4 +107,23 @@ export const financesApi = {
   updateHolding: async (id: string, h: HoldingInput) =>
     parse("vanguard_holdings", await createClient().rpc("update_holding", { p_id: id, p_fund: h.fund, p_shares: h.shares, p_value: h.value })),
   removeHolding: async (id: string) => parse("vanguard_holdings", await createClient().rpc("delete_holding", { p_id: id })),
+};
+
+async function post<T>(url: string, body: unknown): Promise<T | null> {
+  try {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return res.ok ? ((await res.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Plaid connections. Every call goes through the server routes; the browser never sees an access token. */
+export const plaidApi = {
+  /** A Link token: { kind } to connect a new bank, { id } to sign back in to an existing one. */
+  linkToken: (arg: { kind: Connection["kind"] } | { id: string }) => post<{ linkToken: string }>("/api/plaid/link-token", arg),
+  exchange: (publicToken: string, kind: Connection["kind"], institution: string | null) =>
+    post<{ id: string; result: { ok: boolean } }>("/api/plaid/exchange", { publicToken, kind, institution }),
+  sync: (id?: string) => post<{ results: { ok: boolean }[] }>("/api/plaid/sync", id ? { id } : {}),
+  disconnect: (id: string) => post<{ ok: true }>("/api/plaid/disconnect", { id }),
 };

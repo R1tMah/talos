@@ -4,6 +4,8 @@ import { type NextRequest, NextResponse } from "next/server";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+const PUBLIC_PAGES = new Set(["/privacy", "/terms"]);
+
 export const updateSession = async (request: NextRequest) => {
   // Create an unmodified response
   let supabaseResponse = NextResponse.next({
@@ -39,11 +41,15 @@ export const updateSession = async (request: NextRequest) => {
 
   // The scheduled Watch refresh has no session; the route checks its own secret.
   if (request.nextUrl.pathname === "/api/watch/refresh") return supabaseResponse;
+  // Plaid's webhook has no session either; the route verifies Plaid's signature.
+  if (request.nextUrl.pathname === "/api/plaid/webhook") return supabaseResponse;
 
   // Signed out: API calls get a plain 401; pages redirect to the login page.
   if (!data?.claims && request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // The privacy policy and terms are public: Google's consent screen links to them.
+  if (PUBLIC_PAGES.has(request.nextUrl.pathname)) return supabaseResponse;
   if (!data?.claims && request.nextUrl.pathname !== "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

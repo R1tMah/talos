@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { IconRefresh, IconSliders } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
@@ -16,6 +16,7 @@ import type { NewsSnap } from "@/lib/watch/types";
 /** One Watch source in full, with its settings and a refresh-now button. */
 export default function WatchSourcePage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [s, setS] = useState<WatchSource | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -112,6 +113,11 @@ export default function WatchSourcePage() {
         <SourceForm
           source={s}
           onClose={() => setEditing(false)}
+          onDelete={async () => {
+            setEditing(false);
+            if (await watchApi.remove(s.id)) router.replace("/watch");
+            else setNotice("Failed to delete.");
+          }}
           onSubmit={async (v) => {
             setEditing(false);
             if (!(await watchApi.save(s.id, v))) return setNotice("Failed to save.");

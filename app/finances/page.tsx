@@ -4,18 +4,17 @@ import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
-import { NetWorthChart } from "@/components/NetWorthChart";
+import { PlaidConnections } from "@/components/PlaidConnections";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
-import { Fab, ScreenHeader, SectionTitle } from "@/components/ui";
+import { Fab, ScreenHeader, SectionTitle, Tag } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
-import { flow, fmtMoney, monthStart, netWorth, vanguardTotal, type Holding, type Transaction } from "@/lib/finances";
+import { flow, fmtMoney, monthStart, vanguardTotal, type Holding, type Transaction } from "@/lib/finances";
 import { financesApi, useFinances, type TransactionInput, type WriteResult } from "@/lib/financesData";
 import { financesExport } from "@/lib/screenExports";
 
-// Finances: PNC checking (balance + transactions), Vanguard holdings, and the net
-// worth line from TALOS's nightly snapshots. Hand-entered; kept out of chat and the
-// weekly review.
+// Finances: PNC checking (balance + transactions) and Vanguard holdings, synced from
+// Plaid or entered by hand. Kept out of chat and the weekly review.
 
 const TXN_FIELDS: Field[] = [
   { name: "kind", label: "Type", type: "select", options: ["Spent", "Received"] },
@@ -72,7 +71,7 @@ export default function FinancesPage() {
   if (!data) {
     return failed ? (
       <main className="screen">
-        <ScreenHeader title="Finances" back="/tabs" />
+        <ScreenHeader title="FINANCES" brand />
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -89,17 +88,15 @@ export default function FinancesPage() {
   const month = flow(txns, monthStart(today));
   const checking = data.balance?.balance ?? null;
   const vanguard = vanguardTotal(data.holdings);
-  const net = netWorth(checking, vanguard);
 
   return (
     <main className="screen">
-      <ScreenHeader title="Finances" back="/tabs" right={<ExportButton tab="finances" source={financesExport(txns)} />} />
+      <ScreenHeader title="FINANCES" brand right={<ExportButton tab="finances" source={financesExport(txns)} />} />
 
       <SummaryStrip
         items={[
           { label: "Checking", value: checking == null ? "–" : fmtMoney(checking), sub: data.balance ? `as of ${fmtDay(data.balance.date)}` : "not entered" },
           { label: "Vanguard", value: vanguard == null ? "–" : fmtMoney(vanguard), sub: `${data.holdings.length} ${data.holdings.length === 1 ? "fund" : "funds"}` },
-          { label: "Net worth", value: net == null ? "–" : fmtMoney(net), sub: "excl. loans" },
         ]}
       />
 
@@ -109,7 +106,8 @@ export default function FinancesPage() {
         </p>
       )}
 
-      <NetWorthChart snapshots={data.snapshots} />
+      <SectionTitle>Connections</SectionTitle>
+      <PlaidConnections connections={data.connections} onChange={reload} />
 
       <SectionTitle
         right={
@@ -135,7 +133,9 @@ export default function FinancesPage() {
             key: "what", label: "What", width: "1fr",
             render: (t) => (
               <>
-                <div className="cell-main">{t.description}</div>
+                <div className="cell-main">
+                  {t.description} {t.pending && <Tag tone="tag-outline">Pending</Tag>}
+                </div>
                 {(t.category || t.note) && <div className="cell-sub">{[t.category, t.note].filter(Boolean).join(" · ")}</div>}
               </>
             ),

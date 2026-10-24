@@ -10,8 +10,6 @@ import { fmtDay, fmtNum } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
 import { FLAGS } from "@/lib/flags";
 import { useArchivedTabs } from "@/lib/archivedTabs";
-import { fmtMoney } from "@/lib/finances";
-import { useFinanceSummary } from "@/lib/financesData";
 import { useHomeStats } from "@/lib/homeStats";
 import { ARCHIVABLE, type TabKey } from "@/lib/tabs";
 
@@ -34,9 +32,6 @@ export default function TabsPage() {
   const archived = useArchivedTabs();
   const shown = (k: TabKey) => !archived?.has(k);
   const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key));
-  // Read separately from the other cards, so a Finances problem only blanks this card.
-  const fin = useFinanceSummary();
-  const money = (n: number | null | undefined) => (n == null ? "–" : fmtMoney(n, { cents: false }));
 
   return (
     <main className="screen">
@@ -99,18 +94,6 @@ export default function TabsPage() {
           rows={[
             { label: "Runs this wk", value: runs ? runs.week : "–" },
             { label: "Last", value: runs?.last ? `${runs.last.miles} mi, ${fmtDay(runs.last.date)}` : "–" },
-          ]}
-        />
-        )}
-        {FLAGS.finances && (
-        <StatCard
-          title="Finances"
-          href="/tabs/finances"
-          value={fin.data ? money(fin.data.net) : fin.failed ? "Failed" : "–"}
-          unit={fin.data?.net != null ? "net worth" : undefined}
-          rows={[
-            { label: "Checking", value: money(fin.data?.checking) },
-            { label: "Vanguard", value: money(fin.data?.vanguard) },
           ]}
         />
         )}

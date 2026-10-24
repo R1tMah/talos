@@ -38,13 +38,16 @@ function useRoster(league: string, team: string) {
 }
 
 export function TeamForm({
-  source, onSubmit, onClose,
+  source, onSubmit, onClose, onDelete,
 }: {
   source: Pick<WatchSource, "title" | "config" | "enabled" | "everyMinutes"> & { id?: string };
   onSubmit: (v: SourceInput) => void;
   onClose: () => void;
+  /** Deletes the source for good; offered only when editing an existing one. */
+  onDelete?: () => void;
 }) {
   const c = source.config as unknown as TeamConfig;
+  const [deleting, setDeleting] = useState(false);
   const [title, setTitle] = useState(source.title);
   const [league, setLeague] = useState(c.league);
   const [team, setTeam] = useState(c.team);
@@ -82,6 +85,27 @@ export function TeamForm({
       <button type="button" role="switch" className="switch" aria-checked={picked.has(n)} aria-label={`Follow ${n}`} onClick={() => toggle(n)} />
     </div>
   );
+
+  if (deleting) {
+    return (
+      <Sheet title={`Delete ${source.title}?`} onClose={onClose}>
+        <div className="cal-form">
+          <p className="muted" style={{ margin: 0 }}>
+            This removes the team, its followed players and its saved stats for good. To keep it but take it off Watch, turn off &ldquo;Show on
+            Watch&rdquo; instead.
+          </p>
+          <div className="sheet-actions">
+            <button type="button" className="btn" onClick={() => setDeleting(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-primary" style={{ background: "var(--danger)" }} onClick={onDelete}>
+              Delete
+            </button>
+          </div>
+        </div>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet title={source.id ? `${source.title} settings` : "Add team"} onClose={onClose}>
@@ -147,6 +171,11 @@ export function TeamForm({
         <button type="button" className="btn btn-primary" onClick={save}>
           {source.id ? "Save" : "Add"}
         </button>
+        {source.id && onDelete && (
+          <button type="button" className="btn btn-ghost" style={{ color: "var(--danger)" }} onClick={() => setDeleting(true)}>
+            Delete team
+          </button>
+        )}
       </div>
     </Sheet>
   );

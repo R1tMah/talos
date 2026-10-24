@@ -83,6 +83,36 @@ export type Database = {
           },
         ]
       }
+      api_usage: {
+        Row: {
+          cache_creation_input_tokens: number
+          cache_read_input_tokens: number
+          created_at: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Insert: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          id?: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Update: {
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+        }
+        Relationships: []
+      }
       application_reminders: {
         Row: {
           application_id: string | null
@@ -120,36 +150,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      api_usage: {
-        Row: {
-          cache_creation_input_tokens: number
-          cache_read_input_tokens: number
-          created_at: string
-          id: string
-          input_tokens: number
-          model: string
-          output_tokens: number
-        }
-        Insert: {
-          cache_creation_input_tokens?: number
-          cache_read_input_tokens?: number
-          created_at?: string
-          id?: string
-          input_tokens: number
-          model: string
-          output_tokens: number
-        }
-        Update: {
-          cache_creation_input_tokens?: number
-          cache_read_input_tokens?: number
-          created_at?: string
-          id?: string
-          input_tokens?: number
-          model?: string
-          output_tokens?: number
-        }
-        Relationships: []
       }
       applications: {
         Row: {
@@ -265,6 +265,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           logical_date: string
+          plaid_item: string | null
         }
         Insert: {
           balance: number
@@ -272,6 +273,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           logical_date: string
+          plaid_item?: string | null
         }
         Update: {
           balance?: number
@@ -279,8 +281,17 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           logical_date?: string
+          plaid_item?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "checking_balances_plaid_item_fkey"
+            columns: ["plaid_item"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       exercises: {
         Row: {
@@ -316,6 +327,9 @@ export type Database = {
           id: string
           logical_date: string
           note: string | null
+          pending: boolean
+          plaid_item: string | null
+          plaid_transaction_id: string | null
         }
         Insert: {
           amount: number
@@ -326,6 +340,9 @@ export type Database = {
           id?: string
           logical_date: string
           note?: string | null
+          pending?: boolean
+          plaid_item?: string | null
+          plaid_transaction_id?: string | null
         }
         Update: {
           amount?: number
@@ -336,8 +353,19 @@ export type Database = {
           id?: string
           logical_date?: string
           note?: string | null
+          pending?: boolean
+          plaid_item?: string | null
+          plaid_transaction_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "finance_transactions_plaid_item_fkey"
+            columns: ["plaid_item"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       food_log: {
         Row: {
@@ -443,6 +471,30 @@ export type Database = {
         }
         Relationships: []
       }
+      google_auth: {
+        Row: {
+          email: string | null
+          id: number
+          refresh_token: string
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          email?: string | null
+          id?: number
+          refresh_token: string
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          email?: string | null
+          id?: number
+          refresh_token?: string
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       lc_catalog: {
         Row: {
           aliases: string[]
@@ -467,30 +519,6 @@ export type Database = {
           id?: string
           title?: string
           topic?: string
-        }
-        Relationships: []
-      }
-      google_auth: {
-        Row: {
-          email: string | null
-          id: number
-          refresh_token: string
-          scope: string
-          updated_at: string
-        }
-        Insert: {
-          email?: string | null
-          id?: number
-          refresh_token: string
-          scope: string
-          updated_at?: string
-        }
-        Update: {
-          email?: string | null
-          id?: number
-          refresh_token?: string
-          scope?: string
-          updated_at?: string
         }
         Relationships: []
       }
@@ -746,6 +774,48 @@ export type Database = {
           name?: string | null
           protein_target_g?: number | null
           start_date?: string
+        }
+        Relationships: []
+      }
+      plaid_items: {
+        Row: {
+          access_token: string
+          created_at: string
+          cursor: string | null
+          env: string
+          error_code: string | null
+          id: string
+          institution_name: string | null
+          item_id: string
+          kind: string
+          last_synced_at: string | null
+          status: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          cursor?: string | null
+          env: string
+          error_code?: string | null
+          id?: string
+          institution_name?: string | null
+          item_id: string
+          kind: string
+          last_synced_at?: string | null
+          status?: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          cursor?: string | null
+          env?: string
+          error_code?: string | null
+          id?: string
+          institution_name?: string | null
+          item_id?: string
+          kind?: string
+          last_synced_at?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -1056,6 +1126,8 @@ export type Database = {
           deleted_at: string | null
           fund: string
           id: string
+          plaid_item: string | null
+          plaid_key: string | null
           shares: number
           updated_at: string
           value: number
@@ -1065,6 +1137,8 @@ export type Database = {
           deleted_at?: string | null
           fund: string
           id?: string
+          plaid_item?: string | null
+          plaid_key?: string | null
           shares: number
           updated_at?: string
           value: number
@@ -1074,11 +1148,21 @@ export type Database = {
           deleted_at?: string | null
           fund?: string
           id?: string
+          plaid_item?: string | null
+          plaid_key?: string | null
           shares?: number
           updated_at?: string
           value?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vanguard_holdings_plaid_item_fkey"
+            columns: ["plaid_item"]
+            isOneToOne: false
+            referencedRelation: "plaid_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       watch_items: {
         Row: {
@@ -1381,7 +1465,12 @@ export type Database = {
         Returns: Json
       }
       add_holding: {
-        Args: { p_fund: string; p_shares: number; p_tool?: string; p_value: number }
+        Args: {
+          p_fund: string
+          p_shares: number
+          p_tool?: string
+          p_value: number
+        }
         Returns: Json
       }
       add_note: {
@@ -1438,19 +1527,16 @@ export type Database = {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
-      delete_food: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_checking_balance: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
+      delete_food: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_food_entry: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
-      delete_holding: {
-        Args: { p_id: string; p_tool?: string }
-        Returns: Json
-      }
+      delete_holding: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_leetcode: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -1473,6 +1559,7 @@ export type Database = {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
       }
+      finance_snapshot: { Args: never; Returns: undefined }
       google_status: {
         Args: never
         Returns: {
@@ -1571,10 +1658,6 @@ export type Database = {
         }
         Returns: Json
       }
-      log_transaction: {
-        Args: { p_amount: number; p_category?: string; p_date: string; p_description: string; p_note?: string; p_tool?: string }
-        Returns: Json
-      }
       log_saved_meal: {
         Args: {
           p_date: string
@@ -1595,6 +1678,29 @@ export type Database = {
           p_workout_id: string
         }
         Returns: Json
+      }
+      log_transaction: {
+        Args: {
+          p_amount: number
+          p_category?: string
+          p_date: string
+          p_description: string
+          p_note?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      plaid_status: {
+        Args: never
+        Returns: {
+          env: string
+          error_code: string
+          id: string
+          institution_name: string
+          kind: string
+          last_synced_at: string
+          status: string
+        }[]
       }
       run_calories: {
         Args: { p_date: string; p_distance_mi: number }
@@ -1657,12 +1763,12 @@ export type Database = {
         }
         Returns: Json
       }
-      set_debrief: {
-        Args: { p_debrief: string; p_id: string; p_tool?: string }
-        Returns: Json
-      }
       set_checking_balance: {
         Args: { p_balance: number; p_date: string; p_tool?: string }
+        Returns: Json
+      }
+      set_debrief: {
+        Args: { p_debrief: string; p_id: string; p_tool?: string }
         Returns: Json
       }
       set_exercise_skipped: {
@@ -1786,11 +1892,13 @@ export type Database = {
         Returns: Json
       }
       update_holding: {
-        Args: { p_fund: string; p_id: string; p_shares: number; p_tool?: string; p_value: number }
-        Returns: Json
-      }
-      update_transaction: {
-        Args: { p_amount: number; p_category: string; p_date: string; p_description: string; p_id: string; p_note: string; p_tool?: string }
+        Args: {
+          p_fund: string
+          p_id: string
+          p_shares: number
+          p_tool?: string
+          p_value: number
+        }
         Returns: Json
       }
       update_leetcode: {
@@ -1850,6 +1958,18 @@ export type Database = {
       }
       update_settings: {
         Args: { p_changes: Json; p_tool?: string }
+        Returns: Json
+      }
+      update_transaction: {
+        Args: {
+          p_amount: number
+          p_category: string
+          p_date: string
+          p_description: string
+          p_id: string
+          p_note: string
+          p_tool?: string
+        }
         Returns: Json
       }
       update_weight: {

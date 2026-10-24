@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { fmtClock } from "@/lib/date";
 import { FLAGS } from "@/lib/flags";
 import { useWorkoutClock } from "@/lib/workoutClock";
-import { IconChat, IconDumbbell, IconEye, IconGrid, IconSliders } from "./Icons";
+import { IconChat, IconDumbbell, IconEye, IconGrid, IconSliders, IconWallet } from "./Icons";
 
 /** Main tabs in bar order; SwipeNav moves between neighbours. */
 export const NAV_ITEMS = [
@@ -15,8 +15,9 @@ export const NAV_ITEMS = [
   
   { href: "/watch", label: "Watch", Icon: IconEye, match: (p: string) => p.startsWith("/watch") },
   { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
+  { href: "/finances", label: "Finances", Icon: IconWallet, match: (p: string) => p.startsWith("/finances") },
   { href: "/settings", label: "Settings", Icon: IconSliders, match: (p: string) => p.startsWith("/settings") },
-].filter((i) => i.href !== "/workout" || FLAGS.workout);
+].filter((i) => (i.href !== "/workout" || FLAGS.workout) && (i.href !== "/finances" || FLAGS.finances));
 
 /** Elapsed time from the stored start timestamp; the interval only triggers re-renders. */
 function useElapsed(startedAt: number | undefined) {
@@ -34,7 +35,7 @@ export function TabBar() {
   const path = usePathname();
   const elapsed = useElapsed(useWorkoutClock().startedAt ?? undefined);
 
-  if (path === "/login") return null;
+  if (path === "/login" || path === "/privacy" || path === "/terms") return null;
 
   return (
     <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${NAV_ITEMS.length}, 1fr)` }}>

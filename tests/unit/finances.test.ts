@@ -2,11 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import { toCsv } from "@/lib/exportTab";
-import { flow, fmtMoney, monthStart, netWorth, vanguardTotal, type Transaction } from "@/lib/finances";
+import { flow, fmtMoney, monthStart, vanguardTotal, type Transaction } from "@/lib/finances";
 import { financesExport } from "@/lib/screenExports";
 
 const txn = (date: string, amount: number, description = "x"): Transaction => ({
-  id: `${date}-${amount}`, date, time: "12:00", amount, description, category: null, note: null,
+  id: `${date}-${amount}`, date, time: "12:00", amount, description, category: null, note: null, pending: false, synced: false,
 });
 
 describe("fmtMoney", () => {
@@ -25,13 +25,6 @@ describe("totals", () => {
     expect(vanguardTotal([{ value: 0.1 }, { value: 0.2 }])).toBe(0.3);
     expect(vanguardTotal([{ value: 10000.55 }, { value: 2500.45 }])).toBe(12501);
     expect(vanguardTotal([])).toBeNull();
-  });
-
-  it("net worth counts whichever balances exist", () => {
-    expect(netWorth(1200.5, 12501)).toBe(13701.5);
-    expect(netWorth(null, 500)).toBe(500);
-    expect(netWorth(-20, null)).toBe(-20); // overdrawn
-    expect(netWorth(null, null)).toBeNull();
   });
 
   it("this month's flow: out and in from the first of the month on", () => {

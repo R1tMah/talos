@@ -21,7 +21,27 @@ export interface WeightData {
   phaseTexts: PhaseText[];
   /** Dated free-text notes in the weight log (notes.kind = 'weight'). */
   notes: WeightNote[];
+  /** Every phase with all its fields, oldest first, for the Phases list and form. */
+  phaseRows: PhaseRow[];
 }
+
+/** A phase as stored. A null end means it's the current, open-ended phase. */
+export interface PhaseRow {
+  id: string;
+  start: string;
+  end: string | null;
+  name: string | null;
+  calories: number | null;
+  protein: number | null;
+  description: string | null;
+}
+export interface PhaseInput { start: string; end: string | null; name: string | null; calories: number | null; protein: number | null; description: string | null }
+/** A phase write: saved, refused because it overlaps another phase, or invalid. */
+export type PhaseResult = { status: "saved" } | { status: "overlap"; existing: PhaseRow } | { status: "invalid"; detail: string } | { status: "failed" };
+
+const toPhaseRow = (r: Tables["phases"]["Row"]): PhaseRow => ({
+  id: r.id, start: r.start_date, end: r.end_date, name: r.name, calories: r.calorie_target, protein: r.protein_target_g, description: r.description,
+});
 
 /** Outcome of a write. A conflict carries the row already on that date. */
 export type WriteResult =
@@ -87,6 +107,7 @@ export function useWeightData() {
       breaks: br.data.map(toBreak),
       phaseTexts: ph.data.map((p) => ({ id: p.id, start: p.start_date, calories: p.calorie_target, description: p.description })),
       notes: nt.data.map((n) => ({ id: n.id, date: n.logical_date, body: n.body })),
+      phaseRows: ph.data.map(toPhaseRow),
     });
   }, []);
 
@@ -124,4 +145,23 @@ export const weightApi = {
   updateBreak: async (id: string, start: string, end: string | null, label: string) =>
     parse("breaks", await createClient().rpc("update_break", { p_id: id, p_start: start, p_end: orNull(end), p_label: label })),
   removeBreak: async (id: string) => parse("breaks", await createClient().rpc("delete_break", { p_id: id })),
+
+  addPhase: async (p: PhaseInput) => parsePhase(await createClient().rpc("add_phase", phaseArgs(p))),
+  updatePhase: async (id: string, p: PhaseInput) => parsePhase(await createClient().rpc("update_phase", { p_id: id, ...phaseArgs(p) })),
+  removePhase: async (id: string) => parsePhase(await createClient().rpc("delete_phase", { p_id: id })),
 };
+
+// Nulls are allowed for every optional field; the generated arg types don't say so.
+const phaseArgs = (p: PhaseInput) => ({
+  p_start: p.start, p_end: orNull(p.end), p_name: orNull(p.name),
+  p_calories: p.calories as number, p_protein: p.protein as number, p_description: orNull(p.description),
+});
+
+function parsePhase(res: { data: Json | null; error: unknown }): PhaseResult {
+  const out = res.data as { status?: string; detail?: string; existing?: Tables["phases"]["Row"] } | null;
+  if (res.error || !out) return { status: "failed" };
+  announceWrite("phases", out as { row?: Json; action_id?: string | null });
+  if (out.status === "overlap" && out.existing) return { status: "overlap", existing: toPhaseRow(out.existing) };
+  if (out.status === "invalid") return { status: "invalid", detail: out.detail ?? "Invalid phase." };
+  return out.status === "saved" ? { status: "saved" } : { status: "failed" };
+}

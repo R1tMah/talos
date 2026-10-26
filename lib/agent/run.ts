@@ -11,10 +11,14 @@ import { CHAT_TABS, type TabKey } from "@/lib/tabs";
 import { archivedMessage, loadArchived, tabOf } from "./archive";
 import { inScope } from "./scope";
 import type { CardOption, ChatCard } from "./cards";
-import { MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
+import { chainEventStarts, MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
 
 export const MODEL = "claude-haiku-5-5";
 const MARGIN = 0.15; // the top reading must lead the runner-up by this much to auto-save
+// Tools whose every proposal is confirmed before it's saved (they write outside the app).
+// With no competing reading, low model confidence would only swap the confirm card for a
+// one-option "unsure" card, so the confidence bar is skipped for them.
+const ALWAYS_CONFIRMED = new Set(["add_event"]);
 
 export interface Call {
   name: string;
@@ -37,6 +41,7 @@ const NAMED: Record<string, RegExp> = {
   add_application: /\bapplied\b/i,
   add_subscription: /\bsubscri(?:be|bed|bing|ption)s?\b/i,
   cancel_subscription: /\b(?:cancel(?:l?ed)?|unsubscribed)\b/i,
+  log_spending: /\b(?:spent|spend|paid|bought)\b|\$\s?\d/i,
 };
 const BARE_LEETCODE = /^\s*(?:leet\s?code|lc)(?:\s+problem)?\s*[.!]?\s*$/i;
 
@@ -141,11 +146,13 @@ export function settleApplications(calls: Call[], text: string): Call[] {
 
 // ---- Model -----------------------------------------------------------------------------
 
-const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a subscription started or cancelled, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
+const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a subscription started or cancelled, money spent, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
 
 Job applications go by the owner's verb: "apply to X" (want to, need to, remind me to, apply later) is plan_application, the list of postings to apply to; "applied to X" is add_application, an application already sent. Neither is add_reminder.
 
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
+
+Money spent with an amount ("$14 chipotle", "uber 18.40") is log_spending. If what they paid for is food or drink they had, also call log_food for the food (a priced meal is both); a non-food purchase is log_spending only.
 
 If nothing fits, or you would be guessing, call no_match with your best readings. Always respond with tool calls only.`;
 
@@ -197,7 +204,7 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
       messages: [
         {
           role: "user",
-          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})\nSaved meals:\n${meals}\nFoods:\n${foods}${
+          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})${ctx.clock ? `\nNow: ${ctx.clock}` : ""}\nSaved meals:\n${meals}\nFoods:\n${foods}${
             ctx.tab ? `\nTab: the owner filed this message under ${CHAT_TABS.find((t) => t.key === ctx.tab)!.label}.` : ""
           }\n</context>\n\n<message>\n${ctx.text}\n</message>`,
         },
@@ -257,7 +264,8 @@ async function candidates(calls: Call[], ctx: Ctx) {
   return out;
 }
 
-export async function decide(calls: Call[], ctx: Ctx, threshold: number, propose: Propose): Promise<ChatCard[]> {
+export async function decide(rawCalls: Call[], ctx: Ctx, threshold: number, propose: Propose): Promise<ChatCard[]> {
+  const calls = chainEventStarts(rawCalls);
   const alts = await candidates(calls, ctx);
   const runnerUp = Math.max(0, ...alts.map((a) => a.confidence));
   const writes = calls.filter((c) => c.name !== "no_match" && TOOLS[c.name]?.check);
@@ -290,14 +298,18 @@ export async function decide(calls: Call[], ctx: Ctx, threshold: number, propose
     // so model confidence and the runner-up margin don't apply. Fields were still checked above.
     const named = (ctx.tab != null && inScope(ctx.tab, call.name)) || NAMED[call.name]?.test(ctx.text) === true;
     const conf = confOf(call.input);
-    if (!named && (conf < threshold || conf - runnerUp < MARGIN)) {
+    const settled = ALWAYS_CONFIRMED.has(call.name) && alts.length === 0;
+    if (!named && !settled && (conf < threshold || conf - runnerUp < MARGIN)) {
       const options = [...(await optionsFrom(call.name, check, propose))];
       for (const a of alts) if (options.length < 3) options.push(...(await optionsFrom(a.name, a.check, propose)));
       cards.push({ kind: "unsure", options: options.slice(0, 3) });
       continue;
     }
     if (check.warnings.length) {
-      cards.push({ kind: "warning", detail: check.warnings.join(" "), proposalId: await propose(call.name, check.resolved), text: ctx.text });
+      cards.push({
+        kind: "warning", detail: check.warnings.join(" "), proposalId: await propose(call.name, check.resolved), text: ctx.text,
+        ...(tool.confirm ? { title: tool.confirm.title, action: tool.confirm.action } : {}),
+      });
       continue;
     }
     cards.push(...(await commitCard(call.name, check.resolved, ctx, propose)));
@@ -323,7 +335,7 @@ export async function commitCard(name: string, resolved: Resolved, ctx: Pick<Ctx
   const out = await tool.commit(resolved, ctx.db);
   if (out.status === "confirm") return [{ kind: "confirm", title: out.title, changes: out.changes, proposalId: await propose(out.tool, out.resolved) }];
   if (out.status === "failed") return [{ kind: "failed", detail: out.detail }];
-  const cards: ChatCard[] = [{ kind: "saved", label: out.label, actionId: out.actionId }];
+  const cards: ChatCard[] = [{ kind: "saved", label: out.label, actionId: out.actionId, ...(out.googleEvent ? { googleEvent: out.googleEvent } : {}) }];
   for (const extra of out.also ?? []) cards.push({ kind: "saved", label: extra.label, actionId: extra.actionId });
   const offerTab = out.offer ? tabOf(out.offer.tool, out.offer.resolved) : null;
   if (out.offer && !(offerTab && archived.has(offerTab))) {

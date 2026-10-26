@@ -11,6 +11,7 @@ export interface Reminder {
   company: string;
   position: string;
   noted: string; // logical date it was noted
+  created: string; // when it was added, for its "open for" tag
 }
 
 export type ReminderResult = { status: "saved" } | { status: "conflict" } | { status: "not_found" } | { status: "failed" };
@@ -27,7 +28,7 @@ export function useReminders() {
       return;
     }
     setFailed(false);
-    setRows(res.data.map((r) => ({ id: r.id!, company: r.company!, position: r.position!, noted: r.noted_date! })));
+    setRows(res.data.map((r) => ({ id: r.id!, company: r.company!, position: r.position!, noted: r.noted_date!, created: r.created_at! })));
   }, []);
 
   useDataChanged(reload);

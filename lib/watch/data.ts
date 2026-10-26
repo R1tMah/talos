@@ -4,7 +4,7 @@
 // and asking the server to refresh a source now. Snapshots are only written by the
 // server's refresh job.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Database, Json } from "@/lib/database.types";
 import type { JobData, TransitSnap, WatchKind } from "./types";
@@ -44,6 +44,38 @@ export const newSince = (s: Pick<WatchSource, "seenAt">) => s.seenAt ?? new Date
  */
 export const isStale = (s: WatchSource) =>
   !s.fetchedAt || Date.now() - Date.parse(s.fetchedAt) > 3 * s.everyMinutes * 60_000 + 15 * 60_000;
+
+const CALENDAR_FRESH_MS = 60_000;
+
+/**
+ * Opening Watch, or coming back to it, refetches any calendar not tried in the last
+ * minute, so an event added or deleted in Google shows right away instead of at the
+ * next job (every 5 minutes).
+ */
+export function useFreshCalendars(sources: WatchSource[] | null, reload: () => Promise<void>) {
+  const latest = useRef(sources);
+  latest.current = sources;
+  const running = useRef(false);
+  const loaded = sources != null;
+
+  useEffect(() => {
+    if (!loaded) return;
+    const check = async () => {
+      if (document.visibilityState !== "visible" || running.current) return;
+      const stale = (latest.current ?? []).filter(
+        (s) => s.kind === "calendar" && s.enabled && (!s.triedAt || Date.now() - Date.parse(s.triedAt) > CALENDAR_FRESH_MS),
+      );
+      if (!stale.length) return;
+      running.current = true;
+      await Promise.all(stale.map((s) => watchApi.refresh(s.id)));
+      running.current = false;
+      await reload();
+    };
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+  }, [loaded, reload]);
+}
 
 export function useWatchSources() {
   const [data, setData] = useState<WatchSource[] | null>(null);
@@ -166,6 +198,8 @@ export interface GoogleStatus {
   email?: string | null;
   /** The grant allows adding and changing events (connected after writes were added). */
   canWrite?: boolean;
+  /** The grant allows sending the weekly email from Gmail. */
+  canSendMail?: boolean;
   calendars: { id: string; name: string; color: string | null; primary: boolean; writable: boolean }[];
   error?: string;
 }
@@ -181,7 +215,11 @@ export const googleApi = {
   /** Adds, changes or deletes an event; the server refetches the calendar afterwards. */
   event: async (
     op: "create" | "update" | "delete",
-    body: { sourceId: string; eventId?: string; event: Record<string, unknown> },
+    body: {
+      sourceId: string; eventId?: string; event: Record<string, unknown>;
+      /** Deleting a repeating event: just this occurrence, it and later ones, or all of them. */
+      scope?: "one" | "following" | "all"; seriesId?: string; start?: string; allDay?: boolean;
+    },
   ): Promise<{ ok: true } | { error: string; reconnect?: boolean }> => {
     const method = op === "create" ? "POST" : op === "update" ? "PATCH" : "DELETE";
     const res = await fetch("/api/google/events", { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);

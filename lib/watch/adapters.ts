@@ -271,12 +271,12 @@ export async function fetchWeather(c: WeatherConfig): Promise<WeatherSnap> {
     daily: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset",
     temperature_unit: "fahrenheit",
     timezone: c.timezone,
-    forecast_days: "2",
+    forecast_days: "7",
   });
   const r = await getJson<{
     current: { time: string; temperature_2m: number; apparent_temperature: number; weather_code: number };
     hourly: { time: string[]; temperature_2m: number[]; precipitation_probability: (number | null)[]; weather_code: number[] };
-    daily: { temperature_2m_max: number[]; temperature_2m_min: number[]; weather_code: number[]; precipitation_probability_max: (number | null)[]; sunrise: string[]; sunset: string[] };
+    daily: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; weather_code: number[]; precipitation_probability_max: (number | null)[]; sunrise: string[]; sunset: string[] };
   }>(`https://api.open-meteo.com/v1/forecast?${q}`);
   return {
     place: c.place,
@@ -285,7 +285,11 @@ export async function fetchWeather(c: WeatherConfig): Promise<WeatherSnap> {
       hi: r.daily.temperature_2m_max[0], lo: r.daily.temperature_2m_min[0], code: r.daily.weather_code[0],
       precip: r.daily.precipitation_probability_max[0], sunrise: r.daily.sunrise[0], sunset: r.daily.sunset[0],
     },
-    hours: r.hourly.time.map((at, i) => ({ at, temp: r.hourly.temperature_2m[i], code: r.hourly.weather_code[i], precip: r.hourly.precipitation_probability[i] })),
+    // Hours stay at today and tomorrow (the card shows the next 12 to 24); the week is by day.
+    hours: r.hourly.time.slice(0, 48).map((at, i) => ({ at, temp: r.hourly.temperature_2m[i], code: r.hourly.weather_code[i], precip: r.hourly.precipitation_probability[i] })),
+    days: r.daily.time.map((date, i) => ({
+      date, hi: r.daily.temperature_2m_max[i], lo: r.daily.temperature_2m_min[i], code: r.daily.weather_code[i], precip: r.daily.precipitation_probability_max[i],
+    })),
     link: fallbackLink("weather", { ...c }),
   };
 }

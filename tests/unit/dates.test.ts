@@ -1,7 +1,7 @@
 // The 4am rule (#1, #2, #5, #6) and the shared range checks (#10-#13).
 
 import { describe, expect, it } from "vitest";
-import { logicalDateIn } from "@/lib/date";
+import { logicalDateIn, fmtOpenFor } from "@/lib/date";
 import { LIMITS, foodWarnings, leetcodeWarnings, weightWarnings } from "@/lib/validate";
 
 const NY = "America/New_York";
@@ -75,5 +75,16 @@ describe("2. Validation ranges", () => {
     expect(leetcodeWarnings(180)).toEqual([]);
     expect(leetcodeWarnings(181)).toHaveLength(1);
     expect(leetcodeWarnings(null)).toEqual([]);
+  });
+});
+
+describe("fmtOpenFor", () => {
+  const now = new Date("2026-10-25T18:00:00Z");
+  const ago = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+  it("shows days and hours open", () => {
+    expect(fmtOpenFor(ago(53), now)).toBe("2d 5h");
+    expect(fmtOpenFor(ago(72), now)).toBe("3d");
+    expect(fmtOpenFor(ago(5.9), now)).toBe("5h");
+    expect(fmtOpenFor(ago(0.5), now)).toBe("<1h");
   });
 });

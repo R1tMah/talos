@@ -6,6 +6,7 @@ import { FormSheet, Sheet } from "@/components/FormSheet";
 import { IconChevron } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader, Segmented } from "@/components/ui";
+import { WeeklyEmailSettings } from "@/components/WeeklyEmailSettings";
 import { setTabArchived, useArchivedTabs } from "@/lib/archivedTabs";
 import { buildBackup } from "@/lib/backup";
 import { fmtNum, todayISO } from "@/lib/date";
@@ -192,6 +193,13 @@ export default function SettingsPage() {
         <Row label="Chat history" href="/settings/chat-history" />
         <Row label="API usage" href="/settings/api-usage" />
       </div>
+
+      <span className="label group-title">Talos</span>
+      <div className="card list">
+        <Row label="Talos Improvements" href="/settings/talos" />
+      </div>
+
+      <WeeklyEmailSettings />
 
       <span className="label group-title">Appearance</span>
       <div className="card pad" style={{ padding: "var(--s-2)" }}>

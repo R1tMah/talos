@@ -6,7 +6,7 @@ import type { Json } from "./database.types";
 import { announceWrite, useDataChanged } from "./undo";
 import { toHM } from "./date";
 
-export type NoteKind = "content" | "journal" | "personal" | "talos";
+export type NoteKind = "content" | "journal" | "personal" | "talos" | "sysdesign" | "aiassisted";
 
 export interface NoteEntry {
   id: string;

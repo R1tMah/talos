@@ -21,9 +21,13 @@ const CLOSED_KEPT_DAYS = 30;
 
 export interface RefreshResult { id: string; title: string; ok: boolean; error?: string }
 
-export async function refreshWatch(db: Admin, opts: { ids?: string[]; force?: boolean } = {}): Promise<RefreshResult[]> {
+/** Whether a kind is fetched by the job (transit isn't: it's live while open). */
+export const isScheduled = (kind: unknown): kind is WatchKind => typeof kind === "string" && SCHEDULED.has(kind as WatchKind);
+
+export async function refreshWatch(db: Admin, opts: { ids?: string[]; kind?: WatchKind; force?: boolean } = {}): Promise<RefreshResult[]> {
   let q = db.from("watch_sources").select("*");
   q = opts.ids ? q.in("id", opts.ids) : q.eq("enabled", true);
+  if (opts.kind) q = q.eq("kind", opts.kind);
   const { data: sources, error } = await q;
   if (error) throw error;
 

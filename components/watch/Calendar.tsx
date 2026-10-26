@@ -179,6 +179,9 @@ function EventSheet({
 }) {
   const [status, setStatus] = useState<GoogleStatus | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  // Deleting a repeating event first asks which occurrences, like Google Calendar does.
+  const [askScope, setAskScope] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     googleApi.status().then(setStatus);
   }, []);
@@ -236,10 +239,11 @@ function EventSheet({
     location: str(v.location) || null,
   });
 
-  const send = async (op: "create" | "update" | "delete", v: Values | null) => {
+  const send = async (op: "create" | "update" | "delete", v: Values | null, scope?: "one" | "following" | "all") => {
     const r = await googleApi.event(op, {
       sourceId: s.id, eventId: event?.eventId,
       event: v ? inputOf(v) : { calendarId: event!.calendarId },
+      ...(scope && scope !== "one" ? { scope, seriesId: event!.seriesId, start: event!.start, allDay: event!.allDay } : {}),
     });
     if ("error" in r) {
       if (r.reconnect) return setError("reconnect");
@@ -247,6 +251,40 @@ function EventSheet({
     }
     onDone(null);
   };
+
+  if (askScope && event) {
+    const del = async (scope: "one" | "following" | "all") => {
+      setBusy(true);
+      await send("delete", null, scope);
+      setBusy(false);
+    };
+    return (
+      <Sheet title="Delete repeating event" onClose={() => setAskScope(false)}>
+        <div className="cal-form">
+          <p className="muted" style={{ margin: 0 }}>
+            &ldquo;{event.title}&rdquo; repeats. Which do you want to delete?
+          </p>
+          <div className="card list" role="group" aria-label="Which occurrences to delete">
+            {([
+              ["one", "This event", "Just this one; the rest stay"],
+              ["following", "This and following events", "This one and every one after it"],
+              ["all", "All events", "Every occurrence, past and future"],
+            ] as const).map(([scope, label, sub]) => (
+              <button key={scope} type="button" className="row" disabled={busy} onClick={() => del(scope)}>
+                <span>
+                  <span className="row-label" style={{ color: "var(--danger)" }}>{label}</span>
+                  <span className="cell-sub">{sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="btn" disabled={busy} onClick={() => setAskScope(false)}>
+            Cancel
+          </button>
+        </div>
+      </Sheet>
+    );
+  }
 
   return (
     <FormSheet
@@ -260,7 +298,9 @@ function EventSheet({
       }}
       onClose={onClose}
       confirm
-      onDelete={event ? () => send("delete", null) : undefined}
+      // A repeating event's delete asks its own question (which occurrences) instead of the generic confirm.
+      confirmDelete={!event?.recurring}
+      onDelete={event ? (event.recurring ? () => setAskScope(true) : () => send("delete", null)) : undefined}
       onSubmit={(v) => send(event ? "update" : "create", v)}
     />
   );

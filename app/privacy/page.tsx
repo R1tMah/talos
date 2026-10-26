@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Privacy policy · TALOS" };
 
-const UPDATED = "October 24, 2026";
+const UPDATED = "October 25, 2026";
 const CONTACT = "rimahapatra7@gmail.com";
 
 /** Public (no login), so Google's OAuth consent screen can link to it. */
@@ -50,6 +50,13 @@ export default function PrivacyPage() {
           <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
         </li>
       </ul>
+      <p>
+        <b>Gmail:</b> TALOS also asks for permission to send email (gmail.send) so it can send the owner a weekly
+        summary from their own Gmail address to that same address, Sundays at 1 PM, if they turn it on in Settings.
+        It can only send; it cannot read, search, change or delete any email. The summary contains the owner&rsquo;s
+        own TALOS entries (reminders, and optionally weight, food, runs, job applications, calendar events and
+        subscription totals) and is sent to no one else.
+      </p>
       <p>
         TALOS&rsquo;s use of information received from Google APIs adheres to the{" "}
         <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,

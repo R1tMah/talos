@@ -9,7 +9,7 @@ import type { TabExport } from "./exportTab";
  * so they never depend on what the screen happens to have loaded (Nutrition, for
  * example, only loads one day). Newest first; deleted rows are left out.
  */
-export type LiveTab = "nutrition" | "leetcode" | "callbacks" | "content" | "journal" | "personal" | "talos";
+export type LiveTab = "nutrition" | "leetcode" | "callbacks" | "content" | "journal" | "personal" | "talos" | "sysdesign" | "aiassisted";
 
 const s = (v: unknown) => (v == null ? "" : String(v));
 const time = (iso: string) => toHM(new Date(iso));
@@ -81,13 +81,15 @@ export async function loadExport(tab: LiveTab): Promise<TabExport> {
     case "content":
     case "journal":
     case "personal":
-    case "talos": {
+    case "talos":
+    case "sysdesign":
+    case "aiassisted": {
       const rows = rowsOrThrow(
         await db.from("notes").select("*").eq("kind", tab).is("deleted_at", null)
           .order("logical_date", { ascending: false }).order("created_at", { ascending: false }),
       );
       return {
-        title: { content: "Content", journal: "Work Journal", personal: "Personal Journal", talos: "Talos Improvements" }[tab],
+        title: { content: "Content", journal: "Work Journal", personal: "Personal Journal", talos: "Talos Improvements", sysdesign: "System Design Mocks", aiassisted: "AI-Assisted Mocks" }[tab],
         columns: [{ key: "date", label: "Date" }, { key: "time", label: "Time" }, { key: "text", label: "Text" }],
         rows: rows.map((r) => ({ date: r.logical_date, time: time(r.created_at), text: r.body })),
         body: "text",

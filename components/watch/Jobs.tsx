@@ -97,7 +97,7 @@ export function JobsView({ s }: { s: WatchSource }) {
 }
 
 function JobRow({ j, applied, reminded }: { j: JobItem; applied: boolean; reminded: boolean }) {
-  const add = `/tabs/applications?${new URLSearchParams({ add: "1", company: j.company, position: j.title })}`;
+  const add = `/tabs/recruiting?${new URLSearchParams({ tab: "applications", add: "1", company: j.company, position: j.title })}`;
   // Saves an "Apply to X" reminder; the save toast (with Undo) comes from remindersApi.
   const remind = async () => {
     const r = await remindersApi.add(j.company, j.title, logicalToday());

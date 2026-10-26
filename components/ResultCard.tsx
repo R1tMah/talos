@@ -36,7 +36,7 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
             {card.undone ? (
               <Done>Undone</Done>
             ) : (
-              card.actionId &&
+              (card.actionId || card.googleEvent) &&
               on && (
                 <button type="button" className="btn btn-sm" onClick={on.undo}>
                   Undo
@@ -74,10 +74,9 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
       return (
         <div className={`rc${card.resolved ? " resolved" : ""}`}>
           <div className="rc-line">
-            <span className="rc-icon warn">
-              <IconAlert />
-            </span>
-            <span className="rc-title">That doesn&rsquo;t look right, are you sure?</span>
+            {/* A confirmation (title given) asks; a warning flags something that looks off. */}
+            <span className={`rc-icon${card.title ? "" : " warn"}`}>{card.title ? <IconQuestion /> : <IconAlert />}</span>
+            <span className="rc-title">{card.title ?? <>That doesn&rsquo;t look right, are you sure?</>}</span>
           </div>
           <span className="rc-detail num">{card.detail}</span>
           {card.resolved ? (
@@ -86,7 +85,7 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
             on && (
               <div className="rc-actions">
                 <button type="button" className="btn btn-primary" onClick={on.save}>
-                  Yes, save
+                  {card.action ?? "Yes, save"}
                 </button>
                 <button type="button" className="btn" onClick={on.edit}>
                   Edit

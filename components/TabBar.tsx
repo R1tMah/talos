@@ -14,7 +14,7 @@ export const NAV_ITEMS = [
   { href: "/workout", label: "Workout", Icon: IconDumbbell, match: (p: string) => p.startsWith("/workout") },
   
   { href: "/watch", label: "Watch", Icon: IconEye, match: (p: string) => p.startsWith("/watch") },
-  { href: "/tabs", label: "Tabs", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
+  { href: "/tabs", label: "TALOS", Icon: IconGrid, match: (p: string) => p.startsWith("/tabs") },
   { href: "/finances", label: "Finances", Icon: IconWallet, match: (p: string) => p.startsWith("/finances") },
   { href: "/settings", label: "Settings", Icon: IconSliders, match: (p: string) => p.startsWith("/settings") },
 ].filter((i) => (i.href !== "/workout" || FLAGS.workout) && (i.href !== "/finances" || FLAGS.finances));

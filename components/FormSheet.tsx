@@ -59,7 +59,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
  * old to new values and waits for Confirm.
  */
 export function FormSheet({
-  title, fields, initial, onSubmit, onClose, onDelete, submitLabel = "Save", confirm = false, validate,
+  title, fields, initial, onSubmit, onClose, onDelete, submitLabel = "Save", confirm = false, confirmDelete, validate,
 }: {
   title: string;
   fields: Field[];
@@ -70,6 +70,8 @@ export function FormSheet({
   submitLabel?: string;
   /** With `confirm`, deleting also shows a confirm step. */
   confirm?: boolean;
+  /** Overrides `confirm` for deleting, when the caller asks its own question (e.g. which occurrences). */
+  confirmDelete?: boolean;
   /** Return a message to block saving. */
   validate?: (values: Values) => string | null;
 }) {
@@ -110,7 +112,7 @@ export function FormSheet({
   };
 
   const startDelete = () => {
-    if (!confirm) return onDelete?.();
+    if (!(confirmDelete ?? confirm)) return onDelete?.();
     const summary = fields
       .filter((f) => f.type !== "toggle" && f.type !== "textarea")
       .map((f) => show(f, init[f.name]))

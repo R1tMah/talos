@@ -13,6 +13,8 @@ const TABLE_TAB: Record<string, ChatTab> = {
   runs: "runs",
   applications: "applications", application_reminders: "applications",
   callbacks: "callbacks",
+  subscriptions: "subscriptions",
+  spending: "spending",
 };
 
 export function tabOfSave(table: string, kind: string | null): ChatTab | null {

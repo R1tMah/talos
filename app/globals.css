@@ -498,16 +498,17 @@ html.kb-open .tabbar {
   white-space: nowrap;
 }
 
+/* The tab you're on: pink icon in a tinted pill, bold pink label. */
 .tabbar a[aria-current="page"] {
-  color: var(--text);
-}
-
-.tabbar a.primary[aria-current="page"] {
   color: var(--accent);
 }
 
-.tabbar a.primary[aria-current="page"] .tab-icon {
+.tabbar a[aria-current="page"] .tab-icon {
   background: var(--accent-soft);
+}
+
+.tabbar a[aria-current="page"] .tab-label {
+  font-weight: 700;
 }
 
 .tabbar a.live .tab-label {
@@ -1904,6 +1905,14 @@ html.kb-open .composer {
   flex-direction: column;
 }
 
+/* Under a reminder: how long it's been open, then its due date or position. */
+.reminder-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: 4px;
+}
+
 .reminder-check {
   color: var(--accent);
 }
@@ -2681,6 +2690,69 @@ button.cal-day:active {
   font-size: var(--t-sm);
 }
 
+/* ---- Long Term: seasons, the owner's own text shown as written ---- */
+.season {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.season-current {
+  padding: var(--s-4);
+}
+
+.season-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.season-head .label {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.season-name {
+  font-weight: 650;
+  flex: 1;
+  min-width: 0;
+}
+
+.season-meta {
+  font-size: var(--t-xs);
+}
+
+.season-past > .season {
+  padding: 0 var(--s-4) var(--s-4);
+}
+
+.season-text {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.season-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border);
+}
+
+.season-add {
+  align-self: flex-start;
+}
+
 /* ---- Privacy policy and terms: plain reading pages ---- */
 .legal {
   gap: var(--s-3);
@@ -2973,6 +3045,53 @@ button.cal-day:active {
   flex-direction: column;
   gap: 2px;
   font-size: var(--t-sm);
+}
+
+/* Weather's week: one row per day, the low-to-high bar placed on the week's own range. */
+.wx-week {
+  display: flex;
+  flex-direction: column;
+}
+
+.wx-day {
+  display: grid;
+  grid-template-columns: 52px 24px 36px 36px 1fr 36px;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 7px 0;
+  font-size: var(--t-md);
+}
+
+.wx-day + .wx-day {
+  border-top: 1px solid var(--border);
+}
+
+.wx-day-name {
+  font-weight: 600;
+}
+
+.wx-day-rain {
+  font-size: var(--t-xs);
+  color: var(--accent);
+}
+
+.wx-day-temp {
+  text-align: right;
+}
+
+.wx-range {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+.wx-range span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--holo-3), var(--accent));
 }
 
 .hours {
@@ -3439,4 +3558,149 @@ button.cal-day:active {
   align-items: center;
   justify-content: space-between;
   gap: var(--s-3);
+}
+
+/* ============================================================
+   Watch: System Design Prep (a temporary study plan)
+   ============================================================ */
+.prep-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.prep-line-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prep-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-xs);
+}
+
+.prep-title {
+  font-size: var(--t-md);
+  font-weight: 600;
+}
+
+.prep-note,
+.prep-next {
+  margin: 0;
+  font-size: var(--t-sm);
+}
+
+.prep-row {
+  align-items: center;
+}
+
+.prep-row.today {
+  background: var(--accent-soft);
+}
+
+.prep-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--t-xs);
+}
+
+.prep-row-main > span:last-child {
+  font-size: var(--t-md);
+}
+
+.prep-done {
+  color: var(--text-3);
+}
+
+.prep-back {
+  font-size: var(--t-sm);
+}
+
+.prep-block,
+.prep-details {
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.prep-h {
+  margin: 0;
+  font-size: var(--t-lg);
+  line-height: 1.3;
+}
+
+.prep-body {
+  margin: 0;
+  font-size: var(--t-md);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.prep-list {
+  margin: 0;
+  padding-left: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.prep-qa {
+  border-top: 1px solid var(--border);
+  padding-top: var(--s-2);
+}
+
+.prep-qa summary {
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.prep-qa p {
+  margin: var(--s-2) 0 0;
+  color: var(--accent);
+  line-height: 1.5;
+}
+
+.prep-clock {
+  display: flex;
+  gap: var(--s-3);
+}
+
+.prep-min {
+  flex: none;
+  width: 32px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.prep-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prep-terms {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.prep-terms dt {
+  font-weight: 600;
+}
+
+.prep-terms dd {
+  margin: 2px 0 0;
+  color: var(--text-2);
 }

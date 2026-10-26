@@ -882,6 +882,24 @@ export type Database = {
         }
         Relationships: []
       }
+      prep_completions: {
+        Row: {
+          curriculum_id: string
+          done_at: string
+          session: number
+        }
+        Insert: {
+          curriculum_id: string
+          done_at?: string
+          session: number
+        }
+        Update: {
+          curriculum_id?: string
+          done_at?: string
+          session?: number
+        }
+        Relationships: []
+      }
       reminders: {
         Row: {
           body: string
@@ -1029,6 +1047,74 @@ export type Database = {
         }
         Relationships: []
       }
+      season_notes: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          label: string | null
+          noted_on: string | null
+          position: number
+          season_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          label?: string | null
+          noted_on?: string | null
+          position: number
+          season_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          label?: string | null
+          noted_on?: string | null
+          position?: number
+          season_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "season_notes_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seasons: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          plan: string
+          position: number
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          plan?: string
+          position: number
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          plan?: string
+          position?: number
+        }
+        Relationships: []
+      }
       sets: {
         Row: {
           created_at: string
@@ -1117,6 +1203,39 @@ export type Database = {
           protein_target_g?: number
           rest_seconds?: number
           timezone?: string
+        }
+        Relationships: []
+      }
+      spending: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          logical_date: string
+          note: string | null
+          what: string
+        }
+        Insert: {
+          amount: number
+          category?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date: string
+          note?: string | null
+          what: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date?: string
+          note?: string | null
+          what?: string
         }
         Relationships: []
       }
@@ -1277,6 +1396,33 @@ export type Database = {
           seen_at?: string | null
           title?: string
           tried_at?: string | null
+        }
+        Relationships: []
+      }
+      weekly_email: {
+        Row: {
+          enabled: boolean
+          id: number
+          last_error: string | null
+          last_sent_on: string | null
+          sections: string[]
+          updated_at: string
+        }
+        Insert: {
+          enabled?: boolean
+          id?: number
+          last_error?: string | null
+          last_sent_on?: string | null
+          sections?: string[]
+          updated_at?: string
+        }
+        Update: {
+          enabled?: boolean
+          id?: number
+          last_error?: string | null
+          last_sent_on?: string | null
+          sections?: string[]
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1518,12 +1664,46 @@ export type Database = {
         }
         Returns: Json
       }
+      add_phase: {
+        Args: {
+          p_calories: number
+          p_description: string
+          p_end: string
+          p_name: string
+          p_protein: number
+          p_start: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       add_reminder: {
         Args: { p_body: string; p_date: string; p_due: string; p_tool?: string }
         Returns: Json
       }
+      add_scheduled_reminder: { Args: { p_body: string }; Returns: Json }
+      add_season: {
+        Args: { p_name: string; p_plan: string; p_tool?: string }
+        Returns: Json
+      }
+      add_season_note: {
+        Args: {
+          p_body: string
+          p_date: string
+          p_label: string
+          p_season_id: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       add_subscription: {
-        Args: { p_amount: number; p_cadence: string; p_date: string; p_name: string; p_note?: string; p_tool?: string }
+        Args: {
+          p_amount: number
+          p_cadence: string
+          p_date: string
+          p_name: string
+          p_note?: string
+          p_tool?: string
+        }
         Returns: Json
       }
       application_for: { Args: { p_company: string }; Returns: string }
@@ -1554,6 +1734,15 @@ export type Database = {
           n: number
         }[]
       }
+      check_phase: {
+        Args: {
+          p_calories: number
+          p_end: string
+          p_protein: number
+          p_start: string
+        }
+        Returns: string
+      }
       complete_reminder: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -1583,9 +1772,21 @@ export type Database = {
       }
       delete_meal: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_note: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_phase: { Args: { p_id: string; p_tool?: string }; Returns: Json }
       delete_run: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_season_note: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_set: { Args: { p_id: string; p_tool?: string }; Returns: Json }
-      delete_subscription: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_spending: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      delete_subscription: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       delete_transaction: {
         Args: { p_id: string; p_tool?: string }
         Returns: Json
@@ -1720,6 +1921,17 @@ export type Database = {
         }
         Returns: Json
       }
+      log_spending: {
+        Args: {
+          p_amount: number
+          p_category?: string
+          p_date: string
+          p_note?: string
+          p_tool?: string
+          p_what: string
+        }
+        Returns: Json
+      }
       log_transaction: {
         Args: {
           p_amount: number
@@ -1730,6 +1942,26 @@ export type Database = {
           p_tool?: string
         }
         Returns: Json
+      }
+      phase_overlap: {
+        Args: { p_end: string; p_except: string; p_start: string }
+        Returns: {
+          calorie_target: number | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          end_date: string | null
+          id: string
+          name: string | null
+          protein_target_g: number | null
+          start_date: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "phases"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       plaid_status: {
         Args: never
@@ -1743,6 +1975,7 @@ export type Database = {
           status: string
         }[]
       }
+      plaid_sync_tick: { Args: never; Returns: number }
       run_calories: {
         Args: { p_date: string; p_distance_mi: number }
         Returns: {
@@ -1976,6 +2209,19 @@ export type Database = {
         }
         Returns: Json
       }
+      update_phase: {
+        Args: {
+          p_calories: number
+          p_description: string
+          p_end: string
+          p_id: string
+          p_name: string
+          p_protein: number
+          p_start: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
       update_reminder: {
         Args: { p_body: string; p_due: string; p_id: string; p_tool?: string }
         Returns: Json
@@ -1987,6 +2233,20 @@ export type Database = {
           p_duration_sec: number
           p_id: string
           p_note: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      update_season: {
+        Args: { p_id: string; p_name: string; p_plan: string; p_tool?: string }
+        Returns: Json
+      }
+      update_season_note: {
+        Args: {
+          p_body: string
+          p_date: string
+          p_id: string
+          p_label: string
           p_tool?: string
         }
         Returns: Json
@@ -2005,8 +2265,28 @@ export type Database = {
         Args: { p_changes: Json; p_tool?: string }
         Returns: Json
       }
+      update_spending: {
+        Args: {
+          p_amount: number
+          p_category: string
+          p_date: string
+          p_id: string
+          p_note: string
+          p_tool?: string
+          p_what: string
+        }
+        Returns: Json
+      }
       update_subscription: {
-        Args: { p_amount: number; p_cadence: string; p_date: string; p_id: string; p_name: string; p_note: string; p_tool?: string }
+        Args: {
+          p_amount: number
+          p_cadence: string
+          p_date: string
+          p_id: string
+          p_name: string
+          p_note: string
+          p_tool?: string
+        }
         Returns: Json
       }
       update_transaction: {
@@ -2043,6 +2323,8 @@ export type Database = {
         Returns: Json
       }
       watch_tick: { Args: never; Returns: number }
+      watch_tick_kind: { Args: { p_kind: string }; Returns: number }
+      weekly_email_tick: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never

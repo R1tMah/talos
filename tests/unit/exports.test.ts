@@ -7,7 +7,7 @@ import type { AppEntry } from "@/lib/applicationsData";
 import { toHM } from "@/lib/date";
 import { toCsv, toMarkdown, type TabExport } from "@/lib/exportTab";
 import type { Run } from "@/lib/runsData";
-import { applicationsExport, runsExport, weightExport } from "@/lib/screenExports";
+import { applicationsExport, longTermExport, longTermText, runsExport, weightExport } from "@/lib/screenExports";
 import { buildWeightLog, weightLogText } from "@/lib/weightLog";
 
 // ---- A Supabase stand-in that records each query and answers with canned rows ----
@@ -189,6 +189,44 @@ describe("Weight export", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+describe("Long Term export", () => {
+  // As the screen has them: newest (highest position) first.
+  const seasons = [
+    {
+      id: "s2", position: 2, name: "Spring 2026", plan: "- Land an internship\n- Run a half",
+      notes: [
+        { id: "n3", date: "2026-03-01", label: null, body: "Two offers | one OA" },
+        { id: "n4", date: null, label: "Update 5/17:", body: "Signed!\n\nStarting June." },
+      ],
+    },
+    { id: "s1", position: 1, name: "Winter break", plan: "", notes: [{ id: "n1", date: null, label: null, body: "rested" }] },
+  ];
+
+  it("copies everything, oldest season first, the owner's text untouched", () => {
+    expect(longTermText(seasons)).toBe(
+      [
+        "# Long Term, 2 seasons",
+        "## Winter break",
+        "### Update\nrested",
+        "## Spring 2026",
+        "### Plan\n- Land an internship\n- Run a half",
+        "### Mar 1, 2026\nTwo offers | one OA",
+        "### Update 5/17:\nSigned!\n\nStarting June.",
+      ].join("\n\n") + "\n",
+    );
+    expect(longTermText([])).toBe("# Long Term, 0 seasons\n");
+  });
+
+  it("CSV has a row per plan and update, oldest first, and reads back exactly", () => {
+    const t = longTermExport(seasons);
+    expect(t.rows.map((r) => [r.season, r.heading])).toEqual([
+      ["Winter break", ""], ["Spring 2026", "Plan"], ["Spring 2026", ""], ["Spring 2026", "Update 5/17:"],
+    ]);
+    expectComplete(t);
+    expectCsvRoundTrip(t);
   });
 });
 

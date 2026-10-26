@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { logicalToday } from "@/lib/date";
+import { fmtOpenFor, logicalToday } from "@/lib/date";
 import { remindersApi, useReminders, type Reminder } from "@/lib/remindersData";
 import { showToast } from "@/lib/undo";
 import { FormSheet } from "./FormSheet";
 import { IconCheck, IconPlus, IconX } from "./Icons";
+import { Tag } from "./ui";
 
 /**
  * "Apply to X" reminders. `banner` is the compact strip on the Tabs page (hidden
@@ -45,7 +46,10 @@ export function ApplyReminders({ variant }: { variant: "banner" | "list" }) {
             <div key={r.id} className="reminder-row">
               <span className="reminder-text">
                 <span className="cell-main">Apply to {r.company}</span>
-                <span className="cell-sub">{r.position}</span>
+                <span className="reminder-meta">
+                  <Tag tone="tag-outline">{fmtOpenFor(r.created)}</Tag>
+                  <span className="cell-sub">{r.position}</span>
+                </span>
               </span>
               <button type="button" className="icon-btn" aria-label={`Dismiss ${r.company}`} onClick={async () => report(await remindersApi.dismiss(r.id))}>
                 <IconX size={18} />

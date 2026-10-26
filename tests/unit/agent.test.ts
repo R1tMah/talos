@@ -69,6 +69,8 @@ describe("2. Validation and plausibility", () => {
     model.toolCalls(weight(1680));
     const r = await send("1680");
     expect(kinds(r.cards)).toEqual(["warning"]);
+    // A real warning keeps the "doesn't look right" wording (no confirmation title).
+    expect(r.cards[0]).not.toHaveProperty("title");
     expect(r.writes()).toEqual([]);
   });
 

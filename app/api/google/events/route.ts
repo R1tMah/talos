@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ownerDb } from "@/lib/agent/server";
-import { createEvent, deleteEvent, listCalendars, NeedsWriteAccess, updateEvent, type EventInput } from "@/lib/google/calendar";
+import { createEvent, deleteEvent, deleteFollowing, listCalendars, NeedsWriteAccess, seriesIdOf, updateEvent, type EventInput } from "@/lib/google/calendar";
 import { refreshWatch } from "@/lib/watch/refresh";
 import type { CalendarConfig } from "@/lib/watch/types";
 import { createAdminClient } from "@/utils/supabase/admin";
@@ -9,13 +9,28 @@ import { createAdminClient } from "@/utils/supabase/admin";
  * Adds (POST), changes (PATCH) or deletes (DELETE) one event, from the Watch calendar
  * card. The body names the calendar source, whose timezone the times are in; after a
  * write that source is fetched again so the card shows the change.
+ *
+ * Deleting an occurrence of a repeating event takes a `scope`: "one" (just it, the default),
+ * "following" (it and every later one) or "all" (the whole series). The latter two also send
+ * the occurrence's `start` and `allDay`, and its `seriesId` when the card has it.
  */
 async function handle(req: Request, op: "create" | "update" | "delete") {
   if (!(await ownerDb())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "SUPABASE_SECRET_KEY is not set" }, { status: 500 });
 
-  const b = (await req.json().catch(() => ({}))) as { sourceId?: unknown; eventId?: unknown; event?: Partial<EventInput> & { calendarId?: unknown } };
+  const b = (await req.json().catch(() => ({}))) as {
+    sourceId?: unknown; eventId?: unknown; event?: Partial<EventInput> & { calendarId?: unknown };
+    scope?: unknown; seriesId?: unknown; start?: unknown; allDay?: unknown;
+  };
+  const scope = b.scope ?? "one";
+  if (scope !== "one" && scope !== "following" && scope !== "all") return NextResponse.json({ error: "bad scope" }, { status: 400 });
+  if (b.seriesId != null && (typeof b.seriesId !== "string" || !/^[a-zA-Z0-9_-]{1,1024}$/.test(b.seriesId))) {
+    return NextResponse.json({ error: "bad seriesId" }, { status: 400 });
+  }
+  if (scope === "following" && (typeof b.start !== "string" || Number.isNaN(Date.parse(b.start)))) {
+    return NextResponse.json({ error: "start required" }, { status: 400 });
+  }
   if (typeof b.sourceId !== "string") return NextResponse.json({ error: "sourceId required" }, { status: 400 });
   const { data: source } = await admin.from("watch_sources").select("id, kind, config").eq("id", b.sourceId).maybeSingle();
   if (source?.kind !== "calendar") return NextResponse.json({ error: "Not a calendar source." }, { status: 400 });
@@ -38,7 +53,12 @@ async function handle(req: Request, op: "create" | "update" | "delete") {
     };
     if (op === "create") await createEvent(admin, tz, input);
     else if (op === "update") await updateEvent(admin, tz, eventId!, input);
-    else await deleteEvent(admin, calendarId, eventId!);
+    else if (scope === "one") await deleteEvent(admin, calendarId, eventId!);
+    else {
+      const series = seriesIdOf({ eventId: eventId!, seriesId: (b.seriesId as string | undefined) ?? undefined });
+      if (scope === "all") await deleteEvent(admin, calendarId, series);
+      else await deleteFollowing(admin, calendarId, series, b.start as string, Boolean(b.allDay));
+    }
 
     await refreshWatch(admin, { ids: [source.id], force: true });
     return NextResponse.json({ ok: true });

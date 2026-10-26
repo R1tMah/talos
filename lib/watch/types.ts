@@ -1,7 +1,7 @@
 // Shapes shared by the Watch adapters (server) and the Watch screens (client).
 // A snapshot is exactly what a source returned, trimmed to what the tab shows.
 
-export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter" | "calendar";
+export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter" | "calendar" | "prep";
 
 // ---- Settings, one shape per adapter ----------------------------------------------------
 
@@ -118,6 +118,7 @@ export interface CalEvent {
   title: string; // as written in Google Calendar; "(No title)" when it has none
   untitled?: true; // Google has no title for it (the title above is a placeholder)
   recurring?: true; // one occurrence of a repeating event
+  seriesId?: string; // that repeating event's own id (deleting it deletes every occurrence)
   allDay: boolean;
   /** Timed: ISO start/end. All-day: "YYYY-MM-DD" dates, end exclusive (as Google gives them). */
   start: string;
@@ -136,11 +137,15 @@ export interface CalendarSnap {
 }
 
 export interface WeatherHour { at: string; temp: number; code: number; precip: number | null }
+/** One day of the week's forecast; `date` is the local "YYYY-MM-DD". */
+export interface WeatherDay { date: string; hi: number; lo: number; code: number; precip: number | null }
+
 export interface WeatherSnap {
   place: string;
   current: { temp: number; feels: number; code: number; at: string };
   today: { hi: number; lo: number; code: number; precip: number | null; sunrise: string; sunset: string };
-  hours: WeatherHour[]; // local times ("2026-10-23T14:00"), from midnight today
+  hours: WeatherHour[]; // local times ("2026-10-23T14:00"), from midnight today, 48 of them
+  days?: WeatherDay[]; // today and the 6 after; absent in snapshots from before the week view
   link: string;
 }
 
@@ -181,5 +186,6 @@ export function fallbackLink(kind: WatchKind, config: Record<string, unknown>): 
     case "transit": return `https://www.mbta.com/schedules/${c.route}/line`;
     case "newsletter": return c.url || "https://www.morningbrew.com/issues/latest";
     case "calendar": return "https://calendar.google.com/calendar/r";
+    case "prep": return "/watch";
   }
 }

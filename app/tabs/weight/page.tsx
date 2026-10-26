@@ -5,6 +5,7 @@ import { ChangeList } from "@/components/ChangeList";
 import { DataTable, type DividerRow } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
+import { PhasesSheet } from "@/components/PhasesSheet";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { Fab, ScreenHeader, SectionTitle, Segmented, Tag } from "@/components/ui";
@@ -64,6 +65,7 @@ export default function WeightPage() {
   const [breakSheet, setBreakSheet] = useState<Break | "new" | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [phasesOpen, setPhasesOpen] = useState(false);
 
   const entries = useMemo(() => data?.entries ?? [], [data]);
   const weeks = useMemo(() => data?.weeks ?? [], [data]);
@@ -168,10 +170,16 @@ export default function WeightPage() {
         <span className="legend">
           <span className="break-swatch" /> Break
         </span>
-        <button type="button" className="btn btn-sm" onClick={() => setBreakSheet("new")}>
-          <IconPlus size={14} /> Add break
-        </button>
+        <span style={{ display: "inline-flex", gap: "var(--s-2)" }}>
+          <button type="button" className="btn btn-sm" onClick={() => setPhasesOpen(true)}>
+            Phases
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => setBreakSheet("new")}>
+            <IconPlus size={14} /> Add break
+          </button>
+        </span>
       </div>
+      {phasesOpen && <PhasesSheet phases={data.phaseRows} onClose={() => setPhasesOpen(false)} onChanged={reload} />}
 
       <Segmented
         options={[

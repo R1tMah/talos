@@ -35,6 +35,14 @@ export function logicalDateIn(timeZone: string, now = new Date()) {
 }
 
 export const toHM = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+/** The wall clock ("HH:MM", 24-hour) in a given IANA timezone, for the server. */
+export function clockIn(timeZone: string, now = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).map((p) => [p.type, p.value]),
+  );
+  return `${parts.hour}:${parts.minute}`;
+}
 export const nowHM = () => toHM(new Date());
 
 export function addDays(s: string, n: number) {
@@ -75,3 +83,11 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export const fmtNum = (n: number, digits = 0) =>
   n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+/** How long something has been open, in days and hours: "2d 5h", "3d", "5h", "<1h". */
+export function fmtOpenFor(fromIso: string, now = new Date()) {
+  const hours = Math.max(0, Math.floor((now.getTime() - Date.parse(fromIso)) / 3_600_000));
+  const d = Math.floor(hours / 24), h = hours % 24;
+  if (!d) return h ? `${h}h` : "<1h";
+  return h ? `${d}d ${h}h` : `${d}d`;
+}

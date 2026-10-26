@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { fmtDay, logicalToday } from "@/lib/date";
+import { fmtDay, fmtOpenFor, logicalToday } from "@/lib/date";
 import { generalRemindersApi, useGeneralReminders, type GeneralReminder } from "@/lib/generalReminders";
 import { showToast } from "@/lib/undo";
 import { FormSheet } from "./FormSheet";
 import { IconCheck, IconPlus, IconX } from "./Icons";
+import { Tag } from "./ui";
 
 /** "Due Oct 25", "Due today", "Overdue, Oct 20": the date only, no nudging. */
 function dueText(due: string, today: string) {
@@ -46,11 +47,14 @@ export function Reminders() {
                 <span className="cell-main" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                   {r.body}
                 </span>
-                {r.due && (
-                  <span className="cell-sub num" style={r.due < today ? { color: "var(--danger)" } : undefined}>
-                    {dueText(r.due, today)}
-                  </span>
-                )}
+                <span className="reminder-meta">
+                  <Tag tone="tag-outline">{fmtOpenFor(r.created)}</Tag>
+                  {r.due && (
+                    <span className="cell-sub num" style={r.due < today ? { color: "var(--danger)" } : undefined}>
+                      {dueText(r.due, today)}
+                    </span>
+                  )}
+                </span>
               </button>
               <button type="button" className="icon-btn" aria-label={`Dismiss: ${r.body}`} onClick={async () => report(await generalRemindersApi.dismiss(r.id))}>
                 <IconX size={18} />

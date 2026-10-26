@@ -1,0 +1,65 @@
+// Spending tracking: what the owner spends, by hand or from chat, out of curiosity.
+// Separate from the bank (lib/finances.ts). Pure: the Supabase side is lib/spendingData.ts.
+
+/** The fixed categories (the database accepts exactly these). Chat picks one. */
+export const SPEND_CATEGORIES = ["Food & drink", "Groceries", "Transport", "Shopping", "Entertainment", "School", "Health", "Other"] as const;
+export type SpendCategory = (typeof SPEND_CATEGORIES)[number];
+export const isSpendCategory = (v: unknown): v is SpendCategory => SPEND_CATEGORIES.includes(v as SpendCategory);
+
+export interface Spend {
+  id: string;
+  date: string;
+  time: string; // entry time, for ordering within a day
+  amount: number;
+  what: string;
+  category: SpendCategory;
+  note: string | null;
+}
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "2026-10" for a date. */
+export const monthOf = (date: string) => date.slice(0, 7);
+/** "October 2026". */
+export const monthLabel = (month: string) => `${MONTHS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+/** The month before or after ("2026-01" back one is "2025-12"). */
+export function shiftMonth(month: string, by: number) {
+  const m = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + by;
+  return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`;
+}
+const daysIn = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+
+/**
+ * A month's spending: the total, entries, an average per day so far (whole month once
+ * it's over; days elapsed when it's the current month), and categories largest first.
+ */
+export function monthSummary(all: Spend[], month: string, today: string) {
+  const days = month === monthOf(today) ? Number(today.slice(8, 10)) : month < monthOf(today) ? daysIn(month) : 0;
+  return summarize(all.filter((s) => monthOf(s.date) === month), days);
+}
+
+export const ROLLING_DAYS = 30;
+
+/** The first day of the rolling window that ends today ("last 30 days" includes today). */
+export function rollingStart(today: string, days = ROLLING_DAYS) {
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+/** The last 30 days through today, whatever months they span; per day is over all 30. */
+export function rollingSummary(all: Spend[], today: string, days = ROLLING_DAYS) {
+  const from = rollingStart(today, days);
+  return { from, ...summarize(all.filter((s) => s.date >= from && s.date <= today), days) };
+}
+
+function summarize(rows: Spend[], days: number) {
+  const total = cents(rows.reduce((a, s) => a + s.amount, 0));
+  const by = new Map<SpendCategory, number>();
+  for (const s of rows) by.set(s.category, (by.get(s.category) ?? 0) + s.amount);
+  const categories = [...by]
+    .map(([category, amount]) => ({ category, amount: cents(amount), share: total ? amount / total : 0 }))
+    .sort((a, b) => b.amount - a.amount || SPEND_CATEGORIES.indexOf(a.category) - SPEND_CATEGORIES.indexOf(b.category));
+  return { rows, total, count: rows.length, perDay: days ? cents(total / days) : null, categories };
+}

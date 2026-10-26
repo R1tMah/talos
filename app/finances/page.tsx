@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
 import { PlaidConnections } from "@/components/PlaidConnections";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
-import { Fab, ScreenHeader, SectionTitle, Tag } from "@/components/ui";
+import { SubscriptionsView } from "@/components/Subscriptions";
+import { SpendingView } from "@/components/Spending";
+import { Fab, ScreenHeader, Segmented, SectionTitle, Tag } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
 import { flow, fmtMoney, monthStart, vanguardTotal, type Holding, type Transaction } from "@/lib/finances";
 import { financesApi, useFinances, type TransactionInput, type WriteResult } from "@/lib/financesData";
@@ -60,6 +62,12 @@ export default function FinancesPage() {
   const [balanceSheet, setBalanceSheet] = useState(false);
   const [holdingSheet, setHoldingSheet] = useState<Holding | "new" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Accounts (checking, Vanguard), Spending or Subscriptions; ?view=spending / ?view=subscriptions opens straight to one.
+  const [view, setView] = useState<"accounts" | "spending" | "subscriptions">("accounts");
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("view");
+    if (v === "subscriptions" || v === "spending") setView(v);
+  }, []);
 
   const txns = useMemo(() => data?.transactions ?? [], [data]);
 
@@ -93,7 +101,23 @@ export default function FinancesPage() {
   return (
     <main className="screen">
       <ScreenHeader title="FINANCES" brand />
+      <div className="card pad" style={{ padding: "var(--s-2)" }}>
+        <Segmented
+          options={[
+            { value: "accounts", label: "Accounts" },
+            { value: "spending", label: "Spending" },
+            { value: "subscriptions", label: "Subscriptions" },
+          ]}
+          value={view}
+          onChange={(v) => {
+            setView(v);
+            window.history.replaceState(null, "", v === "accounts" ? window.location.pathname : `?view=${v}`);
+          }}
+        />
+      </div>
 
+      {view === "subscriptions" ? <SubscriptionsView /> : view === "spending" ? <SpendingView /> : (
+      <>
       <SummaryStrip
         items={[
           { label: "Checking", value: checking == null ? "–" : fmtMoney(checking), sub: data.balance ? `as of ${fmtDay(data.balance.date)}` : "not entered" },
@@ -178,6 +202,8 @@ export default function FinancesPage() {
 
       <ExportButton tab="finances" source={financesExport(txns)} variant="button" />
       <Fab onClick={() => setTxnSheet("new")} label="Add transaction" />
+      </>
+      )}
 
       {txnSheet && (
         <FormSheet

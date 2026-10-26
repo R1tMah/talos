@@ -1,5 +1,6 @@
-import { NotepadScreen } from "@/components/Notepad";
+import { redirect } from "next/navigation";
 
+// Now a tab of Journals; old links land there.
 export default function Page() {
-  return <NotepadScreen kind="content" title="Content" />;
+  redirect("/tabs/journals?tab=content");
 }

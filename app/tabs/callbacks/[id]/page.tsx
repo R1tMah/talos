@@ -67,7 +67,7 @@ export default function DebriefPage() {
         onChange={setText}
         onDone={async () => {
           // Stay on the page if the save failed, so nothing typed is lost.
-          if (await save()) router.push("/tabs/callbacks");
+          if (await save()) router.push("/tabs/recruiting?tab=callbacks");
         }}
         left={
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDetails(true)}>
@@ -86,7 +86,7 @@ export default function DebriefPage() {
           onClose={() => setDetails(false)}
           onDelete={async () => {
             const res = await callbacksApi.remove(row.id);
-            if (res.status === "saved") router.push("/tabs/callbacks");
+            if (res.status === "saved") router.push("/tabs/recruiting?tab=callbacks");
             else setError(true);
           }}
           onSubmit={async (v) => {

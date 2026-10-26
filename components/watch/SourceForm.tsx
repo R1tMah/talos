@@ -7,6 +7,7 @@ import { FormSheet, type Field } from "@/components/FormSheet";
 import { CalendarForm } from "./Calendar";
 import { TeamForm } from "./TeamForm";
 import type { SourceInput, WatchSource } from "@/lib/watch/data";
+import type { PrepConfig } from "@/lib/watch/prep";
 import type { CalendarConfig, HeadlinesConfig, JobsConfig, NewsConfig, NewsletterConfig, TeamConfig, TransitConfig, WatchKind, WeatherConfig } from "@/lib/watch/types";
 
 export const LEAGUES: Record<string, string> = {
@@ -16,7 +17,7 @@ export const LEAGUES: Record<string, string> = {
 
 export const KIND_LABELS: Partial<Record<WatchKind, string>> = {
   espn_team: "Team", espn_news: "Sports headlines", headlines: "Tech headlines", jobs: "Job postings", weather: "Weather", transit: "Train departures",
-  newsletter: "Newsletter", calendar: "Google Calendar",
+  newsletter: "Newsletter", calendar: "Google Calendar", prep: "Study plan",
 };
 
 /** Starting settings for a source added from the form. */
@@ -26,6 +27,7 @@ export const DEFAULTS: Partial<Record<WatchKind, { title: string; every: number;
   headlines: { title: "Headlines", every: 60, config: { hn: false, feeds: [], limit: 15 } satisfies HeadlinesConfig },
   jobs: { title: "Jobs", every: 240, config: { categories: ["Software"], locations: [], exclude: [] } satisfies JobsConfig },
   calendar: { title: "Calendar", every: 15, config: { calendars: [], timezone: "America/New_York", days: 7 } satisfies CalendarConfig },
+  prep: { title: "System Design Prep", every: 1440, config: { start: "" } satisfies PrepConfig },
   newsletter: { title: "Morning Brew", every: 60, config: { url: "https://www.morningbrew.com/issues/latest", markets: true } satisfies NewsletterConfig },
   weather: { title: "Weather", every: 30, config: { place: "Boston", lat: 42.3601, lon: -71.0589, timezone: "America/New_York" } satisfies WeatherConfig },
   transit: {
@@ -61,6 +63,9 @@ function fieldsFor(kind: WatchKind): Field[] {
         { name: "us_only", label: "US only", type: "toggle" },
         { name: "bachelors", label: "Leave out Master's/PhD roles", type: "toggle" },
         { name: "exclude", label: "Leave out titles with", full: true, placeholder: "Senior, Clearance" }, every, show];
+    case "prep":
+      // The curriculum is static data in the app; only the start is set here.
+      return [...common, { name: "start", label: "Day 1 (a Monday)", type: "date" }, show];
     case "newsletter":
       return [...common, { name: "url", label: "Latest-issue page", full: true, placeholder: "https://www.morningbrew.com/issues/latest" },
         { name: "markets", label: "Markets numbers", type: "toggle" }, every, show];
@@ -90,6 +95,7 @@ function toValues(s: Pick<WatchSource, "kind" | "title" | "config" | "enabled" |
     }
     case "weather": return { ...base, place: c.place, lat: c.lat, lon: c.lon };
     case "newsletter": return { ...base, url: c.url, markets: c.markets };
+    case "prep": return { ...base, start: c.start };
     case "transit": {
       const t = c as unknown as TransitConfig;
       return {
@@ -112,6 +118,7 @@ function fromValues(kind: WatchKind, prev: Record<string, unknown>, v: Values): 
       us_only: Boolean(v.us_only), bachelors: Boolean(v.bachelors) } };
     case "weather": return { ...base, config: { ...prev, place: str(v.place), lat: Number(v.lat), lon: Number(v.lon) } };
     case "newsletter": return { ...base, config: { ...prev, url: str(v.url), markets: Boolean(v.markets) } };
+    case "prep": return { ...base, everyMinutes: 1440, config: { ...prev, start: str(v.start) } };
     case "transit": return {
       ...base, everyMinutes: 15,
       config: {
@@ -127,7 +134,9 @@ function fromValues(kind: WatchKind, prev: Record<string, unknown>, v: Values): 
 function validate(kind: WatchKind, v: Values): string | null {
   if (!str(v.title)) return "Name is required.";
   const every = Number(v.every);
-  if (kind !== "transit" && (!Number.isInteger(every) || every < 15 || every > 1440)) return "Refresh every 15 to 1440 minutes.";
+  if (kind !== "transit" && kind !== "prep" && (!Number.isInteger(every) || every < 15 || every > 1440)) return "Refresh every 15 to 1440 minutes.";
+  if (kind === "prep" && !str(v.start)) return "Pick the date of day 1.";
+  if (kind === "prep" && new Date(`${str(v.start)}T12:00:00`).getDay() !== 1) return "Day 1 has to be a Monday.";
   if ((kind === "espn_news" || kind === "headlines") && !(Number(v.limit) >= 1 && Number(v.limit) <= 50)) return "Show 1 to 50 headlines.";
   if (kind === "headlines") {
     if (!v.hn && !list(v.feeds).length) return "Turn on Hacker News or add a feed.";
@@ -149,7 +158,7 @@ export function SourceForm({
   source: Pick<WatchSource, "kind" | "title" | "config" | "enabled" | "everyMinutes"> & { id?: string };
   onSubmit: (v: SourceInput) => void;
   onClose: () => void;
-  /** Deletes the source for good (teams only, for now). */
+  /** Deletes the source for good (teams and study plans, for now). */
   onDelete?: () => void;
 }) {
   // The calendar picks from the Google account's own calendar list.
@@ -164,6 +173,9 @@ export function SourceForm({
       validate={(v) => validate(source.kind, v)}
       onClose={onClose}
       onSubmit={(v) => onSubmit(fromValues(source.kind, source.config, v))}
+      // A study plan is temporary: it can be deleted once it's done (with a confirm step).
+      onDelete={source.kind === "prep" && source.id ? onDelete : undefined}
+      confirm={source.kind === "prep"}
     />
   );
 }

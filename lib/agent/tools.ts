@@ -8,9 +8,10 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/database.types";
-import { addDays, fmtDay } from "@/lib/date";
+import { addDays, daysBetween, fmtDay } from "@/lib/date";
 import type { Change } from "@/lib/types";
 import { fmtDuration, parseDuration } from "@/lib/duration";
+import { isSpendCategory, SPEND_CATEGORIES, type SpendCategory } from "@/lib/spending";
 import { foodWarnings, leetcodeWarnings, portionWarnings, runWarnings, weightWarnings } from "@/lib/validate";
 import type { MissingField } from "./cards";
 import { closest, nameScore } from "./fuzzy";
@@ -40,6 +41,8 @@ export interface Ctx {
   db: Db;
   text: string; // the owner's message, exactly as sent
   today: string; // logical date in the owner's timezone
+  /** The owner's wall clock ("HH:MM") when the message came in; used to read "at 3" as the next 3. */
+  clock?: string;
   meals: SavedMeal[];
   foods: LibFood[];
   /** Archived tab keys (settings.archived_tabs). Chat refuses to write to these. */
@@ -67,6 +70,8 @@ export type Commit =
       offer?: { tool: string; resolved: Resolved; title: string; missing: MissingField[] };
       /** Further writes made by the same commit, each shown as its own saved card with its own Undo. */
       also?: { label: string; actionId: string | null }[];
+      /** A Google Calendar event this commit created: Undo deletes it there (it isn't in the actions log). */
+      googleEvent?: { calendarId: string; eventId: string };
     }
   | { status: "confirm"; title: string; changes: Change[]; tool: string; resolved: Resolved }
   | { status: "failed"; detail?: string };
@@ -80,6 +85,11 @@ export interface ToolDef {
   commit(r: Resolved, db: Db): Promise<Commit>;
   /** Merges values from a missing-fields card. Returns a message when they're not usable. */
   fill?(r: Resolved, values: Input): Resolved | string;
+  /**
+   * For tools that always ask before saving (not because anything looks wrong): the card's
+   * question and button, in place of the warning wording. Its `warnings` are then the summary.
+   */
+  confirm?: { title: string; action: string };
 }
 
 // ---- Helpers ---------------------------------------------------------------------
@@ -280,7 +290,55 @@ const logRun: ToolDef = {
   },
 };
 
-// ---- Subscriptions (the only part of Finances chat can reach) ----------------------
+// ---- Spending (logged from chat; chat never reads the bank side of Finances) -----------
+
+const logSpending: ToolDef = {
+  name: "log_spending",
+  display: "Spending",
+  definition: {
+    name: "log_spending",
+    description:
+      "Money the owner spent, with the amount: 'spent $12 on lunch', 'uber home 18.40', 'chipotle bowl $14.50', 'paid 40 for the textbook'. " +
+      "One call per purchase. If it's food or drink they ate, also call log_food for the food itself. Not a subscription (add_subscription).",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["amount", "what", "category", "days_ago", "confidence"],
+      properties: {
+        amount: { type: ["number", "null"], description: "The amount the owner typed, unchanged (14.5 for '$14.50'). Null if not said." },
+        what: { type: "string", description: "What they bought or paid for, copied exactly as written ('chipotle bowl', 'uber home'), without the amount." },
+        category: { type: "string", enum: [...SPEND_CATEGORIES], description: "The closest category for what was bought. 'Other' if none fits." },
+        days_ago: daysAgo,
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const what = verbatim(input.what, ctx.text);
+    if (!what) return { status: "invalid", detail: "Couldn't tell what the money was spent on." };
+    const date = dateFor(input, ctx.today);
+    // Only a number the owner actually typed; never an estimate.
+    const amount = typed(input.amount, ctx.text) && (input.amount as number) > 0 ? Math.round((input.amount as number) * 100) / 100 : null;
+    const category: SpendCategory = isSpendCategory(input.category) ? input.category : "Other";
+    const resolved: Resolved = { what, amount, category, date };
+    if (amount == null) return { status: "missing", resolved, title: `Spending: ${what}`, missing: [{ name: "amount", label: "Amount ($)" }] };
+    const fields: [string, string][] = [["What", what], ["Amount", `$${amount.toFixed(2)}`], ["Category", category], ["Date", fmtDay(date)]];
+    return { status: "ready", resolved, fields, warnings: amount > 1000 ? [`$${amount.toFixed(2)} is a lot for one purchase.`] : [] };
+  },
+  fill(r, values) {
+    const v = Number(values.amount);
+    if (!Number.isFinite(v) || v <= 0) return "Amount must be more than 0.";
+    return { ...r, amount: Math.round(v * 100) / 100 };
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "log_spending", { p_date: r.date, p_amount: r.amount, p_what: r.what, p_category: r.category, p_tool: "log_spending" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    return { status: "saved", label: `Spent $${num(out.row.amount).toFixed(2)}, ${String(out.row.what)} (${String(out.row.category)})`, actionId: out.action_id ?? null };
+  },
+};
+
+// ---- Subscriptions -------------------------------------------------------------------
 // These read and write public.subscriptions alone, through its own functions; nothing
 // else in Finances (transactions, balances, holdings) is read or written from chat.
 
@@ -1651,34 +1709,151 @@ export function clockFrom(text: string | null, meridiem?: "am" | "pm" | null): s
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-const meridiemOf = (text: string | null) => {
-  const m = (text ?? "").toLowerCase().match(/\b\d{1,2}(?::\d{2})?\s*(a|p)\.?m?\.?\b/);
-  return m ? (m[1] === "a" ? "am" : "pm") : null;
-};
+/** A clock time as written: exact minutes when unambiguous ("3pm", "15:00", "noon"), or a bare 1–12 hour. */
+type Parsed = { fixed: true; mins: number } | { fixed: false; h: number; m: number };
+
+function parseClock(text: string | null): Parsed | null {
+  const exact = clockFrom(text);
+  if (exact) return { fixed: true, mins: Number(exact.slice(0, 2)) * 60 + Number(exact.slice(3)) };
+  const m = (text ?? "").trim().match(/\b(\d{1,2})(?::(\d{2}))?\b/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2] ?? 0);
+  return h >= 1 && h <= 12 && min <= 59 ? { fixed: false, h, m: min } : null;
+}
+
+const options = (p: Parsed) => (p.fixed ? [p.mins] : [(p.h % 12) * 60 + p.m, (p.h % 12) * 60 + p.m + 720]);
+const after = (from: number, to: number) => (to - from + 1440) % 1440; // minutes forward, across midnight
+const hhmmOf = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+
+/**
+ * Start and end times ("HH:MM") from the owner's words, inferring am/pm when it isn't
+ * written, because the event is always confirmed before it's saved. In order:
+ *   1. written am/pm, 24-hour times, noon/midnight;
+ *   2. the other end of a range: the start is whichever reading ends soonest before the
+ *      end ("7-9pm" = 7 PM, "11-1pm" = 11 AM), the end whichever comes soonest after the start;
+ *   3. the model's am/pm hint, when the message made it clear ("dinner at 7"). In a range it
+ *      decides the end, and the start is whichever reading ends soonest before it ("11:30 to 3",
+ *      pm = 11:30 AM–3 PM). A bare 12 under a hint is always noon;
+ *   4. today: the next time that clock reading comes round (from 90 minutes ago, so an event
+ *      that just started still counts): "1:15" said at 12:54 = 1:15 PM;
+ *   5. otherwise waking hours: 7–11 = AM, 12–6 = PM.
+ * A written time that isn't a time at all comes back in `bad`.
+ */
+export function resolveTimes(
+  startText: string | null,
+  endText: string | null,
+  opts: { hint?: "am" | "pm" | null; today?: boolean; clock?: string } = {},
+): { start: string | null; end: string | null; bad: ("start" | "end")[] } {
+  const s = parseClock(startText);
+  const e = parseClock(endText);
+  const bad: ("start" | "end")[] = [];
+  if (startText?.trim() && !s) bad.push("start");
+  if (endText?.trim() && !e) bad.push("end");
+
+  const hinted = (p: Parsed) => (p.fixed ? p.mins : p.h === 12 ? options(p)[1] : options(p)[opts.hint === "am" ? 0 : 1]);
+  const alone = (p: Parsed): number => {
+    if (p.fixed) return p.mins;
+    const [am, pm] = options(p);
+    if (opts.hint) return hinted(p);
+    if (opts.today && opts.clock && /^\d{2}:\d{2}$/.test(opts.clock)) {
+      const from = Number(opts.clock.slice(0, 2)) * 60 + Number(opts.clock.slice(3)) - 90;
+      return [am, pm].find((c) => c >= from) ?? pm;
+    }
+    return p.h >= 7 && p.h <= 11 ? am : pm;
+  };
+  const soonestAfter = (from: number, p: Parsed) =>
+    options(p).filter((c) => c !== from).sort((x, y) => after(from, x) - after(from, y))[0];
+  const soonestBefore = (to: number, p: Parsed) =>
+    options(p).filter((c) => c !== to).sort((x, y) => after(x, to) - after(y, to))[0];
+
+  let start: number | null = null;
+  let end: number | null = null;
+  if (s && e) {
+    if (!s.fixed && (e.fixed || opts.hint)) {
+      end = hinted(e);
+      start = soonestBefore(end, s);
+    } else {
+      start = alone(s);
+      end = e.fixed ? e.mins : soonestAfter(start, e);
+    }
+  } else if (s) start = alone(s);
+  else if (e) end = alone(e);
+  return { start: start == null ? null : hhmmOf(start), end: end == null ? null : hhmmOf(end), bad };
+}
 const fmtClock12 = (hhmm: string) => {
   const h = Number(hhmm.slice(0, 2));
   return `${h % 12 || 12}:${hhmm.slice(3)} ${h < 12 ? "AM" : "PM"}`;
 };
 
+/**
+ * In a message that lists several events, one that only says when it ends ("eat until
+ * 2:15" after "run 1:15 to 1:45") starts when the event before it on the same day ended.
+ * Done in code because the model doesn't always copy that time across.
+ */
+export function chainEventStarts<T extends { name: string; input: Record<string, unknown> }>(calls: T[]): T[] {
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  // Only the event just before counts: if it has no end, there's nothing to chain from (the start is asked).
+  let prev: { end: string | null; day: string | null } | null = null;
+  return calls.map((c) => {
+    if (c.name !== "add_event") return c;
+    const day = text(c.input.date_text);
+    const start = text(c.input.start_text);
+    const end = text(c.input.end_text);
+    const out = !start && end && prev?.end && prev.day === day ? { ...c, input: { ...c.input, start_text: prev.end } } : c;
+    prev = { end, day };
+    return out;
+  });
+}
+
+// The owner's own words for "this repeats every week". Checked in code so the model can't add a repeat on its own.
+const REPEAT_WORDS = /\b(weekly|recurring|repeat(s|ing)?|every\s+week|each\s+week|every\s+(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?s?|(mon|tues|wednes|thurs|fri|satur|sun)days)\b/i;
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** "Every Saturday", "Every Saturday until Dec 12". */
+const repeatsLabel = (date: string, until: string | null) =>
+  `Every ${WEEKDAY_NAMES[new Date(`${date}T12:00:00`).getDay()]}${until ? ` until ${fmtDay(until)}` : ""}`;
+
 const addEvent: ToolDef = {
   name: "add_event",
   display: "Calendar event",
+  confirm: { title: "Add to Google Calendar?", action: "Add" },
   definition: {
     name: "add_event",
     description:
       "Something to put on the owner's Google Calendar at a date (and usually a time): 'dentist friday 3pm', " +
-      "'dinner with Sam tomorrow 7-9pm at Tatte', 'flight to SF Nov 3'. Not for reminders without a calendar slot ('remind me to…' is add_reminder).",
+      "'dinner with Sam tomorrow 7-9pm at Tatte', 'flight to SF Nov 3', or one that repeats every week ('weekly recurring event saturday 5pm: mock interview'). " +
+      "Not for reminders without a calendar slot ('remind me to…' is add_reminder).",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["title", "date_text", "start_text", "end_text", "location", "confidence"],
+      required: ["title", "date_text", "start_text", "end_text", "am_pm", "weekly", "until_text", "location", "confidence"],
       properties: {
-        title: { type: "string", description: "What the event is, copied exactly from the message, without the date, time or place." },
+        title: { type: "string", description: "What the event is, copied exactly from the message, without the date, time, place or how often it repeats." },
         date_text: { type: ["string", "null"], description: "The day exactly as written ('friday', 'tomorrow', 'Nov 3', '11/3'). Null if none." },
-        start_text: { type: ["string", "null"], description: "The start time exactly as written ('3pm', '7', 'noon'). Null if no time (an all-day event)." },
-        end_text: { type: ["string", "null"], description: "The end time exactly as written ('9pm' in '7-9pm'). Null if not said." },
+        start_text: {
+          type: ["string", "null"],
+          description:
+            "The start time exactly as written ('3pm', '7', '1:15', 'noon'), am/pm or not. When the message lists events in order and this one only says " +
+            "when it ends ('eat until 2:15' after 'run 1:15 to 1:45'), copy the time the event before it ends ('1:45'). 'During that same period' or " +
+            "'at the same time' copies that event's start. Null only if no time applies (an all-day event).",
+        },
+        end_text: {
+          type: ["string", "null"],
+          description: "The end time exactly as written ('9pm' in '7-9pm', '2:15' in 'until 2:15', '3:30' in 'get home around 3:30'). For 'that same period', copy that event's end. Null if not said.",
+        },
+        am_pm: {
+          type: ["string", "null"],
+          enum: ["am", "pm", null],
+          description: "Only when the times have no am/pm written but the message makes it clear: 'dinner at 7' or 'tonight at 9' = pm, 'breakfast at 8' or 'this morning' = am. Null otherwise; code works out the rest.",
+        },
+        weekly: {
+          type: "boolean",
+          description: "True only when the owner says this event repeats every week ('weekly', 'recurring', 'every week', 'every Saturday'). False for a one-time event.",
+        },
+        until_text: { type: ["string", "null"], description: "For a weekly event, when it stops, exactly as written ('Dec 12' in 'until Dec 12'). Null if not said." },
         location: { type: ["string", "null"], description: "Where, copied exactly ('at Tatte' = 'Tatte'). Null if not said." },
         confidence,
       },
@@ -1688,26 +1863,37 @@ const addEvent: ToolDef = {
     const title = verbatim(input.title, ctx.text) ?? (typeof input.title === "string" ? input.title.trim() : "");
     if (!title) return { status: "invalid", detail: "The event needs a name." };
     const dateText = verbatim(input.date_text, ctx.text);
-    const date = dueFrom(dateText, ctx.today);
+    // No day said = today. A day that was said but can't be read is asked, not assumed.
+    const date = dateText ? dueFrom(dateText, ctx.today) : ctx.today;
     const startText = verbatim(input.start_text, ctx.text);
     const endText = verbatim(input.end_text, ctx.text);
-    // "7-9pm": the start takes the end's am/pm.
-    const start = clockFrom(startText, meridiemOf(endText));
-    const end = clockFrom(endText, meridiemOf(startText));
+    const hint = input.am_pm === "am" || input.am_pm === "pm" ? input.am_pm : null;
+    const { start, end, bad } = resolveTimes(startText, endText, { hint, today: date === ctx.today, clock: ctx.clock });
     const location = verbatim(input.location, ctx.text);
-    const resolved: Resolved = { title, date, start, end, allDay: !startText, location };
+    // All day only when no time at all was said; an end with no start asks for the start.
+    const allDay = !startText && !endText;
+    // Weekly only when the model says so and the owner's words do too, so a one-off never repeats by mistake.
+    const weekly = input.weekly === true && REPEAT_WORDS.test(ctx.text);
+    const untilText = weekly ? verbatim(input.until_text, ctx.text) : null;
+    const until = untilText ? dueFrom(untilText, ctx.today) : null;
+    if (untilText && !until) return { status: "invalid", detail: `Couldn't read when it stops ("${untilText}"). Say a date, like "until Dec 12".` };
+    if (until && date && until < date) return { status: "invalid", detail: `It would stop (${fmtDay(until)}) before it starts (${fmtDay(date)}).` };
+    const count = until && date ? Math.floor(daysBetween(date, until) / 7) + 1 : null;
+    const resolved: Resolved = { title, date, start, end: bad.includes("end") ? null : end, allDay, location, weekly, until, count };
     const missing: MissingField[] = [];
-    if (!date) missing.push({ name: "date", label: "Date", type: "date" });
-    if (startText && !start) missing.push({ name: "start", label: `Start time ("${startText}")`, type: "time" });
+    if (!date) missing.push({ name: "date", label: dateText ? `Date ("${dateText}")` : "Date", type: "date" });
+    if (!allDay && !start) missing.push({ name: "start", label: startText ? `Start time ("${startText}")` : "Start time", type: "time" });
     if (missing.length) return { status: "missing", resolved, title: `Calendar: ${title}`, missing };
 
     const when = resolved.allDay ? "all day" : end ? `${fmtClock12(start!)}–${fmtClock12(end)}` : fmtClock12(start!);
     const fields: [string, string][] = [["Event", title], ["Date", fmtDay(date!)], ["Time", when]];
+    if (weekly) fields.splice(1, 1, ["Repeats", repeatsLabel(date!, until)], ["Starts", fmtDay(date!)]);
     if (location) fields.push(["Where", location]);
+    const on = weekly ? `${repeatsLabel(date!, until).replace(/^Every/, "every")}, starting ${fmtDay(date!)}` : fmtDay(date!);
     // Always asked first: it writes to Google, outside the app, and chat Undo can't reach it.
     return {
       status: "ready", resolved, fields,
-      warnings: [`Add “${title}” to your Google Calendar on ${fmtDay(date!)}, ${when}${location ? `, at ${location}` : ""}?`],
+      warnings: [`“${title}”, ${on}, ${when}${location ? `, at ${location}` : ""}`],
     };
   },
   fill(r, values) {
@@ -1731,10 +1917,12 @@ const addEvent: ToolDef = {
     const admin = createAdminClient();
     if (!admin) return { status: "failed", detail: "SUPABASE_SECRET_KEY is not set on the server." };
     const { data: settings } = await db.from("settings").select("timezone").eq("id", 1).single();
+    let created: { id: string };
     try {
-      await createEvent(admin, settings?.timezone ?? "America/New_York", {
+      created = await createEvent(admin, settings?.timezone ?? "America/New_York", {
         calendarId: "primary", title: String(r.title), allDay: Boolean(r.allDay), date: String(r.date),
         start: (r.start as string | null) ?? null, end: (r.end as string | null) ?? null, location: (r.location as string | null) ?? null,
+        weekly: r.weekly ? { count: (r.count as number | null) ?? null } : null,
       });
     } catch (e) {
       return { status: "failed", detail: e instanceof Error ? e.message : "Google Calendar didn't take it." };
@@ -1743,15 +1931,259 @@ const addEvent: ToolDef = {
     const { data: cals } = await admin.from("watch_sources").select("id").eq("kind", "calendar");
     if (cals?.length) await refreshWatch(admin, { ids: cals.map((c) => c.id), force: true }).catch(() => {});
     const when = r.allDay ? "all day" : fmtClock12(String(r.start));
-    // Not in the actions log: Undo can't delete from Google. Delete it from the Watch card instead.
-    return { status: "saved", label: `Calendar: ${r.title}, ${fmtDay(String(r.date))}, ${when}`, actionId: null };
+    // Not in the actions log (it lives in Google): the card's Undo deletes it there instead.
+    const day = r.weekly ? repeatsLabel(String(r.date), (r.until as string | null) ?? null) : fmtDay(String(r.date));
+    return { status: "saved", label: `Calendar: ${r.title}, ${day}, ${when}`, actionId: null, googleEvent: { calendarId: "primary", eventId: created.id } };
+  },
+};
+
+// ---- Portfolio (public site, through its editor API) -----------------------------------
+//
+// Every portfolio change is asked first (the site is public; chat Undo can't reach it).
+// Text is the owner's: each phrase must appear in the message, or it's left out and the
+// card says so. Editing whole items stays in the Portfolio tab's forms.
+
+const PORTFOLIO_LIVE = "It's live on the site 1–2 minutes after saving.";
+
+/** The owner's phrases from a model-proposed list: kept only when they appear in the message. */
+function ownWords(xs: unknown, text: string): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [], dropped: string[] = [];
+  for (const x of Array.isArray(xs) ? xs : []) {
+    if (typeof x !== "string" || !x.trim()) continue;
+    const v = verbatim(x.trim(), text);
+    if (v) kept.push(v);
+    else dropped.push(x.trim());
+  }
+  return { kept, dropped };
+}
+const droppedNote = (d: string[]) => (d.length ? ` Left out (not in your words): ${d.map((x) => `“${x}”`).join(", ")}.` : "");
+
+const MONTH_NAMES_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "february 2026", "Feb '26", "feb" (this year) -> "Feb 2026". Null if no month is named. */
+export function monthLabelFrom(text: string | null, today: string): string | null {
+  const t = (text ?? "").toLowerCase();
+  const m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\b/);
+  if (!m) return null;
+  const y = t.match(/\b(20\d{2})\b/) ?? t.match(/['’](\d{2})\b/);
+  const year = y ? (y[1].length === 2 ? `20${y[1]}` : y[1]) : today.slice(0, 4);
+  return `${MONTH_NAMES_SHORT[MONTH_NAMES.indexOf(m[1])]} ${year}`;
+}
+
+const portfolioAddProject: ToolDef = {
+  name: "portfolio_add_project",
+  display: "Portfolio project",
+  definition: {
+    name: "portfolio_add_project",
+    description:
+      "Add a project to the owner's public portfolio website, e.g. 'add Talos to my portfolio: personal tracking PWA, Next.js, Supabase, Full-Stack'. " +
+      "Copy every phrase exactly from the message; never write or improve text.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "bullets", "skills", "tags", "date_range", "repo_url", "confidence"],
+      properties: {
+        title: { type: "string", description: "Project name, copied exactly." },
+        bullets: { type: "array", items: { type: "string" }, description: "Descriptions copied exactly from the message; the first is the one-line summary. Empty if none." },
+        skills: { type: "array", items: { type: "string" }, description: "Technologies the owner named, copied exactly." },
+        tags: { type: "array", items: { type: "string", enum: ["Full-Stack", "ML", "Data Science", "CV", "NLP"] }, description: "Only if the owner named one of these." },
+        date_range: { type: ["string", "null"], description: "Dates exactly as written ('Oct 2026 – Nov 2026'). Null if none." },
+        repo_url: { type: ["string", "null"], description: "A repo link exactly as written. Null if none." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const title = verbatim(input.title, ctx.text);
+    if (!title?.trim()) return { status: "invalid", detail: "Name the project exactly as it should appear." };
+    const bullets = ownWords(input.bullets, ctx.text);
+    const skills = ownWords(input.skills, ctx.text);
+    const tags = (Array.isArray(input.tags) ? input.tags : []).filter((t): t is string =>
+      typeof t === "string" && ["Full-Stack", "ML", "Data Science", "CV", "NLP"].includes(t) && new RegExp(`\\b${t.replace("-", "[- ]?")}\\b`, "i").test(ctx.text));
+    const dateRange = verbatim(input.date_range, ctx.text);
+    const url = verbatim(input.repo_url, ctx.text);
+    const repoUrl = url && /^https?:\/\//.test(url) ? url : null;
+    const resolved: Resolved = { title: title.trim(), bullets: bullets.kept, skills: skills.kept, tags, dateRange, repoUrl };
+    const fields: [string, string][] = [["Project", title.trim()]];
+    if (bullets.kept.length) fields.push(["Summary", bullets.kept[0]]);
+    if (skills.kept.length) fields.push(["Skills", skills.kept.join(", ")]);
+    if (tags.length) fields.push(["Tags", tags.join(", ")]);
+    return {
+      status: "ready", resolved, fields,
+      warnings: [`Add “${title.trim()}” to the top of your public portfolio's Projects${skills.kept.length ? ` (${skills.kept.join(", ")})` : ""}?${droppedNote([...bullets.dropped, ...skills.dropped])} ${PORTFOLIO_LIVE}`],
+    };
+  },
+  async commit(r) {
+    const { addItem } = await import("@/lib/portfolio/ops");
+    try {
+      await addItem("projects", {
+        title: String(r.title), bullets: r.bullets as string[], skills: r.skills as string[], tags: r.tags as string[],
+        dateRange: (r.dateRange as string | null) ?? undefined, repoUrl: (r.repoUrl as string | null) ?? undefined,
+      });
+    } catch (e) {
+      return { status: "failed", detail: e instanceof Error ? e.message : "The portfolio didn't take it." };
+    }
+    return { status: "saved", label: `Portfolio: added project ${r.title} (live in 1–2 min)`, actionId: null };
+  },
+};
+
+const portfolioSetMonth: ToolDef = {
+  name: "portfolio_set_timeline_month",
+  display: "Portfolio timeline",
+  definition: {
+    name: "portfolio_set_timeline_month",
+    description:
+      "Set one month on the owner's public portfolio timeline, e.g. 'portfolio timeline Oct 2026: SWE Intern at Flexcar'. " +
+      "One call per month (a Jun–Aug internship is three calls). Copy every entry exactly.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["month_text", "employer", "courses", "certs", "projects", "confidence"],
+      properties: {
+        month_text: { type: "string", description: "The month exactly as written ('Oct 2026', 'february')." },
+        employer: { type: "array", items: { type: "string" }, description: "Jobs or roles that month, copied exactly." },
+        courses: { type: "array", items: { type: "string" }, description: "Classes that month, copied exactly." },
+        certs: { type: "array", items: { type: "string" }, description: "Certifications that month, copied exactly." },
+        projects: { type: "array", items: { type: "string" }, description: "Project names that month, copied exactly." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const monthLabel = monthLabelFrom(verbatim(input.month_text, ctx.text), ctx.today);
+    if (!monthLabel) return { status: "invalid", detail: "Name the month (like Oct 2026)." };
+    const lists = Object.fromEntries((["employer", "courses", "certs", "projects"] as const).map((k) => [k, ownWords(input[k], ctx.text)]));
+    const kept = Object.fromEntries(Object.entries(lists).map(([k, v]) => [k, v.kept]));
+    const dropped = Object.values(lists).flatMap((v) => v.dropped);
+    if (!Object.values(kept).some((v) => v.length)) return { status: "invalid", detail: `Nothing to put on ${monthLabel}.${droppedNote(dropped)}` };
+    // Setting a month replaces what's there: say so when it already has entries.
+    let replaces = "";
+    try {
+      const { getContent } = await import("@/lib/portfolio/client");
+      const { items } = await getContent<{ monthLabel: string }>("timeline");
+      if (items.some((m) => m.monthLabel === monthLabel)) replaces = ` This replaces what's on ${monthLabel} now.`;
+    } catch {
+      // Unreachable now; the save will report it.
+    }
+    const entries = Object.values(kept).flat();
+    return {
+      status: "ready", resolved: { monthLabel, ...kept }, fields: [["Month", monthLabel], ["Entries", entries.join(", ")]],
+      warnings: [`Set ${monthLabel} on your public portfolio timeline to: ${entries.join(", ")}?${replaces}${droppedNote(dropped)} ${PORTFOLIO_LIVE}`],
+    };
+  },
+  async commit(r) {
+    const { setMonth } = await import("@/lib/portfolio/ops");
+    try {
+      await setMonth({
+        monthLabel: String(r.monthLabel), employer: r.employer as string[], courses: r.courses as string[],
+        certs: r.certs as string[], projects: r.projects as string[],
+      });
+    } catch (e) {
+      return { status: "failed", detail: e instanceof Error ? e.message : "The portfolio didn't take it." };
+    }
+    return { status: "saved", label: `Portfolio: timeline ${r.monthLabel} set (live in 1–2 min)`, actionId: null };
+  },
+};
+
+const portfolioAddCard: ToolDef = {
+  name: "portfolio_add_card",
+  display: "Portfolio card",
+  definition: {
+    name: "portfolio_add_card",
+    description:
+      "Add an experience or certification card to the owner's public portfolio, e.g. 'add a portfolio card: SWE Intern @ Flexcar, built the fleet dashboard, React, Go'. " +
+      "Copy every phrase exactly. Logos are added in the Portfolio tab.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["section", "title", "bullets", "skills", "confidence"],
+      properties: {
+        section: { type: "string", enum: ["experience", "certification"] },
+        title: { type: "string", description: "Card title copied exactly, usually 'Role @ Company'." },
+        bullets: { type: "array", items: { type: "string" }, description: "What the owner said they did, copied exactly." },
+        skills: { type: "array", items: { type: "string" }, description: "Technologies named, copied exactly." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const title = verbatim(input.title, ctx.text);
+    if (!title?.trim()) return { status: "invalid", detail: "Give the card title exactly as it should appear." };
+    const section = input.section === "certification" ? "certification" : "experience";
+    const bullets = ownWords(input.bullets, ctx.text);
+    const skills = ownWords(input.skills, ctx.text);
+    return {
+      status: "ready", resolved: { section, title: title.trim(), bullets: bullets.kept, skills: skills.kept },
+      fields: [["Card", title.trim()], ["Section", section], ...(bullets.kept.length ? [["Bullets", bullets.kept.join(" · ")] as [string, string]] : [])],
+      warnings: [`Add “${title.trim()}” to the top of your public portfolio's ${section === "experience" ? "Experiences" : "Certifications"} (no logo)?${droppedNote([...bullets.dropped, ...skills.dropped])} ${PORTFOLIO_LIVE}`],
+    };
+  },
+  async commit(r) {
+    const { addItem } = await import("@/lib/portfolio/ops");
+    try {
+      await addItem("cards", { section: r.section as "experience" | "certification", title: String(r.title), logo: "", bullets: r.bullets as string[], skills: r.skills as string[] });
+    } catch (e) {
+      return { status: "failed", detail: e instanceof Error ? e.message : "The portfolio didn't take it." };
+    }
+    return { status: "saved", label: `Portfolio: added card ${r.title} (live in 1–2 min)`, actionId: null };
+  },
+};
+
+const portfolioSetHidden: ToolDef = {
+  name: "portfolio_set_hidden",
+  display: "Portfolio hide/show",
+  definition: {
+    name: "portfolio_set_hidden",
+    description: "Hide an item from the owner's public portfolio (kept in the data) or show it again, e.g. 'hide the blackjack project from my portfolio'.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["file", "match", "hidden", "confidence"],
+      properties: {
+        file: { type: "string", enum: ["projects", "timeline", "cards"] },
+        match: { type: "string", description: "The item's title (or month like 'Feb 2026') as the owner wrote it." },
+        hidden: { type: "boolean", description: "true to hide, false to show again." },
+        confidence,
+      },
+    },
+  },
+  async check(input) {
+    const file = ["projects", "timeline", "cards"].includes(String(input.file)) ? (String(input.file) as "projects" | "timeline" | "cards") : null;
+    if (!file || typeof input.match !== "string") return { status: "invalid", detail: "Say which portfolio item." };
+    const { getContent } = await import("@/lib/portfolio/client");
+    const { findOne, keyOf } = await import("@/lib/portfolio/types");
+    let name: string;
+    try {
+      const { items } = await getContent<Record<string, unknown>>(file);
+      name = String(items[findOne(items, keyOf(file), input.match)][keyOf(file)]);
+    } catch (e) {
+      return { status: "invalid", detail: e instanceof Error ? e.message : "Couldn't read the portfolio." };
+    }
+    const hidden = input.hidden !== false;
+    return {
+      status: "ready", resolved: { file, match: name, hidden }, fields: [["Item", name], ["Change", hidden ? "Hide" : "Show"]],
+      warnings: [`${hidden ? "Hide" : "Show"} “${name}” on your public portfolio?${hidden ? " It stays in the data; you can show it again." : ""} ${PORTFOLIO_LIVE}`],
+    };
+  },
+  async commit(r) {
+    const { setHidden } = await import("@/lib/portfolio/ops");
+    try {
+      await setHidden(r.file as "projects" | "timeline" | "cards", String(r.match), Boolean(r.hidden));
+    } catch (e) {
+      return { status: "failed", detail: e instanceof Error ? e.message : "The portfolio didn't take it." };
+    }
+    return { status: "saved", label: `Portfolio: ${r.hidden ? "hid" : "showed"} ${r.match} (live in 1–2 min)`, actionId: null };
   },
 };
 
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
   "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_event",
-  "add_subscription", "cancel_subscription",
+  "portfolio_add_project", "portfolio_set_timeline_month", "portfolio_add_card", "portfolio_set_hidden",
+  "add_subscription", "cancel_subscription", "log_spending",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -1785,10 +2217,10 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
-    addReminder, addEvent,
+    addReminder, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
-    addSubscription, cancelSubscription,
+    addSubscription, cancelSubscription, logSpending,
   ].map((t) => [t.name, t]),
 );
 

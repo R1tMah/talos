@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import type { Json } from "./database.types";
-import { announceWrite, useDataChanged } from "./undo";
+import { announceWrite, dataChanged, useDataChanged } from "./undo";
 
 /** A general reminder: the owner's own words and an optional due date. */
 export interface GeneralReminder {
@@ -11,6 +11,7 @@ export interface GeneralReminder {
   body: string; // verbatim
   due: string | null; // logical date
   noted: string;
+  created: string; // when it was added, for its "open for" tag
 }
 
 export type GeneralReminderResult = { status: "saved" } | { status: "not_found" } | { status: "failed" };
@@ -27,7 +28,7 @@ export function useGeneralReminders() {
       return;
     }
     setFailed(false);
-    setRows(res.data.map((r) => ({ id: r.id!, body: r.body!, due: r.due_date, noted: r.noted_date! })));
+    setRows(res.data.map((r) => ({ id: r.id!, body: r.body!, due: r.due_date, noted: r.noted_date!, created: r.created_at! })));
   }, []);
 
   useDataChanged(reload);
@@ -42,6 +43,8 @@ function parse(res: { data: Json | null; error: unknown }): GeneralReminderResul
   const out = res.data as { status?: string } | null;
   if (res.error || !out) return { status: "failed" };
   announceWrite("reminders", out as { row?: Json; action_id?: string | null });
+  // Done, dismissed, added or edited: let the list (and anything else showing reminders) reload.
+  if (out.status === "saved") dataChanged();
   return out.status === "saved" || out.status === "not_found" ? { status: out.status } : { status: "failed" };
 }
 

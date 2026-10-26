@@ -1,14 +1,19 @@
 // The tabs that can be archived, named once. Weight and Nutrition are always on.
 // The database accepts exactly these keys (settings.archived_tabs check).
 export const ARCHIVABLE = [
-  { key: "leetcode", label: "LeetCode", href: "/tabs/leetcode" },
+  { key: "leetcode", label: "LeetCode", href: "/tabs/interviews?tab=leetcode" },
   { key: "runs", label: "Runs", href: "/tabs/runs" },
-  { key: "applications", label: "Applications", href: "/tabs/applications" },
-  { key: "callbacks", label: "Callbacks", href: "/tabs/callbacks" },
-  { key: "content", label: "Content", href: "/tabs/content" },
-  { key: "journal", label: "Work Journal", href: "/tabs/journal" },
-  { key: "personal", label: "Personal Journal", href: "/tabs/personal" },
-  { key: "talos", label: "Talos Improvements", href: "/tabs/talos" },
+  // These two live on the Recruiting page (lib/tabGroups.ts), one tab each.
+  { key: "applications", label: "Applications", href: "/tabs/recruiting?tab=applications" },
+  { key: "callbacks", label: "Callbacks", href: "/tabs/recruiting?tab=callbacks" },
+  // These three live on the Journals page (lib/journals.ts), one tab each.
+  { key: "content", label: "Content", href: "/tabs/journals?tab=content" },
+  { key: "journal", label: "Work Journal", href: "/tabs/journals?tab=work" },
+  { key: "personal", label: "Personal Journal", href: "/tabs/journals?tab=personal" },
+  { key: "talos", label: "Talos Improvements", href: "/settings/talos" }, // lives in Settings, not on Tabs
+  { key: "sysdesign", label: "System Design Mocks", href: "/tabs/interviews?tab=system-design" },
+  { key: "aiassisted", label: "AI-Assisted Mocks", href: "/tabs/interviews?tab=ai-assisted" },
+  { key: "longterm", label: "Long Term", href: "/tabs/journals?tab=long-term" }, // on the Journals page
 ] as const;
 
 export type TabKey = (typeof ARCHIVABLE)[number]["key"];
@@ -22,8 +27,11 @@ export const tabLabel = (key: TabKey) => ARCHIVABLE.find((t) => t.key === key)!.
 export const CHAT_TABS = [
   { key: "weight", label: "Weight" },
   { key: "nutrition", label: "Nutrition" },
-  ...ARCHIVABLE.map(({ key, label }) => ({ key, label })),
+  // System Design and AI-Assisted Mocks stay out of chat: their entries are long summaries pasted into the tab.
+  // Long Term stays out too: no chat tool writes seasons yet.
+  ...ARCHIVABLE.filter((t) => t.key !== "sysdesign" && t.key !== "aiassisted" && t.key !== "longterm").map(({ key, label }) => ({ key, label })),
   { key: "subscriptions", label: "Subscriptions" },
+  { key: "spending", label: "Spending" },
 ] as const;
 
 export type ChatTab = (typeof CHAT_TABS)[number]["key"];
@@ -42,7 +50,8 @@ const ALIASES: Record<ChatTab, string[]> = {
   journal: ["work", "work journal", "journal"],
   personal: ["personal", "personal journal", "diary"],
   talos: ["talos", "talos improvement", "talos idea"],
-  subscriptions: ["subscription", "subs", "finances"],
+  subscriptions: ["subscription", "subs"],
+  spending: ["spend", "spent", "money", "purchase", "purchases", "finances"],
 };
 
 /**
@@ -62,3 +71,11 @@ export function tabFromReply(text: string): ChatTab | null {
   }
   return null;
 }
+
+/**
+ * "Once in a while": tabs opened occasionally rather than daily (a set that started with
+ * Portfolio). They sit in their own section at the bottom of the TALOS page.
+ */
+export const ONCE_IN_A_WHILE = [
+  { key: "portfolio", label: "Portfolio", href: "/tabs/portfolio", sub: "Projects · Timeline · Experience" },
+] as const;

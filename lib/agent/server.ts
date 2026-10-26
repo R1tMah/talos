@@ -2,7 +2,7 @@
 // and the proposal store. Runs as the logged-in owner, so RLS applies to everything.
 
 import { cookies } from "next/headers";
-import { logicalDateIn } from "@/lib/date";
+import { clockIn, logicalDateIn } from "@/lib/date";
 import { createClient } from "@/utils/supabase/server";
 import type { Propose } from "./run";
 import type { Ctx, Db, Resolved } from "./tools";
@@ -30,6 +30,7 @@ export async function loadCtx(db: Db, text: string): Promise<{ ctx: Ctx; thresho
       db,
       text,
       today: logicalDateIn(settings.data.timezone),
+      clock: clockIn(settings.data.timezone),
       meals: meals.data.map((m) => ({
         id: m.id, name: m.name, aliases: m.aliases, unit: m.portion_unit,
         items: items.data.filter((i) => i.saved_meal_id === m.id).map((i) => ({ foodId: i.food_id, servings: Number(i.servings) })),

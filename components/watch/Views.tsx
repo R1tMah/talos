@@ -4,13 +4,14 @@
 // Everything shown is copied from the stored snapshot; nothing is rewritten here.
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Tag } from "@/components/ui";
 import { IconChevron } from "@/components/Icons";
 import { isStale, watchApi, type WatchSource } from "@/lib/watch/data";
-import { fallbackLink, type Game, type PlayerSnap, type NewsSnap, type TeamSnap, type TransitConfig, type TransitSnap, type WeatherSnap } from "@/lib/watch/types";
+import { fallbackLink, type Game, type PlayerSnap, type NewsSnap, type TeamSnap, type TransitConfig, type TransitSnap, type WeatherDay, type WeatherSnap } from "@/lib/watch/types";
 import { CalendarCard } from "./Calendar";
 import { NewsletterCard } from "./Newsletter";
+import { PrepCard } from "./Prep";
 import { ago, clock, dayClock, deg, hostOf, hourLabel, isNight, localClock, localHour, shortDate, sky } from "./format";
 import { WeatherIcon } from "./WeatherIcon";
 
@@ -21,7 +22,7 @@ const originalOf = (s: WatchSource) => (s.data as { link?: string } | null)?.lin
 
 // ---- Shared pieces ------------------------------------------------------------------------
 
-function CardHead({ s, right, full }: { s: WatchSource; right?: React.ReactNode; full?: boolean }) {
+export function CardHead({ s, right, full }: { s: WatchSource; right?: React.ReactNode; full?: boolean }) {
   // On the source's own page the screen header already names it.
   if (full) return right ? <div className="watch-head"><span />{right}</div> : null;
   return (
@@ -48,7 +49,8 @@ export function Fallback({ s }: { s: WatchSource }) {
 
 /** Footer on a source's page: when it last updated, and the original. */
 export function SourceFooter({ s }: { s: WatchSource }) {
-  if (s.kind === "transit") return null;
+  // Live (transit) or not fetched at all (prep): nothing to say about updates.
+  if (s.kind === "transit" || s.kind === "prep") return null;
   return (
     <p className="watch-foot faint">
       Updated {ago(s.fetchedAt)}{s.error ? ` · last try failed: ${s.error}` : ""} ·{" "}
@@ -139,49 +141,130 @@ export function TransitCard({ s, full }: { s: WatchSource; full?: boolean }) {
 
 // ---- Weather -------------------------------------------------------------------------------
 
+/** The week by day: sky, rain chance, and the low-to-high range on the week's own scale. */
+function WeekWeather({ days, today }: { days: WeatherDay[]; today: string }) {
+  const lo = Math.min(...days.map((d) => d.lo));
+  const span = Math.max(1, Math.max(...days.map((d) => d.hi)) - lo);
+  return (
+    <div className="wx-week">
+      {days.map((d) => (
+        <div key={d.date} className="wx-day">
+          <span className="wx-day-name">{d.date === today ? "Today" : weekday(d.date)}</span>
+          <WeatherIcon code={d.code} size={20} />
+          <span className="faint num wx-day-rain">{d.precip ? `${d.precip}%` : ""}</span>
+          <span className="faint num wx-day-temp">{deg(d.lo)}</span>
+          <span className="wx-range" aria-hidden>
+            <span style={{ left: `${((d.lo - lo) / span) * 100}%`, right: `${100 - ((d.hi - lo) / span) * 100}%` }} />
+          </span>
+          <span className="num wx-day-temp">{deg(d.hi)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const weekday = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short" });
+
+/**
+ * On Watch: Today and Week pages you swipe between (like the calendar). On the source's
+ * page: today, then the week under it.
+ */
 export function WeatherCard({ s, full }: { s: WatchSource; full?: boolean }) {
   const w = s.data as WeatherSnap | null;
   const tz = (s.config.timezone as string) || "America/New_York";
   const from = localHour(tz);
+  const today = from.slice(0, 10);
   const hours = w?.hours.filter((h) => h.at >= from).slice(0, full ? 24 : 12) ?? [];
   // A stale snapshot's "now" is the forecast for this hour, not the reading from hours ago.
   const nowTemp = w && (w.current.at.slice(0, 13) === from.slice(0, 13) ? w.current.temp : hours[0]?.temp ?? w.current.temp);
   const nowCode = hours[0]?.code ?? w?.current.code;
   const night = (at: string) => !!w && isNight(at, w.today.sunrise, w.today.sunset);
-  return (
-    <section className="card watch-card">
-      <CardHead s={s} full={full} right={w && <span className="faint">{w.place}</span>} />
-      <Fallback s={s} />
-      {w && (
-        <>
-          <div className="wx-now">
-            {nowCode != null && <WeatherIcon code={nowCode} night={night(hours[0]?.at ?? w.current.at)} size={36} />}
-            <span className="wx-temp num">{deg(nowTemp!)}</span>
-            <span className="wx-side">
-              <span>{sky(nowCode!)}</span>
-              <span className="faint num">
-                H {deg(w.today.hi)} · L {deg(w.today.lo)}{w.today.precip != null ? ` · ${w.today.precip}% rain` : ""}
-              </span>
-            </span>
+  // Days from today on (a stale snapshot may start yesterday).
+  const days = w?.days?.filter((d) => d.date >= today) ?? [];
+  const pages = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+  const go = (i: number) => pages.current?.scrollTo({ left: i * pages.current.clientWidth, behavior: "smooth" });
+  const paged = !full && days.length > 0;
+
+  const todayView = w && (
+    <>
+      <div className="wx-now">
+        {nowCode != null && <WeatherIcon code={nowCode} night={night(hours[0]?.at ?? w.current.at)} size={36} />}
+        <span className="wx-temp num">{deg(nowTemp!)}</span>
+        <span className="wx-side">
+          <span>{sky(nowCode!)}</span>
+          <span className="faint num">
+            H {deg(w.today.hi)} · L {deg(w.today.lo)}{w.today.precip != null ? ` · ${w.today.precip}% rain` : ""}
+          </span>
+        </span>
+      </div>
+      <div className="hours">
+        {hours.map((h) => (
+          <div key={h.at} className="hour">
+            <span className="faint">{h.at === from ? "Now" : hourLabel(h.at)}</span>
+            <WeatherIcon code={h.code} night={night(h.at)} size={20} />
+            <b className="num">{deg(h.temp)}</b>
+            <span className="faint num">{h.precip ? `${h.precip}%` : ""}</span>
           </div>
-          <div className="hours">
-            {hours.map((h) => (
-              <div key={h.at} className="hour">
-                <span className="faint">{h.at === from ? "Now" : hourLabel(h.at)}</span>
-                <WeatherIcon code={h.code} night={night(h.at)} size={20} />
-                <b className="num">{deg(h.temp)}</b>
-                <span className="faint num">{h.precip ? `${h.precip}%` : ""}</span>
-              </div>
-            ))}
-          </div>
-          {full && (
-            <p className="faint watch-foot">
-              Feels like {deg(w.current.feels)} at {localClock(w.current.at)} · sunrise {localClock(w.today.sunrise)} · sunset {localClock(w.today.sunset)}
-            </p>
-          )}
-        </>
+        ))}
+      </div>
+      {full && (
+        <p className="faint watch-foot">
+          Feels like {deg(w.current.feels)} at {localClock(w.current.at)} · sunrise {localClock(w.today.sunrise)} · sunset {localClock(w.today.sunset)}
+        </p>
       )}
-    </section>
+    </>
+  );
+
+  return (
+    <>
+      <section className="card watch-card">
+        <CardHead
+          s={s}
+          full={full}
+          right={
+            w && (
+              <div className="cal-head-right">
+                <span className="faint">{w.place}</span>
+                {paged && (
+                  <div className="cal-tabs" role="tablist" aria-label="Weather view">
+                    {["Today", "Week"].map((label, i) => (
+                      <button key={label} type="button" role="tab" aria-selected={page === i} onClick={() => go(i)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          }
+        />
+        <Fallback s={s} />
+        {w &&
+          (paged ? (
+            // Swipes here page between Today and Week instead of switching app tabs.
+            <div
+              ref={pages}
+              className="cal-pages"
+              data-no-swipe
+              onScroll={(e) => setPage(Math.round(e.currentTarget.scrollLeft / Math.max(1, e.currentTarget.clientWidth)))}
+            >
+              <div className="cal-page" aria-label="Today">{todayView}</div>
+              <div className="cal-page" aria-label="This week">
+                <WeekWeather days={days} today={today} />
+              </div>
+            </div>
+          ) : (
+            todayView
+          ))}
+      </section>
+      {full && days.length > 0 && (
+        <section className="card watch-card">
+          <span className="label">This week</span>
+          <WeekWeather days={days} today={today} />
+        </section>
+      )}
+    </>
   );
 }
 
@@ -370,7 +453,7 @@ export function WatchCard({ s }: { s: WatchSource }) {
     case "jobs": return <JobsCard s={s} />;
     case "newsletter": return <NewsletterCard s={s} />;
     case "calendar": return <CalendarCard s={s} />;
+    case "prep": return <PrepCard s={s} />;
     default: return null;
   }
 }
-

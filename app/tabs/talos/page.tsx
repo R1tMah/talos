@@ -1,5 +1,6 @@
-import { NotepadScreen } from "@/components/Notepad";
+import { redirect } from "next/navigation";
 
+// Talos Improvements moved to Settings; old links land there.
 export default function Page() {
-  return <NotepadScreen kind="talos" title="Talos Improvements" checkable />;
+  redirect("/settings/talos");
 }

@@ -21,9 +21,10 @@ export interface MissingField {
 }
 
 export type ChatCard =
-  | { kind: "saved"; label: string; actionId: string | null; undone?: boolean }
+  | { kind: "saved"; label: string; actionId: string | null; googleEvent?: { calendarId: string; eventId: string }; undone?: boolean }
   | { kind: "unsure"; options: CardOption[]; title?: string; resolved?: "picked" }
-  | { kind: "warning"; detail: string; proposalId: string; text: string; resolved?: "saved" | "edit" }
+  // Also used for "ask first" confirmations (a calendar event): then `title` and `action` replace the warning wording.
+  | { kind: "warning"; detail: string; proposalId: string; text: string; title?: string; action?: string; resolved?: "saved" | "edit" }
   | { kind: "confirm"; title: string; changes: Change[]; proposalId: string; resolved?: "confirmed" | "cancelled" }
   | { kind: "missing"; title: string; missing: MissingField[]; proposalId: string; resolved?: "filled" | "cancelled" }
   | { kind: "failed"; detail?: string };

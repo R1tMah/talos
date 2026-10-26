@@ -41,6 +41,10 @@ export const updateSession = async (request: NextRequest) => {
 
   // The scheduled Watch refresh has no session; the route checks its own secret.
   if (request.nextUrl.pathname === "/api/watch/refresh") return supabaseResponse;
+  // Same for the Sunday email's tick.
+  if (request.nextUrl.pathname === "/api/email/weekly") return supabaseResponse;
+  // The daily Plaid sync job: no session; the route checks the cron secret.
+  if (request.nextUrl.pathname === "/api/plaid/sync") return supabaseResponse;
   // Plaid's webhook has no session either; the route verifies Plaid's signature.
   if (request.nextUrl.pathname === "/api/plaid/webhook") return supabaseResponse;
 

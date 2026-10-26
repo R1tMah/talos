@@ -7,7 +7,7 @@ import { fmtDay } from "./date";
 
 /** Names the downloaded file: talos-<tab>-<date>.csv. */
 export type ExportTab =
-  | "weight" | "nutrition" | "leetcode" | "applications" | "callbacks" | "workouts" | "content" | "journal" | "personal" | "talos" | "notes" | "runs" | "finances";
+  | "weight" | "nutrition" | "leetcode" | "applications" | "callbacks" | "workouts" | "content" | "journal" | "personal" | "talos" | "sysdesign" | "aiassisted" | "notes" | "runs" | "finances" | "longterm";
 
 type Row = Record<string, string>;
 

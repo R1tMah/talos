@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
 import { ApplyReminders } from "@/components/ApplyReminders";
 import { Reminders } from "@/components/Reminders";
 import { IconChevron } from "@/components/Icons";
@@ -11,7 +13,18 @@ import { BASE_STATUSES } from "@/lib/applicationsData";
 import { FLAGS } from "@/lib/flags";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { useHomeStats } from "@/lib/homeStats";
-import { ARCHIVABLE, type TabKey } from "@/lib/tabs";
+import { GROUPS } from "@/lib/tabGroups";
+import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
+
+/** The current season's name and how many seasons there are, for the Journals card's Long Term row. */
+function useSeasonSummary() {
+  const [v, setV] = useState<{ current: string | null; count: number } | null>(null);
+  useEffect(() => {
+    createClient().from("seasons").select("name, position").is("deleted_at", null).order("position", { ascending: false })
+      .then(({ data }) => data && setV({ current: data[0]?.name ?? null, count: data.length }));
+  }, []);
+  return v;
+}
 
 export default function TabsPage() {
   // Every card reads Supabase through one round of queries (lib/homeStats.ts).
@@ -19,6 +32,8 @@ export default function TabsPage() {
   const w = stats?.weight;
   const n = stats?.nutrition;
   const lc = stats?.leetcode;
+  const mocks = stats ? stats.notes.sysdesign.n : null;
+  const aiMocks = stats ? stats.notes.aiassisted.n : null;
   const ap = stats?.applications;
   // Statuses actually in use, base order first, at most four rows on the card.
   const apStatuses = ap
@@ -30,8 +45,19 @@ export default function TabsPage() {
   const runs = stats?.runs;
   // Archived tabs drop off the grid and sit in the accordion at the bottom.
   const archived = useArchivedTabs();
+  const seasons = useSeasonSummary();
   const shown = (k: TabKey) => !archived?.has(k);
-  const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key));
+  // Without LeetCode, the Interviews headline is the mock count of whichever mock tabs are shown.
+  const mockTotal = mocks == null || aiMocks == null ? null : (shown("sysdesign") ? mocks : 0) + (shown("aiassisted") ? aiMocks : 0);
+  // Talos Improvements lives in Settings, so it isn't listed here even when archived.
+  const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key) && t.key !== "talos");
+  // Content, Work, Personal and Long Term share one Journals card; it hides when all are archived.
+  // The entry count is the three notepads'; Long Term's row counts seasons.
+  const journals = GROUPS.journals.filter((j) => shown(j.key));
+  const pads = journals.flatMap((j) => (j.key === "longterm" ? [] : [j.key]));
+  const journalCount = stats ? pads.reduce((a, k) => a + stats.notes[k].n, 0) : null;
+  const journalRow = (k: (typeof journals)[number]["key"]) =>
+    k === "longterm" ? (seasons ? `${seasons.count} seasons` : "–") : stats ? stats.notes[k].n : "–";
 
   return (
     <main className="screen">
@@ -60,16 +86,17 @@ export default function TabsPage() {
             { label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
           ]}
         />
-        {shown("leetcode") && (
+        {/* LeetCode, System Design and AI-Assisted share one Interviews card; each part hides when its tab is archived. */}
+        {(shown("leetcode") || shown("sysdesign") || shown("aiassisted")) && (
         <StatCard
-          title="LeetCode"
-          href="/tabs/leetcode"
-          value={lc ? lc.week : pending}
-          unit={lc ? "this wk" : undefined}
+          title="Interviews"
+          href={`/tabs/interviews?tab=${shown("leetcode") ? "leetcode" : shown("sysdesign") ? "system-design" : "ai-assisted"}`}
+          value={shown("leetcode") ? (lc ? lc.week : pending) : (mockTotal ?? pending)}
+          unit={shown("leetcode") ? (lc ? "LC this wk" : undefined) : mockTotal != null ? (mockTotal === 1 ? "mock" : "mocks") : undefined}
           rows={[
-            { label: "Days this wk", value: lc ? lc.days : "–" },
-            { label: "Redo queue", value: lc ? lc.redo : "–" },
-            { label: "Total", value: lc ? lc.total : "–" },
+            ...(shown("leetcode") ? [{ label: "Days this wk", value: lc ? lc.days : "–" }, { label: "Redo queue", value: lc ? lc.redo : "–" }] : []),
+            ...(shown("sysdesign") ? [{ label: "Sys design mocks", value: mocks ?? "–" }] : []),
+            ...(shown("aiassisted") ? [{ label: "AI-assisted mocks", value: aiMocks ?? "–" }] : []),
           ]}
         />
         )}
@@ -97,37 +124,38 @@ export default function TabsPage() {
           ]}
         />
         )}
-        {shown("applications") && (
+        {/* Applications and Callbacks share one Recruiting card; each half hides when its tab is archived. */}
+        {(shown("applications") || shown("callbacks")) && (
         <StatCard
-          title="Applications"
-          href="/tabs/applications"
-          value={ap ? ap.total : pending}
-          unit={ap ? "total" : undefined}
-          rows={apStatuses.map((st) => ({ label: st, value: ap!.byStatus[st] }))}
+          title="Recruiting"
+          href={`/tabs/recruiting?tab=${shown("applications") ? "applications" : "callbacks"}`}
+          value={shown("applications") ? (ap ? ap.total : pending) : cbs ? (cbs.Interview ?? 0) : pending}
+          unit={shown("applications") ? (ap ? "applications" : undefined) : cbs ? "interviews" : undefined}
+          rows={[
+            ...(shown("applications") && shown("callbacks") ? [{ label: "Interviews", value: cbs ? (cbs.Interview ?? 0) : "–" }] : []),
+            ...(shown("callbacks") ? [{ label: "OAs", value: cbs ? (cbs.OA ?? 0) : "–" }, { label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" }] : []),
+            ...(!shown("callbacks") ? apStatuses.map((st) => ({ label: st, value: ap!.byStatus[st] })) : []),
+          ]}
         />
         )}
-        {shown("callbacks") && (
+        {journals.length > 0 && (
         <StatCard
-          title="Callbacks"
-          href="/tabs/callbacks"
-          value={cbs ? (cbs.Interview ?? 0) : pending}
-          unit={cbs ? "interviews" : undefined}
-          rows={[
-            { label: "OAs", value: cbs ? (cbs.OA ?? 0) : "–" },
-            { label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" },
-          ]}
+          title="Journals"
+          href={`/tabs/journals?tab=${journals[0].tab}`}
+          value={journalCount ?? pending}
+          unit={journalCount != null ? (journalCount === 1 ? "entry" : "entries") : undefined}
+          rows={journals.map((j) => ({ label: j.label, value: journalRow(j.key) }))}
         />
         )}
       </div>
 
-      {(shown("content") || shown("journal") || shown("personal") || shown("talos")) && (
-        <div className="grid-2">
-          {shown("content") && <NoteCard title="Content" href="/tabs/content" pad={stats?.notes.content} pending={pending} />}
-          {shown("journal") && <NoteCard title="Work Journal" href="/tabs/journal" pad={stats?.notes.journal} pending={pending} />}
-          {shown("personal") && <NoteCard title="Personal Journal" href="/tabs/personal" pad={stats?.notes.personal} pending={pending} />}
-          {shown("talos") && <NoteCard title="Talos Improvements" href="/tabs/talos" pad={stats?.notes.talos} pending={pending} unit="open" />}
-        </div>
-      )}
+      {/* Once in a while: occasional tabs, kept below the daily ones. */}
+      <span className="label group-title">Once in a while</span>
+      <div className="grid-2">
+        {ONCE_IN_A_WHILE.map((t) => (
+          <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />
+        ))}
+      </div>
 
       {archivedTabs.length > 0 && (
         <details className="card archived-acc">
@@ -144,18 +172,5 @@ export default function TabsPage() {
         </details>
       )}
     </main>
-  );
-}
-
-function NoteCard({ title, href, pad, pending, unit }: { title: string; href: string; pad?: { n: number; last: string | null }; pending: string; unit?: string }) {
-  return (
-    <StatCard
-      compact
-      title={title}
-      href={href}
-      value={pad ? pad.n : pending}
-      unit={pad ? (unit ?? (pad.n === 1 ? "entry" : "entries")) : undefined}
-      rows={[{ label: "Last", value: pad?.last ? fmtDay(pad.last) : "–" }]}
-    />
   );
 }

@@ -9,8 +9,10 @@ import { PageSkeleton } from "@/components/Skeleton";
 import { Fab, ScreenHeader } from "@/components/ui";
 import { DEFAULTS, KIND_LABELS, SourceForm } from "@/components/watch/SourceForm";
 import { WatchCard } from "@/components/watch/Views";
-import { useWatchSources, watchApi } from "@/lib/watch/data";
-import { blockAt, fmtHHMM, orderByTime } from "@/lib/watch/schedule";
+import { useFreshCalendars, useWatchSources, watchApi } from "@/lib/watch/data";
+import { blockAt, fmtHHMM, inPrepWindow, orderByTime } from "@/lib/watch/schedule";
+import { isSessionDay, type PrepConfig } from "@/lib/watch/prep";
+import { logicalToday } from "@/lib/date";
 import type { WatchKind } from "@/lib/watch/types";
 
 /**
@@ -19,6 +21,7 @@ import type { WatchKind } from "@/lib/watch/types";
  */
 export default function WatchPage() {
   const { data, failed, reload } = useWatchSources();
+  useFreshCalendars(data, reload);
   const router = useRouter();
   const [adding, setAdding] = useState<WatchKind | "pick" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -57,7 +60,15 @@ export default function WatchPage() {
   }
 
   // Ordered by the block of the day (lib/watch/schedule.ts), not the set position.
-  const shown = orderByTime(data.filter((s) => s.enabled), now);
+  // System Design Prep: on a session day it goes to the very top 7:30–9:30 AM; on a day
+  // without a session it goes to the very bottom.
+  const sessionToday = (s: (typeof data)[number]) => isSessionDay((s.config as unknown as PrepConfig).start, logicalToday(now));
+  const shown = orderByTime(
+    data.filter((s) => s.enabled),
+    now,
+    (s) => s.kind === "prep" && inPrepWindow(now) && sessionToday(s),
+    (s) => s.kind === "prep" && !sessionToday(s),
+  );
   const { block, until } = blockAt(now);
   const hidden = data.filter((s) => !s.enabled);
   const adder = adding && adding !== "pick" ? DEFAULTS[adding] : null;

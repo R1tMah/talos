@@ -1,7 +1,7 @@
 "use client";
 
 import { ArchiveButton, ArchivedBar } from "./TabArchive";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { fmtDay, fmtDow, logicalToday } from "@/lib/date";
 import { notesApi, useNotes, type NoteKind } from "@/lib/notesData";
 import { SwipeRow } from "./DataTable";
@@ -24,8 +24,12 @@ interface Draft {
  * swipe to delete. Text is saved exactly as typed, on Done or when the app goes to
  * the background, not on every keystroke. With `checkable`, each entry has a box to
  * mark it done; done entries stay on the list, struck through, below the open ones.
+ * `switcher` sits under the header (Journals uses it to switch between notepads); `back` is
+ * where the header's back arrow goes.
  */
-export function NotepadScreen({ kind, title, checkable }: { kind: NoteKind; title: string; checkable?: boolean }) {
+export function NotepadScreen({
+  kind, title, checkable, switcher, back = "/tabs",
+}: { kind: NoteKind; title: string; checkable?: boolean; switcher?: ReactNode; back?: string }) {
   const { rows, failed, reload } = useNotes(kind);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState(false);
@@ -66,7 +70,8 @@ export function NotepadScreen({ kind, title, checkable }: { kind: NoteKind; titl
   if (!rows) {
     return failed ? (
       <main className="screen">
-        <ScreenHeader title={title} back="/tabs" />
+        <ScreenHeader title={title} back={back} />
+        {switcher}
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -85,7 +90,8 @@ export function NotepadScreen({ kind, title, checkable }: { kind: NoteKind; titl
 
   return (
     <main className="screen">
-      <ScreenHeader title={title} back="/tabs" right={<><ArchiveButton tab={kind} /><ExportButton tab={kind} live={kind} /></>} />
+      <ScreenHeader title={title} back={back} right={<><ArchiveButton tab={kind} /><ExportButton tab={kind} live={kind} /></>} />
+      {switcher}
       <ArchivedBar tab={kind} />
       {rows.length === 0 ? (
         <div className="card">

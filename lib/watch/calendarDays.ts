@@ -43,9 +43,18 @@ export interface EventInput {
   start?: string | null; // timed only: "HH:MM"
   end?: string | null; // timed only: "HH:MM"; defaults to an hour after start; earlier than start = next day
   location?: string | null;
+  /** Repeats every week on `date`'s weekday; `count` occurrences in all, or forever when null. New events only. */
+  weekly?: { count: number | null } | null;
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+/** Google's repeat rule for "every week on this date's weekday" (COUNT avoids timezone math for an end date). */
+export function weeklyRule(date: string, count: number | null) {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY[day]}${count ? `;COUNT=${count}` : ""}`;
+}
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const mins = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -57,11 +66,13 @@ export function eventBody(e: EventInput, tz: string): { body: Record<string, unk
   if (title.length > 300) return { error: "That title is too long." };
   if (!DAY.test(e.date)) return { error: "Pick a date." };
   const location = e.location?.trim() || null;
+  if (e.weekly && e.weekly.count != null && !(Number.isInteger(e.weekly.count) && e.weekly.count >= 1)) return { error: "The repeat count must be at least 1." };
+  const repeat = e.weekly ? { recurrence: [weeklyRule(e.date, e.weekly.count)] } : {};
   if (e.allDay) {
     const last = e.lastDay || e.date;
     if (!DAY.test(last) || last < e.date) return { error: "The last day can't be before the first." };
     // Google's all-day end date is exclusive: the day after the last day.
-    return { body: { summary: title, location, start: { date: e.date }, end: { date: addDay(last, 1) } } };
+    return { body: { summary: title, location, start: { date: e.date }, end: { date: addDay(last, 1) }, ...repeat } };
   }
   if (!e.start || !HHMM.test(e.start)) return { error: "Pick a start time." };
   let endDay = e.date;
@@ -81,6 +92,7 @@ export function eventBody(e: EventInput, tz: string): { body: Record<string, unk
       summary: title, location,
       start: { dateTime: `${e.date}T${e.start}:00`, timeZone: tz },
       end: { dateTime: `${endDay}T${end}:00`, timeZone: tz },
+      ...repeat,
     },
   };
 }

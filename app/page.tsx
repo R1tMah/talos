@@ -7,7 +7,7 @@ import { ResultCard, type CardHandlers } from "@/components/ResultCard";
 import { TalosAvatar } from "@/components/TalosAvatar";
 import type { ChatCard, ChatResponse, ConfirmResponse } from "@/lib/agent/cards";
 import { logicalToday, uid } from "@/lib/date";
-import { dataChanged, showToast, undo } from "@/lib/undo";
+import { dataChanged, showToast, undo, undoCalendarEvent } from "@/lib/undo";
 import { useDictation } from "@/lib/useDictation";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { CHAT_TABS, tabFromReply, type ChatTab } from "@/lib/tabs";
@@ -158,9 +158,10 @@ export default function ChatPage() {
           }
         : undefined,
       undo: async () => {
-        if (m.card.kind !== "saved" || !m.card.actionId) return;
-        const r = await undo(m.card.actionId);
-        if (r.status === "done") setCard(m.id, (c) => ({ ...c, undone: true }) as ChatCard);
+        if (m.card.kind !== "saved") return;
+        // A calendar event lives in Google, so its Undo deletes it there; everything else uses the actions log.
+        const ok = m.card.googleEvent ? await undoCalendarEvent(m.card.googleEvent) : m.card.actionId && (await undo(m.card.actionId)).status === "done";
+        if (ok) setCard(m.id, (c) => ({ ...c, undone: true }) as ChatCard);
       },
       choose: (i) => {
         if (m.card.kind !== "unsure") return;

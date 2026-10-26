@@ -16,7 +16,10 @@ type Admin = SupabaseClient<Database>;
 
 /** Lets Talos add, change and delete events (calendar.readonly alone only reads). */
 export const WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly", WRITE_SCOPE];
+/** Lets Talos send the weekly email from the owner's Gmail (send only: it can't read mail). */
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly", WRITE_SCOPE, GMAIL_SEND_SCOPE];
+export const canSendMail = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(GMAIL_SEND_SCOPE);
 /** True when the stored grant includes writing. Connections made before writes existed don't. */
 export const canWrite = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(WRITE_SCOPE);
 
@@ -106,7 +109,7 @@ export async function disconnect(admin: Admin): Promise<void> {
 let cached: { token: string; until: number } | null = null;
 
 /** A current access token, refreshed from the stored refresh token when needed. */
-async function accessToken(admin: Admin): Promise<string> {
+export async function accessToken(admin: Admin): Promise<string> {
   if (cached && Date.now() < cached.until) return cached.token;
   const { data, error } = await admin.from("google_auth").select("refresh_token").eq("id", 1).maybeSingle();
   if (error) throw error;
@@ -202,7 +205,7 @@ export async function fetchCalendar(admin: Admin, c: CalendarConfig, now = new D
           eventId: e.id,
           title: e.summary?.trim() ? e.summary : "(No title)",
           ...(e.summary?.trim() ? {} : { untitled: true as const }),
-          ...(e.recurringEventId ? { recurring: true as const } : {}),
+          ...(e.recurringEventId ? { recurring: true as const, seriesId: e.recurringEventId } : {}),
           allDay: !e.start.dateTime,
           start: e.start.dateTime ?? e.start.date!,
           end: e.end.dateTime ?? e.end.date!,
@@ -243,7 +246,48 @@ export async function updateEvent(admin: Admin, tz: string, eventId: string, e: 
   await api(admin, eventsPath(e.calendarId, eventId), {}, { method: "PATCH", body: b.body });
 }
 
-/** Deletes an event (one occurrence, for a repeating event). */
+/** Deletes an event (one occurrence, for a repeating event; pass the series id to delete them all). */
 export async function deleteEvent(admin: Admin, calendarId: string, eventId: string): Promise<void> {
   await api(admin, eventsPath(calendarId, eventId), {}, { method: "DELETE" });
+}
+
+/**
+ * The series id of a repeating event's occurrence. Snapshots saved before seriesId was
+ * stored only have the occurrence id, which Google forms as "<series>_<start>".
+ */
+export function seriesIdOf(e: { eventId: string; seriesId?: string }) {
+  return e.seriesId ?? e.eventId.replace(/_\d{8}(T\d{6}Z)?$/, "");
+}
+
+/**
+ * A repeating event's rules, made to stop just before one occurrence: each RRULE loses its
+ * COUNT/UNTIL and gains an UNTIL a second before it (timed) or the day before (all-day).
+ * Other lines (EXDATE, RDATE) are kept.
+ */
+export function rulesUntil(recurrence: string[], occurrenceStart: string, allDay: boolean): string[] {
+  let until: string;
+  if (allDay) {
+    const d = new Date(`${occurrenceStart.slice(0, 10)}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    until = d.toISOString().slice(0, 10).replaceAll("-", "");
+  } else {
+    until = new Date(Date.parse(occurrenceStart) - 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  }
+  return recurrence.map((line) => {
+    if (!line.startsWith("RRULE:")) return line;
+    const parts = line.slice(6).split(";").filter((p) => p && !/^(COUNT|UNTIL)=/.test(p));
+    return `RRULE:${[...parts, `UNTIL=${until}`].join(";")}`;
+  });
+}
+
+/**
+ * Deletes one occurrence and every later one, keeping the earlier ones: the series is cut
+ * off just before it. If it's the first occurrence, that's the whole series.
+ */
+export async function deleteFollowing(admin: Admin, calendarId: string, seriesId: string, occurrenceStart: string, allDay: boolean): Promise<void> {
+  const series = await api<GEvent & { recurrence?: string[] }>(admin, eventsPath(calendarId, seriesId));
+  const first = series.start.dateTime ?? series.start.date!;
+  const isFirst = allDay ? first.slice(0, 10) >= occurrenceStart.slice(0, 10) : Date.parse(first) >= Date.parse(occurrenceStart);
+  if (isFirst || !series.recurrence?.length) return deleteEvent(admin, calendarId, seriesId);
+  await api(admin, eventsPath(calendarId, seriesId), {}, { method: "PATCH", body: { recurrence: rulesUntil(series.recurrence, occurrenceStart, allDay) } });
 }

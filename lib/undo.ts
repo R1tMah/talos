@@ -72,7 +72,7 @@ export function describeRow(table: string, r: Row | null): string {
     case "callbacks":
       return `${str(r.company)} ${str(r.kind)}`;
     case "notes":
-      return { journal: "work journal entry", personal: "personal journal entry", talos: "Talos improvement", weight: "weight note" }[str(r.kind)] ?? "content idea";
+      return { journal: "work journal entry", personal: "personal journal entry", talos: "Talos improvement", sysdesign: "system design mock summary", aiassisted: "AI-assisted mock summary", weight: "weight note" }[str(r.kind)] ?? "content idea";
     case "breaks":
       return `break "${str(r.label)}"`;
     case "applications":
@@ -95,6 +95,8 @@ export function describeRow(table: string, r: Row | null): string {
       return "checking balance";
     case "vanguard_holdings":
       return `fund ${str(r.fund)}`;
+    case "spending":
+      return `spending $${Number(r.amount).toFixed(2)}, ${str(r.what)}`;
     default:
       return table;
   }
@@ -125,6 +127,22 @@ export async function undo(actionId?: string | null): Promise<UndoResult> {
   // Undoing a set also stops the rest countdown it started.
   if (out.action.table_name === "sets" && out.kind !== "redo") cancelRest();
   return finish({ status: "done", text: out.kind === "redo" ? `Redid: ${what}` : `Undid: ${what}`, redoId: out.redo_id ?? null });
+}
+
+/** Undo for a Google Calendar event chat added: deletes it there (a weekly event's whole series). No Redo. */
+export async function undoCalendarEvent(ev: { calendarId: string; eventId: string }): Promise<boolean> {
+  try {
+    const res = await fetch("/api/google/events/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev) });
+    if (res.ok) {
+      showToast({ text: "Undid: removed it from Google Calendar" });
+      return true;
+    }
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    showToast({ text: body.error ?? "Failed", tone: "error" });
+  } catch {
+    showToast({ text: "Failed", tone: "error" });
+  }
+  return false;
 }
 
 function finish(r: UndoResult): UndoResult {

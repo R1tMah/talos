@@ -3,7 +3,7 @@
 // and live after the Netlify rebuild (~1–2 min). Saves replace the whole file, so every
 // change is read → change → save, retried when someone else saved in between (409).
 //
-// Needs PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USER, PORTFOLIO_ADMIN_PASSWORD.
+// Needs PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USERNAME (or PORTFOLIO_ADMIN_USER), PORTFOLIO_ADMIN_PASSWORD.
 
 import type { FileName } from "./types";
 
@@ -13,12 +13,15 @@ export class PortfolioValidationError extends Error {
   }
 }
 
+/** The editor login's username: PORTFOLIO_ADMIN_USERNAME (matching Netlify's ADMIN_USERNAME), or PORTFOLIO_ADMIN_USER. */
+const adminUser = () => process.env.PORTFOLIO_ADMIN_USERNAME || process.env.PORTFOLIO_ADMIN_USER;
+
 export const portfolioConfigured = () =>
-  Boolean(process.env.PORTFOLIO_BASE_URL && process.env.PORTFOLIO_ADMIN_USER && process.env.PORTFOLIO_ADMIN_PASSWORD);
+  Boolean(process.env.PORTFOLIO_BASE_URL && adminUser() && process.env.PORTFOLIO_ADMIN_PASSWORD);
 
 async function call(path: string, init: RequestInit = {}): Promise<{ status: number; body: Record<string, unknown> }> {
-  if (!portfolioConfigured()) throw new Error("Portfolio isn't set up on the server (PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USER, PORTFOLIO_ADMIN_PASSWORD).");
-  const auth = "Basic " + Buffer.from(`${process.env.PORTFOLIO_ADMIN_USER}:${process.env.PORTFOLIO_ADMIN_PASSWORD}`).toString("base64");
+  if (!portfolioConfigured()) throw new Error("Portfolio isn't set up on the server (PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USERNAME, PORTFOLIO_ADMIN_PASSWORD).");
+  const auth = "Basic " + Buffer.from(`${adminUser()}:${process.env.PORTFOLIO_ADMIN_PASSWORD}`).toString("base64");
   const res = await fetch(`${process.env.PORTFOLIO_BASE_URL!.replace(/\/$/, "")}/admin/api/${path}`, {
     ...init,
     headers: { Authorization: auth, ...(init.headers ?? {}) },
@@ -26,7 +29,7 @@ async function call(path: string, init: RequestInit = {}): Promise<{ status: num
     signal: AbortSignal.timeout(20_000),
   });
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (res.status === 401) throw new Error("The portfolio refused the login. Check PORTFOLIO_ADMIN_USER and PORTFOLIO_ADMIN_PASSWORD.");
+  if (res.status === 401) throw new Error("The portfolio refused the login. Check PORTFOLIO_ADMIN_USERNAME and PORTFOLIO_ADMIN_PASSWORD.");
   return { status: res.status, body };
 }
 

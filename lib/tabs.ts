@@ -13,7 +13,7 @@ export const ARCHIVABLE = [
   { key: "talos", label: "Talos Improvements", href: "/settings/talos" }, // lives in Settings, not on Tabs
   { key: "sysdesign", label: "System Design Mocks", href: "/tabs/interviews?tab=system-design" },
   { key: "aiassisted", label: "AI-Assisted Mocks", href: "/tabs/interviews?tab=ai-assisted" },
-  { key: "longterm", label: "Long Term", href: "/tabs/journals?tab=long-term" }, // on the Journals page
+  { key: "longterm", label: "Long Term", href: "/tabs/long-term" }, // under "Once in a while" on Tabs
 ] as const;
 
 export type TabKey = (typeof ARCHIVABLE)[number]["key"];

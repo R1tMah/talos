@@ -12,7 +12,7 @@ import { SummaryStrip } from "@/components/StatCard";
 import { SectionTitle, Segmented } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
 import { fmtMoney } from "@/lib/finances";
-import { ROLLING_DAYS, SPEND_CATEGORIES, monthLabel, monthOf, monthSummary, rollingSummary, shiftMonth, type Spend, type SpendCategory } from "@/lib/spending";
+import { ROLLING_DAYS, SPENDING_SINCE, SPEND_CATEGORIES, monthLabel, monthOf, monthSummary, rollingSummary, shiftMonth, type Spend, type SpendCategory } from "@/lib/spending";
 import { spendingApi, useSpending, type SpendInput, type WriteResult } from "@/lib/spendingData";
 
 const FIELDS: Field[] = [
@@ -78,7 +78,7 @@ export function SpendingView() {
           <span className="label" style={{ margin: "0 auto" }}>{period}</span>
         ) : (
           <>
-            <button type="button" className="icon-btn" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
+            <button type="button" className="icon-btn" aria-label="Previous month" disabled={month <= monthOf(SPENDING_SINCE)} onClick={() => setMonth(shiftMonth(month, -1))}>
               <IconBack />
             </button>
             <span className="label">{period}</span>
@@ -92,7 +92,7 @@ export function SpendingView() {
       <SummaryStrip
         items={[
           { label: rolling ? `Last ${ROLLING_DAYS} days` : isNow ? "This month" : "Spent", value: fmtMoney(m.total), sub: `${m.count} ${m.count === 1 ? "purchase" : "purchases"}` },
-          { label: "Per day", value: m.perDay == null ? "–" : fmtMoney(m.perDay), sub: rolling ? `over ${ROLLING_DAYS} days` : isNow ? "so far" : "average" },
+          { label: "Per day", value: m.perDay == null ? "–" : fmtMoney(m.perDay), sub: last ? `over ${last.days} ${last.days === 1 ? "day" : "days"}` : isNow ? "so far" : "average" },
         ]}
       />
 

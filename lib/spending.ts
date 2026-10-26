@@ -16,6 +16,9 @@ export interface Spend {
   note: string | null;
 }
 
+/** Tracking starts here: nothing earlier counts, in either the month or the rolling view. */
+export const SPENDING_SINCE = "2026-10-25";
+
 const cents = (n: number) => Math.round(n * 100) / 100;
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -29,29 +32,40 @@ export function shiftMonth(month: string, by: number) {
   return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, "0")}`;
 }
 const daysIn = (month: string) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+/** Days from `from` through `to`, both included. */
+const dayCount = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1;
 
 /**
- * A month's spending: the total, entries, an average per day so far (whole month once
- * it's over; days elapsed when it's the current month), and categories largest first.
+ * A month's spending from `since` on: the total, entries, an average per day so far (whole
+ * month once it's over; days elapsed when it's the current month; both counted from `since`
+ * in the month tracking began), and categories largest first.
  */
-export function monthSummary(all: Spend[], month: string, today: string) {
-  const days = month === monthOf(today) ? Number(today.slice(8, 10)) : month < monthOf(today) ? daysIn(month) : 0;
-  return summarize(all.filter((s) => monthOf(s.date) === month), days);
+export function monthSummary(all: Spend[], month: string, today: string, since = SPENDING_SINCE) {
+  const first = `${month}-01`;
+  const start = first < since ? since : first;
+  const end = month === monthOf(today) ? today : month < monthOf(today) ? `${month}-${String(daysIn(month)).padStart(2, "0")}` : "";
+  const days = end && end >= start ? dayCount(start, end) : 0;
+  return summarize(all.filter((s) => monthOf(s.date) === month && s.date >= since), days);
 }
 
 export const ROLLING_DAYS = 30;
 
-/** The first day of the rolling window that ends today ("last 30 days" includes today). */
-export function rollingStart(today: string, days = ROLLING_DAYS) {
+/** The first day of the rolling window that ends today ("last 30 days" includes today), never before `since`. */
+export function rollingStart(today: string, days = ROLLING_DAYS, since = SPENDING_SINCE) {
   const d = new Date(`${today}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - (days - 1));
-  return d.toISOString().slice(0, 10);
+  const from = d.toISOString().slice(0, 10);
+  return from < since ? since : from;
 }
 
-/** The last 30 days through today, whatever months they span; per day is over all 30. */
-export function rollingSummary(all: Spend[], today: string, days = ROLLING_DAYS) {
-  const from = rollingStart(today, days);
-  return { from, ...summarize(all.filter((s) => s.date >= from && s.date <= today), days) };
+/**
+ * The last 30 days through today, whatever months they span, starting no earlier than
+ * `since`. Per day is over the days actually in the window (1 on the first day, 30 once full).
+ */
+export function rollingSummary(all: Spend[], today: string, days = ROLLING_DAYS, since = SPENDING_SINCE) {
+  const from = rollingStart(today, days, since);
+  const span = from > today ? 0 : dayCount(from, today);
+  return { from, days: span, ...summarize(all.filter((s) => s.date >= from && s.date <= today), span) };
 }
 
 function summarize(rows: Spend[], days: number) {

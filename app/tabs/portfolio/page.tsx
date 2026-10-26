@@ -128,7 +128,10 @@ const monthKey = (m: string) => Number(m.slice(4)) * 12 + MONTHS.indexOf(m.slice
 
 export default function PortfolioPage() {
   const [view, setView] = useState<FileName>("projects");
-  const [items, setItems] = useState<Item[] | null>(null);
+  // Which file the loaded items are from: right after switching views, the old view's items
+  // are still here, and they must not be read as the new view's (months sort by monthLabel).
+  const [loaded, setLoaded] = useState<{ file: FileName; items: Item[] } | null>(null);
+  const items = loaded?.file === view ? loaded.items : null;
   const [configured, setConfigured] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ item: Item | null; initial?: Values } | null>(null);
@@ -137,13 +140,13 @@ export default function PortfolioPage() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async (file: FileName) => {
-    setItems(null);
+    setLoaded(null);
     setLoadError(null);
     const res = await fetch(`/api/portfolio?file=${file}`, { cache: "no-store" }).catch(() => null);
     const out = (await res?.json().catch(() => ({}))) as { configured?: boolean; items?: Item[]; error?: string } | undefined;
     if (!res?.ok) return setLoadError(out?.error ?? "Couldn't reach the server.");
     setConfigured(out?.configured !== false);
-    setItems(out?.items ?? []);
+    setLoaded({ file, items: out?.items ?? [] });
   }, []);
   useEffect(() => {
     load(view);
@@ -186,7 +189,7 @@ export default function PortfolioPage() {
 
       {!configured && (
         <p className="watch-fallback">
-          Portfolio isn&rsquo;t set up on the server yet: add PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USER and PORTFOLIO_ADMIN_PASSWORD.
+          Portfolio isn&rsquo;t set up on the server yet: add PORTFOLIO_BASE_URL, PORTFOLIO_ADMIN_USERNAME and PORTFOLIO_ADMIN_PASSWORD.
         </p>
       )}
       {loadError && <p role="alert" className="watch-fallback">{loadError}</p>}

@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { LongTermScreen } from "@/components/LongTerm";
 
-/** Long Term moved onto the Journals page. */
+/** Long Term: its own page, reached from "Once in a while" on Tabs. */
 export default function Page() {
-  redirect("/tabs/journals?tab=long-term");
+  return <LongTermScreen />;
 }

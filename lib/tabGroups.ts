@@ -18,7 +18,6 @@ export const GROUPS = {
     { tab: "personal", key: "personal", label: "Personal" },
     { tab: "work", key: "journal", label: "Work" },
     { tab: "content", key: "content", label: "Content" },
-    { tab: "long-term", key: "longterm", label: "Long Term" },
   ],
   recruiting: [
     { tab: "applications", key: "applications", label: "Applications" },

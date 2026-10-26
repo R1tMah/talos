@@ -1866,6 +1866,11 @@ html.kb-open .composer {
   border-top: 1px solid var(--border);
 }
 
+/* "Once in a while" on Tabs: the occasional tabs' cards, folded inside one accordion. */
+.once-acc > .grid-2 {
+  padding: 0 var(--s-3) var(--s-3);
+}
+
 /* ============================================================
    Apply reminders
    ============================================================ */

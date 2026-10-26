@@ -23,8 +23,8 @@ async function lands(page: string, query: Record<string, string> = {}) {
 }
 
 describe("tab groups", () => {
-  it("Journals is Personal, Work, Content, Long Term; Recruiting is Applications, Callbacks", () => {
-    expect(GROUPS.journals.map((t) => t.tab)).toEqual(["personal", "work", "content", "long-term"]);
+  it("Journals is Personal, Work, Content (Long Term is its own page); Recruiting is Applications, Callbacks", () => {
+    expect(GROUPS.journals.map((t) => t.tab)).toEqual(["personal", "work", "content"]);
     expect(GROUPS.recruiting.map((t) => t.tab)).toEqual(["applications", "callbacks"]);
     expect(GROUPS.interviews.map((t) => t.tab)).toEqual(["leetcode", "system-design", "ai-assisted"]);
   });

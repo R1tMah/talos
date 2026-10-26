@@ -1,19 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FormSheet, Sheet } from "@/components/FormSheet";
 import { IconChevron } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader, Segmented } from "@/components/ui";
-import { WeeklyEmailSettings } from "@/components/WeeklyEmailSettings";
-import { setTabArchived, useArchivedTabs } from "@/lib/archivedTabs";
+import { useArchivedTabs } from "@/lib/archivedTabs";
 import { buildBackup } from "@/lib/backup";
 import { fmtNum, todayISO } from "@/lib/date";
 import { FLAGS } from "@/lib/flags";
 import { buildReviewPacket } from "@/lib/reviewPacket";
 import { settingsApi, useSettings, type SettingsResult } from "@/lib/settingsData";
-import { ARCHIVABLE, type TabKey } from "@/lib/tabs";
+import { ARCHIVABLE } from "@/lib/tabs";
+import { createClient } from "@/utils/supabase/client";
 
 type Edit = "targets" | "rest" | "context" | "confidence" | "timezone" | "plans" | null;
 type Theme = "system" | "dark" | "light";
@@ -39,6 +39,28 @@ function Row({ label, value, onClick, href }: { label: string; value?: string; o
 
 const isInt = (v: unknown, min: number, max: number) => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
 
+/** A settings section with several rows, folded into an accordion (closed until tapped). */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details className="card list archived-acc">
+      <summary>
+        <span className="label">{title}</span>
+        <IconChevron />
+      </summary>
+      {children}
+    </details>
+  );
+}
+
+/** Whether the Sunday email is on, for its row; null while loading. */
+function useWeeklyEmailOn() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    createClient().from("weekly_email").select("enabled").eq("id", 1).maybeSingle().then(({ data }) => data && setOn(data.enabled));
+  }, []);
+  return on;
+}
+
 export default function SettingsPage() {
   const { data, failed, reload } = useSettings();
   const [edit, setEdit] = useState<Edit>(null);
@@ -46,7 +68,7 @@ export default function SettingsPage() {
   const [copy, setCopy] = useState<"" | "Copying…" | "Copied" | "Failed">("");
   const [theme, setTheme] = useState<Theme>("system");
   const archived = useArchivedTabs();
-  const [archiving, setArchiving] = useState<{ tab: TabKey; label: string; archive: boolean } | null>(null);
+  const weeklyOn = useWeeklyEmailOn();
 
   useEffect(() => {
     try {
@@ -139,67 +161,46 @@ export default function SettingsPage() {
         </p>
       )}
 
-      <span className="label group-title">Targets</span>
-      <div className="card list">
+      <Group title="Targets">
         <Row label="Calories" value={`${fmtNum(data.targets.calories)} kcal`} onClick={() => setEdit("targets")} />
         <Row label="Protein" value={`${data.targets.protein} g`} onClick={() => setEdit("targets")} />
-      </div>
+      </Group>
 
       {FLAGS.workout && (
         <>
-          <span className="label group-title">Workout</span>
-          <div className="card list">
+          <Group title="Workout">
             <Row label="Rest time" value={`${data.restSeconds} s`} onClick={() => setEdit("rest")} />
             <Row label="Plans" value={data.plans.map((p) => p.name).join(", ")} onClick={() => setEdit("plans")} />
-          </div>
+          </Group>
         </>
       )}
 
-      <span className="label group-title">Logging</span>
-      <div className="card list">
+      <Group title="Logging">
         <Row label="Saved meals" value={String(data.savedMeals)} href="/tabs/nutrition?view=meals" />
         <Row label="Context blurb" value={data.contextBlurb ? `${data.contextBlurb.length} chars` : "Empty"} onClick={() => setEdit("context")} />
-      </div>
+      </Group>
 
       <span className="label group-title">Tabs</span>
       <div className="card list">
-        {ARCHIVABLE.map((t) => {
-          const on = !archived?.has(t.key);
-          return (
-            <div key={t.key} className="row">
-              <span className="row-label">{t.label}</span>
-              <span className="row-value">{on ? "Shown" : "Archived"}</span>
-              <button
-                type="button"
-                role="switch"
-                className="switch"
-                aria-checked={on}
-                aria-label={`${t.label} shown`}
-                disabled={!archived}
-                onClick={() => setArchiving({ tab: t.key, label: t.label, archive: on })}
-              />
-            </div>
-          );
-        })}
+        <Row label="Shown and archived" value={archived ? `${ARCHIVABLE.length - archived.size} shown · ${archived.size} archived` : undefined} href="/settings/tabs" />
       </div>
-      <p className="faint" style={{ fontSize: "var(--t-xs)", margin: "calc(-1 * var(--s-2)) var(--s-4) 0" }}>
-        Archived tabs move to the bottom of Tabs and chat won&rsquo;t log to them. Weight and Nutrition always stay.
-      </p>
 
-      <span className="label group-title">Chat</span>
-      <div className="card list">
+      <Group title="Chat">
         <Row label="Auto-save confidence" value={data.confidence.toFixed(2)} onClick={() => setEdit("confidence")} />
         <Row label="Timezone" value={data.timezone} onClick={() => setEdit("timezone")} />
         <Row label="Chat history" href="/settings/chat-history" />
         <Row label="API usage" href="/settings/api-usage" />
-      </div>
+      </Group>
 
       <span className="label group-title">Talos</span>
       <div className="card list">
         <Row label="Talos Improvements" href="/settings/talos" />
       </div>
 
-      <WeeklyEmailSettings />
+      <span className="label group-title">Weekly email</span>
+      <div className="card list">
+        <Row label="Sunday digest" value={weeklyOn == null ? undefined : weeklyOn ? "On" : "Off"} href="/settings/weekly-email" />
+      </div>
 
       <span className="label group-title">Appearance</span>
       <div className="card pad" style={{ padding: "var(--s-2)" }}>
@@ -214,8 +215,7 @@ export default function SettingsPage() {
         />
       </div>
 
-      <span className="label group-title">Data</span>
-      <div className="card list">
+      <Group title="Data">
         <button type="button" className="row" onClick={exportPacket}>
           <span className="row-label">Export review packet</span>
           <span className="row-value" style={{ color: copy === "Failed" ? "var(--danger)" : copy ? "var(--accent)" : undefined }}>
@@ -226,34 +226,8 @@ export default function SettingsPage() {
           <span className="row-label">Download backup</span>
           <span className="row-value" style={{ color: backingUp === "Failed" ? "var(--danger)" : undefined }}>{backingUp || "JSON"}</span>
         </button>
-      </div>
+      </Group>
 
-      {archiving && (
-        <Sheet title={`${archiving.archive ? "Archive" : "Unarchive"} ${archiving.label}?`} onClose={() => setArchiving(null)}>
-          <p className="muted" style={{ fontSize: "var(--t-sm)", margin: 0 }}>
-            {archiving.archive
-              ? "It moves to Archived at the bottom of Tabs and chat won't log to it. Your data stays."
-              : "It goes back on Tabs and chat logs to it again."}
-          </p>
-          <div className="sheet-actions">
-            <button type="button" className="btn" onClick={() => setArchiving(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={async () => {
-                const a = archiving;
-                setArchiving(null);
-                const ok = await setTabArchived(a.tab, a.archive);
-                setNotice(ok ? { text: `${a.label} ${a.archive ? "archived" : "unarchived"}.`, ok: true } : { text: "Failed", ok: false });
-              }}
-            >
-              {archiving.archive ? "Archive" : "Unarchive"}
-            </button>
-          </div>
-        </Sheet>
-      )}
       {edit === "targets" && (
         <FormSheet
           title="Targets"

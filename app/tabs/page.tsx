@@ -16,7 +16,7 @@ import { useHomeStats } from "@/lib/homeStats";
 import { GROUPS } from "@/lib/tabGroups";
 import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
 
-/** The current season's name and how many seasons there are, for the Journals card's Long Term row. */
+/** The current season's name and how many seasons there are, for the Long Term card. */
 function useSeasonSummary() {
   const [v, setV] = useState<{ current: string | null; count: number } | null>(null);
   useEffect(() => {
@@ -51,13 +51,11 @@ export default function TabsPage() {
   const mockTotal = mocks == null || aiMocks == null ? null : (shown("sysdesign") ? mocks : 0) + (shown("aiassisted") ? aiMocks : 0);
   // Talos Improvements lives in Settings, so it isn't listed here even when archived.
   const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key) && t.key !== "talos");
-  // Content, Work, Personal and Long Term share one Journals card; it hides when all are archived.
-  // The entry count is the three notepads'; Long Term's row counts seasons.
+  // Content, Work and Personal share one Journals card; it hides when all three are archived.
   const journals = GROUPS.journals.filter((j) => shown(j.key));
-  const pads = journals.flatMap((j) => (j.key === "longterm" ? [] : [j.key]));
-  const journalCount = stats ? pads.reduce((a, k) => a + stats.notes[k].n, 0) : null;
-  const journalRow = (k: (typeof journals)[number]["key"]) =>
-    k === "longterm" ? (seasons ? `${seasons.count} seasons` : "–") : stats ? stats.notes[k].n : "–";
+  const journalCount = stats ? journals.reduce((a, j) => a + stats.notes[j.key].n, 0) : null;
+  // Occasional tabs, folded away under "Once in a while": Long Term (unless archived) and the sites.
+  const occasional = (shown("longterm") ? 1 : 0) + ONCE_IN_A_WHILE.length;
 
   return (
     <main className="screen">
@@ -144,18 +142,33 @@ export default function TabsPage() {
           href={`/tabs/journals?tab=${journals[0].tab}`}
           value={journalCount ?? pending}
           unit={journalCount != null ? (journalCount === 1 ? "entry" : "entries") : undefined}
-          rows={journals.map((j) => ({ label: j.label, value: journalRow(j.key) }))}
+          rows={journals.map((j) => ({ label: j.label, value: stats ? stats.notes[j.key].n : "–" }))}
         />
         )}
       </div>
 
-      {/* Once in a while: occasional tabs, kept below the daily ones. */}
-      <span className="label group-title">Once in a while</span>
-      <div className="grid-2">
-        {ONCE_IN_A_WHILE.map((t) => (
-          <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />
-        ))}
-      </div>
+      {/* Once in a while: occasional tabs, folded away below the daily ones. */}
+      <details className="card archived-acc once-acc">
+        <summary>
+          <span className="label">Once in a while ({occasional})</span>
+          <IconChevron />
+        </summary>
+        <div className="grid-2">
+          {shown("longterm") && (
+            <StatCard
+              compact
+              title="Long Term"
+              href="/tabs/long-term"
+              value={seasons ? seasons.count : pending}
+              unit={seasons ? (seasons.count === 1 ? "season" : "seasons") : undefined}
+              rows={[{ label: "Current", value: seasons?.current ?? "–" }]}
+            />
+          )}
+          {ONCE_IN_A_WHILE.map((t) => (
+            <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />
+          ))}
+        </div>
+      </details>
 
       {archivedTabs.length > 0 && (
         <details className="card archived-acc">

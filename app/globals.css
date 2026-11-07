@@ -4599,3 +4599,49 @@ button.cal-day:active {
   font-size: 1.02rem;
   line-height: 1.6;
 }
+
+/* Hidden but still reachable by keyboard and screen readers (e.g. a file input behind a styled picker). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A file picker styled as a text box: button and file name centered in it. */
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  min-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.file-pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+}
+
+.file-pick-clear {
+  width: 28px;
+  height: 28px;
+  margin-right: -6px;
+  font-size: var(--t-lg);
+  color: var(--text-3);
+}
+
+.file-pick:focus-within {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}

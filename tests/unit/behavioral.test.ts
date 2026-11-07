@@ -2,7 +2,7 @@
 // the copied scorecard and second-opinion prompt, and the tab's place in the app.
 
 import { describe, expect, it } from "vitest";
-import { areasFor, BUCKETS, clampTarget, externalPrompt, finalScore, FIT_AREA, fmtClock, mockScorecard, overall, scorecard, yapPenalty, type Graded } from "@/lib/mock/score";
+import { areasFor, BUCKETS, mockName, clampTarget, externalPrompt, finalScore, FIT_AREA, fmtClock, mockScorecard, overall, scorecard, yapPenalty, type Graded } from "@/lib/mock/score";
 import { CHAT_TABS, ARCHIVABLE } from "@/lib/tabs";
 import { GROUPS, groupTab } from "@/lib/tabGroups";
 
@@ -96,6 +96,24 @@ describe("the full scorecard", () => {
   it("before any answer", () => {
     const md = mockScorecard({ company: "Stripe", role: "PE", date: "Nov 7", questions: [{ area: "Failure & Growth", question: "Q", target: 120, duration: null, graded: null }] });
     expect(md).toContain("Overall: no answers graded yet");
+  });
+});
+
+describe("without a company", () => {
+  it("a mock is named by its role alone", () => {
+    expect(mockName("Stripe", "Product Engineer")).toBe("Stripe, Product Engineer");
+    expect(mockName("", "Product Engineer")).toBe("Product Engineer");
+    expect(mockName("  ", "SWE")).toBe("SWE");
+  });
+
+  it("the scorecards and second-opinion prompt leave the company out cleanly", () => {
+    const card = scorecard({ company: "", role: "SWE", bucket: "Failure & Growth", question: "A failure.", target: 120, duration: 100, graded });
+    expect(card).toContain("SWE · Failure & Growth");
+    expect(card).not.toContain(" · SWE");
+    expect(mockScorecard({ company: "", role: "SWE", date: "Nov 7", questions: [] })).toContain("# Behavioral mock: SWE (Nov 7)");
+    const p = externalPrompt({ company: "", role: "SWE", bucket: "Failure & Growth", question: "Q", rubric: { requirements: [], strong_signals: [], red_flags: [] }, target: 120, duration: 90, transcription: "x" });
+    expect(p).toContain("Role: SWE (no specific company)");
+    expect(p).not.toContain("Company and role: ,");
   });
 });
 

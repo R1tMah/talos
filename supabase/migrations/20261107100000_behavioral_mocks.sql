@@ -5,7 +5,7 @@
 -- owner answers each out loud against a timer; a Grader model grades the content, and code
 -- takes off the Yap Penalty for running long.
 --
---   mock_sessions   one mock: company, role, pasted context (the PDF isn't kept)
+--   mock_sessions   one mock: company (optional), role, pasted context (the PDF isn't kept)
 --   mock_questions  its questions in order, each with its area, rubric and target time
 --   mock_answers    each graded answer: the transcription, the timer's seconds, the
 --                   model's content score, the penalty and the final score, and feedback
@@ -17,7 +17,7 @@
 create table public.mock_sessions (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
-  company text not null check (btrim(company) <> ''),
+  company text not null default '',  -- optional: '' when not given
   role text not null check (btrim(role) <> ''),
   include_fit boolean not null default true, -- the 7th question, "Why this company?"
   context text not null default '',

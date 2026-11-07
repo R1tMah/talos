@@ -22,12 +22,18 @@ export function writtenAt(date: string | null, now = new Date()): Date {
 
 /**
  * A Ctrl+A copy of a FutureMe letter page also picks up the page around the letter: the
- * "Share letter" / privacy panel and the site footer. Everything from that panel on is
- * cut, so only the letter is sealed. Text without the panel is returned unchanged.
+ * site menu and the letter's details above it (dates, word count, recipients, ending in
+ * "Visibility: Private"), and the "Share letter" / privacy panel and footer below it.
+ * Both are cut, so only the letter is sealed. Text without them is returned unchanged.
  */
 export function stripFutureMeChrome(text: string): string {
-  const m = text.match(/\n[ \t]*Share letter[ \t]*\n[\s\S]*?Generate a unique URL where your friends and family can read your letter/);
-  return m?.index != null ? text.slice(0, m.index).trimEnd() : text;
+  let out = text;
+  const tail = out.match(/\n[ \t]*Share letter[ \t]*\n[\s\S]*?Generate a unique URL where your friends and family can read your letter/);
+  if (tail?.index != null) out = out.slice(0, tail.index);
+  // The header only counts near the top, and only with FutureMe's own labels.
+  const head = out.slice(0, 1500).match(/Recipients:[\s\S]*?\n[ \t]*Visibility:[ \t]*\n?[ \t]*(?:Private|Public)[ \t]*\n/);
+  if (head?.index != null) out = out.slice(head.index + head[0].length);
+  return out === text ? text : out.trim();
 }
 
 export interface SealInput {

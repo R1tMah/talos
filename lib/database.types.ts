@@ -1697,7 +1697,7 @@ export type Database = {
           role: string
         }
         Insert: {
-          company: string
+          company?: string
           context?: string
           created_at?: string
           deleted_at?: string | null

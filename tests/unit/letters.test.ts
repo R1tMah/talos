@@ -48,6 +48,11 @@ describe("Future letters: pasting a FutureMe page", () => {
     expect(stripFutureMeChrome(`Dear me,\n\nHello.\n\nThanks,\nMe${footer}`)).toBe("Dear me,\n\nHello.\n\nThanks,\nMe");
   });
 
+  it("cuts the page header above the letter too", () => {
+    const head = "Write a Letter to the Future\nSign Out\nTime Travelling — almost 3 years\n\nA letter from May 27th, 2024\nMay 27, 2024\nMay 27, 2027\n\n3733 words\n\nRecipients:  \nme@example.com\nVisibility:  \nPrivate\n";
+    expect(stripFutureMeChrome(`${head}Dear FutureMe,\n\nHello.${footer}`)).toBe("Dear FutureMe,\n\nHello.");
+  });
+
   it("leaves a letter without the panel alone, even one that says 'share letter'", () => {
     const own = "Dear me,\nShare letter\nwith Rohan someday.";
     expect(stripFutureMeChrome(own)).toBe(own);

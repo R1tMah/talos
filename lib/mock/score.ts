@@ -17,6 +17,9 @@ export type Bucket = (typeof BUCKETS)[number];
 export const FIT_AREA = "Motivation & Fit" as const;
 export type Area = Bucket | typeof FIT_AREA;
 
+/** "Stripe, Product Engineer", or just the role when no company was given. */
+export const mockName = (company: string, role: string) => (company.trim() ? `${company.trim()}, ${role}` : role);
+
 /** A mock's areas, in the order they're asked. */
 export const areasFor = (includeFit: boolean): Area[] => [...BUCKETS, ...(includeFit ? [FIT_AREA] : [])];
 
@@ -101,7 +104,7 @@ export function scorecard(s: ScorecardInput): string {
   const time = `Target Time: ${s.target}s | Your Time: ${Math.floor(s.duration)}s${penalty ? ` (Yap Penalty: -${penalty} ${penalty === 1 ? "pt" : "pts"})` : ""}`;
   const lines = [
     `**Q${s.n ?? 1}: ${s.question}**`,
-    `${s.company} · ${s.role} · ${s.bucket}`,
+    [s.company.trim(), s.role, s.bucket].filter(Boolean).join(" · "),
     "",
     time,
     "",
@@ -132,7 +135,7 @@ export function mockScorecard(m: MockScorecardInput): string {
   const finals = answered.map((q) => finalScore(q.graded!.content, yapPenalty(q.duration!, q.target)));
   const avg = overall(finals);
   const head = [
-    `# Behavioral mock: ${m.company}, ${m.role} (${m.date})`,
+    `# Behavioral mock: ${mockName(m.company, m.role)} (${m.date})`,
     "",
     avg == null ? "Overall: no answers graded yet" : `Overall: ${avg}/10 across ${answered.length} of ${m.questions.length} questions`,
     "",
@@ -167,7 +170,7 @@ export function externalPrompt(e: ExternalInput): string {
   return [
     `You are a senior hiring manager at a top tech company grading one behavioral interview answer. Be strict and specific.`,
     "",
-    `Company and role: ${e.company}, ${e.role}`,
+    e.company.trim() ? `Company and role: ${e.company.trim()}, ${e.role}` : `Role: ${e.role} (no specific company)`,
     `Behavioral area: ${e.bucket}`,
     `Question: ${e.question}`,
     "",

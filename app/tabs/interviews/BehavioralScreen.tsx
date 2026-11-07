@@ -18,7 +18,7 @@ import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
 import { ScreenHeader, Tag } from "@/components/ui";
 import { fmtDay } from "@/lib/date";
 import { lastAnswer, mockApi, readPdf, useMockHistory, type MockQuestion, type MockSession, type PdfFile } from "@/lib/mock/data";
-import { areasFor, externalPrompt, fmtClock, mockScorecard, overall, scorecard, yapPenalty, YAP_STEP_SECONDS } from "@/lib/mock/score";
+import { areasFor, externalPrompt, fmtClock, mockName, mockScorecard, overall, scorecard, yapPenalty, YAP_STEP_SECONDS } from "@/lib/mock/score";
 import { useDictation } from "@/lib/useDictation";
 
 const PDF_MAX_BYTES = 3_000_000;
@@ -178,7 +178,7 @@ function Setup({ onStart, onError }: { onStart: (m: { company: string; role: str
   const [context, setContext] = useState("");
   const [pdf, setPdf] = useState<PdfFile | null>(null);
   const [includeFit, setIncludeFit] = useState(true);
-  const ready = company.trim() && role.trim();
+  const ready = !!role.trim();
   const n = areasFor(includeFit).length;
 
   return (
@@ -191,17 +191,34 @@ function Setup({ onStart, onError }: { onStart: (m: { company: string; role: str
       </div>
       <div className="form">
         <label className="field">
-          <span className="label">Company</span>
+          <span className="label">Company (optional)</span>
           <input className="input" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Stripe" maxLength={100} />
         </label>
         <label className="field">
           <span className="label">Role</span>
           <input className="input" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Product Engineer" maxLength={100} />
         </label>
-        <label className="field full">
+        <div className="field full">
           <span className="label">Job description (PDF, optional)</span>
+          {/* The native file input is hidden; the box shows a button and the file's name, centered. */}
+          <label className="input file-pick">
+            <span className="btn btn-sm">{pdf ? "Change" : "Choose PDF"}</span>
+            <span className={`file-pick-name${pdf ? "" : " faint"}`}>{pdf?.name ?? "No file chosen"}</span>
+            {pdf && (
+              <button
+                type="button"
+                className="icon-btn file-pick-clear"
+                aria-label="Remove PDF"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPdf(null);
+                }}
+              >
+                ×
+              </button>
+            )}
           <input
-            className="input"
+            className="visually-hidden"
             type="file"
             accept="application/pdf"
             onChange={async (e) => {
@@ -217,9 +234,12 @@ function Setup({ onStart, onError }: { onStart: (m: { company: string; role: str
               } catch {
                 onError("Couldn't read that file.");
               }
+              // Picking the same file again after removing it should still fire onChange.
+              e.target.value = "";
             }}
           />
-        </label>
+          </label>
+        </div>
         <label className="field full">
           <span className="label">Or paste the job description / company values (optional)</span>
           <textarea className="input" rows={4} value={context} onChange={(e) => setContext(e.target.value)} maxLength={20_000} />
@@ -300,7 +320,7 @@ function HotMic({
       {head}
       <p className="mock-question">{question.question}</p>
       <span className="faint" style={{ fontSize: "var(--t-xs)" }}>
-        {s.company}, {s.role}
+        {mockName(s.company, s.role)}
       </span>
 
       <div className={`mock-clock num${over ? " over" : ""}`} aria-live="off">
@@ -488,7 +508,7 @@ function Summary({ s, onOpen, onNew }: { s: MockSession; onOpen: (index: number)
   return (
     <section className="mock-result">
       <div className="faint" style={{ fontSize: "var(--t-sm)" }}>
-        {s.company}, {s.role} · {dateOf(s)}
+        {mockName(s.company, s.role)} · {dateOf(s)}
       </div>
       <div className="card pad mock-score">
         <div className="mock-score-big num">
@@ -544,7 +564,7 @@ function Past({ rows, onOpen, onRemove }: { rows: MockSession[]; onOpen: (s: Moc
           <div key={s.id} className="mock-past">
             <button type="button" className="row" onClick={() => onOpen(s)}>
               <span className="row-label">
-                <span className="cell-main">{s.company}, {s.role}</span>
+                <span className="cell-main">{mockName(s.company, s.role)}</span>
                 <span className="cell-sub num">
                   {dateOf(s)} · {answered === s.questions.length ? "done" : `${answered} of ${s.questions.length} answered`}
                 </span>

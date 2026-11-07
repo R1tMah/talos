@@ -11,7 +11,7 @@ export const maxDuration = 300;
 const PDF_MAX_CHARS = 4_200_000;
 
 /**
- * A new mock: { company, role, includeFit, context?, pdf?: { name, data } } -> { sessionId }.
+ * A new mock: { company?, role, includeFit, context?, pdf?: { name, data } } -> { sessionId }.
  * The Architect writes every question in one call (one per area, plus "Why this company?"
  * when includeFit); they're saved in order. The PDF (base64) is read for this call only.
  */
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const includeFit = body.includeFit !== false;
   const pdfIn = body.pdf as { name?: unknown; data?: unknown } | null | undefined;
   const pdf = pdfIn && typeof pdfIn.data === "string" ? pdfIn.data.replace(/\s/g, "") : null;
-  if (!company || company.length > 100) return NextResponse.json({ error: "Company is required (up to 100 characters)." }, { status: 400 });
+  if (company.length > 100) return NextResponse.json({ error: "Company is too long (up to 100 characters)." }, { status: 400 });
   if (!role || role.length > 100) return NextResponse.json({ error: "Role is required (up to 100 characters)." }, { status: 400 });
   if (context.length > 20_000) return NextResponse.json({ error: "The pasted text is too long (up to 20,000 characters)." }, { status: 400 });
   if (pdf && (!pdf.startsWith("JVBER") || pdf.length > PDF_MAX_CHARS)) {

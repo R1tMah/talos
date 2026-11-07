@@ -8,16 +8,29 @@ import { Reminders } from "@/components/Reminders";
 import { IconChevron } from "@/components/Icons";
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
-import { fmtDay, fmtNum } from "@/lib/date";
+import { fmtDay, fmtNum, toISO } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
 import { FLAGS } from "@/lib/flags";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { useLongTermReminders } from "@/lib/generalReminders";
 import { useHomeStats } from "@/lib/homeStats";
+import { dueToday, useCurriculums } from "@/lib/learning/data";
 import { GROUPS } from "@/lib/tabGroups";
 import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
+import { CLASSES, dayBounds } from "@/lib/chess";
+import { useChess } from "@/lib/chessData";
 
 /** The current season's name and how many seasons there are, for the Long Term card. */
+/** How many future letters are sealed and when the next unlocks (dates only, never text). */
+function useSealedSummary() {
+  const [v, setV] = useState<{ sealed: number; next: string | null } | null>(null);
+  useEffect(() => {
+    createClient().from("future_letters").select("deliver_at").is("opened_at", null).order("deliver_at")
+      .then(({ data }) => data && setV({ sealed: data.length, next: data[0]?.deliver_at ?? null }));
+  }, []);
+  return v;
+}
+
 function useSeasonSummary() {
   const [v, setV] = useState<{ current: string | null; count: number } | null>(null);
   useEffect(() => {
@@ -59,7 +72,16 @@ export default function TabsPage() {
   const journals = GROUPS.journals.filter((j) => shown(j.key));
   const journalCount = stats ? journals.reduce((a, j) => a + stats.notes[j.key].n, 0) : null;
   // Occasional tabs, folded away under "Once in a while": Long Term (unless archived), Long-Term Reminders and the sites.
-  const occasional = (shown("longterm") ? 1 : 0) + 1 + ONCE_IN_A_WHILE.length;
+  const occasional = (shown("longterm") ? 1 : 0) + 2 + ONCE_IN_A_WHILE.length;
+  const letters = useSealedSummary();
+  // Learning: lessons due today across curriculums, and the soonest one coming up.
+  const learning = useCurriculums();
+  const due = learning.rows ? dueToday(learning.rows) : [];
+  // Chess: games played today (4 AM day) and the three ratings, live from chess.com.
+  const chess = useChess();
+  const chessDay = dayBounds();
+  const chessToday = chess.data ? chess.data.games.filter((g) => g.end >= chessDay.start && g.end < chessDay.end).length : null;
+  const nextLesson = learning.rows?.filter((r) => r.status === "active" && r.next?.date).sort((a, b) => a.next!.date!.localeCompare(b.next!.date!))[0];
 
   return (
     <main className="screen">
@@ -88,11 +110,11 @@ export default function TabsPage() {
             { label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
           ]}
         />
-        {/* LeetCode, System Design and AI-Assisted share one Interviews card; each part hides when its tab is archived. */}
-        {(shown("leetcode") || shown("sysdesign") || shown("aiassisted")) && (
+        {/* LeetCode, System Design, AI-Assisted and Behavioral share one Interviews card; each part hides when its tab is archived. */}
+        {(shown("leetcode") || shown("sysdesign") || shown("aiassisted") || shown("behavioral")) && (
         <StatCard
           title="Interviews"
-          href={`/tabs/interviews?tab=${shown("leetcode") ? "leetcode" : shown("sysdesign") ? "system-design" : "ai-assisted"}`}
+          href={`/tabs/interviews?tab=${shown("leetcode") ? "leetcode" : shown("sysdesign") ? "system-design" : shown("aiassisted") ? "ai-assisted" : "behavioral"}`}
           value={shown("leetcode") ? (lc ? lc.week : pending) : (mockTotal ?? pending)}
           unit={shown("leetcode") ? (lc ? "LC this wk" : undefined) : mockTotal != null ? (mockTotal === 1 ? "mock" : "mocks") : undefined}
           rows={[
@@ -149,6 +171,25 @@ export default function TabsPage() {
           rows={journals.map((j) => ({ label: j.label, value: stats ? stats.notes[j.key].n : "–" }))}
         />
         )}
+        {shown("learning") && (
+        <StatCard
+          title="Learning"
+          href="/tabs/learning"
+          value={learning.rows ? due.length : learning.failed ? "Failed" : "–"}
+          unit={learning.rows ? (due.length === 1 ? "lesson today" : "lessons today") : undefined}
+          rows={[
+            { label: "Next", value: nextLesson ? nextLesson.next!.title : "–" },
+            { label: "Active", value: learning.rows ? learning.rows.filter((r) => r.status === "active").length : "–" },
+          ]}
+        />
+        )}
+        <StatCard
+          title="Chess"
+          href="/tabs/chess"
+          value={chessToday ?? (chess.failed ? "Failed" : "–")}
+          unit={chessToday != null ? (chessToday === 1 ? "game today" : "games today") : undefined}
+          rows={CLASSES.map((c) => ({ label: c.label, value: chess.data?.stats[c.key].rating ?? "–" }))}
+        />
       </div>
 
       {/* Once in a while: occasional tabs, folded away below the daily ones. */}
@@ -175,6 +216,14 @@ export default function TabsPage() {
             value={longTerm.rows ? longTerm.rows.length : longTerm.failed ? "Failed" : "–"}
             unit={longTerm.rows ? (longTerm.rows.length === 1 ? "reminder" : "reminders") : undefined}
             rows={[{ label: "Next shows", value: nextUp ? fmtDay(nextUp.surface) : "–" }]}
+          />
+          <StatCard
+            compact
+            title="Future Letters"
+            href="/tabs/letters"
+            value={letters ? letters.sealed : "–"}
+            unit={letters ? "sealed" : undefined}
+            rows={[{ label: "Next unlocks", value: letters?.next ? fmtDay(toISO(new Date(letters.next))) : "–" }]}
           />
           {ONCE_IN_A_WHILE.map((t) => (
             <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />

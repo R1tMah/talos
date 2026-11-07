@@ -4,6 +4,7 @@
 // Writes that wait on the owner point at a server-side proposal by id, so the
 // client can choose one but can't change what it says.
 
+import type { EodNote, EodReminder, EodSpend } from "@/lib/eod";
 import type { Change } from "@/lib/types";
 
 export interface CardOption {
@@ -30,6 +31,14 @@ export type ChatCard =
   | { kind: "confirm"; title: string; changes: Change[]; proposalId: string; resolved?: "confirmed" | "cancelled" }
   | { kind: "missing"; title: string; missing: MissingField[]; proposalId: string; resolved?: "filled" | "cancelled" }
   | { kind: "failed"; detail?: string }
+  // End of day: what will be saved, waiting on Save EOD (lib/eod.ts, /api/eod).
+  // `reminders`: open ones due today or overdue, to tick off on the card.
+  | {
+      kind: "eod"; date: string; notes: EodNote[]; spending: EodSpend[]; reminders?: EodReminder[]; unclear?: string[];
+      proposalId: string; resolved?: "saved" | "cancelled";
+    }
+  // An EOD interview question. Asked by the chat page itself, never by the server.
+  | { kind: "ask"; text: string; step: number; of: number; resolved?: "answered" | "skipped" | "cancelled" }
   // After food is logged: that day's totals against its targets, read from the database (no model).
   | { kind: "left"; date: string; cal: number; calTarget: number; protein: number; proteinTarget: number };
 

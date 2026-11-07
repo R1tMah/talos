@@ -1,8 +1,7 @@
 // Watch's time-of-day order: which block is in effect, and the order it puts cards in.
 
 import { describe, expect, it } from "vitest";
-import { blockAt, inPrepWindow, orderByTime } from "@/lib/watch/schedule";
-import { isSessionDay } from "@/lib/watch/prep";
+import { blockAt, orderByTime } from "@/lib/watch/schedule";
 
 // Local times. Oct 23, 2026 is a Friday; Oct 24 a Saturday; Oct 26 a Monday.
 const at = (day: number, hhmm: string) => new Date(2026, 9, day, Number(hhmm.slice(0, 2)), Number(hhmm.slice(3)));
@@ -63,35 +62,11 @@ describe("order", () => {
   });
 });
 
-describe("System Design Prep on a session morning", () => {
-  const start = "2026-10-26"; // a Monday
-  const srcs = [...cards, { title: "System Design Prep", position: cards.length }];
-  const pin = (now: Date) => (s: { title: string }) =>
-    s.title === "System Design Prep" && inPrepWindow(now) && isSessionDay(start, `2026-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
-  const first = (now: Date) => orderByTime(srcs, now, pin(now))[0].title;
-
-  it("sessions are Mon, Wed, Fri and Sun for 4 weeks from the start", () => {
-    expect(["2026-10-26", "2026-10-28", "2026-10-30", "2026-11-01"].map((d) => isSessionDay(start, d))).toEqual([true, true, true, true]);
-    expect(["2026-10-27", "2026-10-29", "2026-10-31"].map((d) => isSessionDay(start, d))).toEqual([false, false, false]);
-    expect(isSessionDay(start, "2026-11-22")).toBe(true); // last Sunday, day 27
-    expect(isSessionDay(start, "2026-11-23")).toBe(false); // past the 4 cycles
-    expect(isSessionDay(start, "2026-10-25")).toBe(false); // before the start
-  });
-  it("is first 7:30 to 9:30 on a session day, above the train and the Brews", () => {
-    expect(first(new Date(2026, 9, 28, 7, 30))).toBe("System Design Prep");
-    expect(first(new Date(2026, 9, 28, 8, 45))).toBe("System Design Prep"); // commute: would be Green Line B
-    expect(first(new Date(2026, 10, 1, 9, 0))).toBe("System Design Prep"); // Sunday mock morning
-  });
-  it("isn't pinned outside the window or on off days", () => {
-    expect(first(new Date(2026, 9, 28, 9, 30))).toBe("Calendar");
-    expect(first(new Date(2026, 9, 27, 8, 45))).toBe("Green Line B");
-  });
-  it("goes to the very bottom on a day without a session, below NFL", () => {
-    const day = (now: Date) => `2026-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const order = (now: Date) =>
-      orderByTime(srcs, now, pin(now), (s) => s.title === "System Design Prep" && !isSessionDay(start, day(now))).map((s) => s.title);
-    expect(order(new Date(2026, 9, 27, 20, 30)).at(-1)).toBe("System Design Prep"); // Tuesday evening
-    expect(order(new Date(2026, 9, 31, 10, 30)).at(-1)).toBe("System Design Prep"); // Saturday late morning
-    expect(order(new Date(2026, 9, 28, 20, 30))[0]).toBe("System Design Prep"); // Wednesday evening: usual spot
+describe("pinned and sunk sources", () => {
+  const srcs = [...cards, { title: "Extra", position: cards.length }];
+  it("a pinned source goes first and a sunk one last, whatever the block", () => {
+    const now = new Date(2026, 9, 28, 8, 45); // weekday commute
+    expect(orderByTime(srcs, now, (s) => s.title === "Extra")[0].title).toBe("Extra");
+    expect(orderByTime(srcs, now, undefined, (s) => s.title === "Calendar").at(-1)!.title).toBe("Calendar");
   });
 });

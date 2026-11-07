@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { FormSheet, Sheet } from "@/components/FormSheet";
 import { IconChevron } from "@/components/Icons";
+import { MockModelSettings } from "@/components/MockModelSettings";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader, Segmented } from "@/components/ui";
 import { useArchivedTabs } from "@/lib/archivedTabs";
@@ -199,6 +200,13 @@ export default function SettingsPage() {
         <Row label="About Talos" href="/settings/about" />
         <Row label="Talos Improvements" href="/settings/talos" />
       </div>
+
+      <span className="label group-title">End of day</span>
+      <div className="card list">
+        <Row label="EOD questions" href="/settings/eod" />
+      </div>
+
+      <MockModelSettings />
 
       <span className="label group-title">Weekly email</span>
       <div className="card list">

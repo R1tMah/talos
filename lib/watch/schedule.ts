@@ -10,9 +10,6 @@ export interface Block {
   order: string[]; // card names, highest priority first
 }
 
-// System Design Prep (a temporary study plan) leads weekday evenings and sits near the
-// top on weekends; in the weekday daytime blocks it isn't listed, so it goes last.
-//
 // Weekdays (Mon–Fri): wake at 7:30, train 8–9:30 (Brews on the train), work 9–7,
 // train home 6–7:30, apply to jobs 7–8 on the train, then evening. Calendar leads
 // whenever not commuting; NFL is always last.
@@ -22,15 +19,15 @@ export const WEEKDAY: Block[] = [
   { name: "Work", from: "09:30", order: ["Calendar", "New-grad jobs", "Trail Blazers", "Weather", "Morning Brew", "Tech Brew", "Green Line B", "NFL"] },
   { name: "Commute home", from: "18:00", order: ["Green Line B", "Calendar", "New-grad jobs", "Trail Blazers", "Weather", "Morning Brew", "Tech Brew", "NFL"] },
   { name: "Applying", from: "19:00", order: ["New-grad jobs", "Green Line B", "Calendar", "Trail Blazers", "Weather", "Morning Brew", "Tech Brew", "NFL"] },
-  { name: "Evening", from: "20:00", order: ["System Design Prep", "Calendar", "New-grad jobs", "Trail Blazers", "Weather", "Morning Brew", "Tech Brew", "Green Line B", "NFL"] },
+  { name: "Evening", from: "20:00", order: ["Calendar", "New-grad jobs", "Trail Blazers", "Weather", "Morning Brew", "Tech Brew", "Green Line B", "NFL"] },
 ];
 
 // Weekends: no commute, calendar mostly ignored. Waking up late, 10 to noon is when the
 // Brews get read, so they lead then; the rest of the day they sit low.
-const WEEKEND_ORDER = ["Weather", "System Design Prep", "Trail Blazers", "New-grad jobs", "Green Line B", "Calendar", "Morning Brew", "Tech Brew", "NFL"];
+const WEEKEND_ORDER = ["Weather", "Trail Blazers", "New-grad jobs", "Green Line B", "Calendar", "Morning Brew", "Tech Brew", "NFL"];
 export const WEEKEND: Block[] = [
   { name: "Weekend", from: "00:00", order: WEEKEND_ORDER },
-  { name: "Late morning", from: "10:00", order: ["Morning Brew", "Tech Brew", "System Design Prep", "Weather", "Trail Blazers", "New-grad jobs", "Green Line B", "Calendar", "NFL"] },
+  { name: "Late morning", from: "10:00", order: ["Morning Brew", "Tech Brew", "Weather", "Trail Blazers", "New-grad jobs", "Green Line B", "Calendar", "NFL"] },
   { name: "Weekend", from: "12:00", order: WEEKEND_ORDER },
 ];
 
@@ -48,18 +45,9 @@ export function blockAt(now: Date): { block: Block; until: string | null } {
   return { block: blocks[i], until: next.name !== blocks[i].name ? next.from : null };
 }
 
-/** Morning study window: on a session day, the prep card goes above everything (news included). */
-export const PREP_WINDOW = { from: "07:30", to: "09:30" };
-
-export const inPrepWindow = (now: Date) => {
-  const m = now.getHours() * 60 + now.getMinutes();
-  return m >= minutes(PREP_WINDOW.from) && m < minutes(PREP_WINDOW.to);
-};
-
 /**
  * Sources in the current block's order; unlisted ones after, by their own position.
- * `pinned` sources go first, ahead of the block's order (e.g. prep on a session morning);
- * `sunk` ones go last, below everything (e.g. prep on a day without a session).
+ * `pinned` sources go first, ahead of the block's order; `sunk` ones go last, below everything.
  */
 export function orderByTime<T extends { title: string; position: number }>(
   sources: readonly T[], now: Date, pinned?: (s: T) => boolean, sunk?: (s: T) => boolean,

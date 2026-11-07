@@ -293,6 +293,126 @@ export type Database = {
           },
         ]
       }
+      curriculum_modules: {
+        Row: {
+          bullets: string[]
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          curriculum_id: string
+          diagram: string
+          diagram_caption: string | null
+          id: string
+          objective: string
+          opening_question: string
+          position: number
+          replaced_at: string | null
+          scheduled_date: string | null
+          title: string
+        }
+        Insert: {
+          bullets: string[]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          curriculum_id: string
+          diagram: string
+          diagram_caption?: string | null
+          id?: string
+          objective: string
+          opening_question: string
+          position: number
+          replaced_at?: string | null
+          scheduled_date?: string | null
+          title: string
+        }
+        Update: {
+          bullets?: string[]
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          curriculum_id?: string
+          diagram?: string
+          diagram_caption?: string | null
+          id?: string
+          objective?: string
+          opening_question?: string
+          position?: number
+          replaced_at?: string | null
+          scheduled_date?: string | null
+          title?: string
+        }
+        Relationships: []
+      }
+      curriculums: {
+        Row: {
+          cadence: number[]
+          context: string
+          created_at: string
+          deleted_at: string | null
+          error: string | null
+          goal: string | null
+          id: string
+          status: string
+          target_date: string | null
+          title: string | null
+          topic: string
+        }
+        Insert: {
+          cadence: number[]
+          context?: string
+          created_at?: string
+          deleted_at?: string | null
+          error?: string | null
+          goal?: string | null
+          id?: string
+          status?: string
+          target_date?: string | null
+          title?: string | null
+          topic: string
+        }
+        Update: {
+          cadence?: number[]
+          context?: string
+          created_at?: string
+          deleted_at?: string | null
+          error?: string | null
+          goal?: string | null
+          id?: string
+          status?: string
+          target_date?: string | null
+          title?: string | null
+          topic?: string
+        }
+        Relationships: []
+      }
+      eod_questions: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          position: number
+          prompt: string
+          target: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          position?: number
+          prompt: string
+          target: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          position?: number
+          prompt?: string
+          target?: string
+        }
+        Relationships: []
+      }
       exercises: {
         Row: {
           aliases: string[]
@@ -468,6 +588,39 @@ export type Database = {
           serving_amount?: number
           serving_unit?: string
           source?: string
+        }
+        Relationships: []
+      }
+      future_letters: {
+        Row: {
+          body: string
+          created_at: string
+          deliver_at: string
+          email_error: string | null
+          emailed_at: string | null
+          id: string
+          opened_at: string | null
+          written_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deliver_at: string
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          opened_at?: string | null
+          written_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deliver_at?: string
+          email_error?: string | null
+          emailed_at?: string | null
+          id?: string
+          opened_at?: string | null
+          written_at?: string
         }
         Relationships: []
       }
@@ -649,6 +802,30 @@ export type Database = {
           tab?: string | null
           text?: string
           tool_calls?: Json | null
+        }
+        Relationships: []
+      }
+      module_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          module_id: string
+          role: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          module_id: string
+          role: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          module_id?: string
+          role?: string
         }
         Relationships: []
       }
@@ -1221,6 +1398,7 @@ export type Database = {
           category: string
           created_at: string
           deleted_at: string | null
+          finance_transaction_id: string | null
           food_log_id: string | null
           id: string
           logical_date: string
@@ -1232,6 +1410,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          finance_transaction_id?: string | null
           food_log_id?: string | null
           id?: string
           logical_date: string
@@ -1243,6 +1422,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          finance_transaction_id?: string | null
           food_log_id?: string | null
           id?: string
           logical_date?: string
@@ -1408,6 +1588,154 @@ export type Database = {
           seen_at?: string | null
           title?: string
           tried_at?: string | null
+        }
+        Relationships: []
+      }
+      mock_answers: {
+        Row: {
+          content_score: number
+          created_at: string
+          duration_seconds: number
+          feedback: Json
+          final_score: number
+          id: string
+          model: string
+          question_id: string
+          target_time_seconds: number
+          transcription: string
+          yap_penalty: number
+        }
+        Insert: {
+          content_score: number
+          created_at?: string
+          duration_seconds: number
+          feedback: Json
+          final_score: number
+          id?: string
+          model: string
+          question_id: string
+          target_time_seconds: number
+          transcription: string
+          yap_penalty: number
+        }
+        Update: {
+          content_score?: number
+          created_at?: string
+          duration_seconds?: number
+          feedback?: Json
+          final_score?: number
+          id?: string
+          model?: string
+          question_id?: string
+          target_time_seconds?: number
+          transcription?: string
+          yap_penalty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mock_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "mock_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mock_questions: {
+        Row: {
+          area: string
+          created_at: string
+          id: string
+          model: string
+          position: number
+          question: string
+          rubric: Json
+          session_id: string
+          target_time_seconds: number
+        }
+        Insert: {
+          area: string
+          created_at?: string
+          id?: string
+          model: string
+          position: number
+          question: string
+          rubric: Json
+          session_id: string
+          target_time_seconds: number
+        }
+        Update: {
+          area?: string
+          created_at?: string
+          id?: string
+          model?: string
+          position?: number
+          question?: string
+          rubric?: Json
+          session_id?: string
+          target_time_seconds?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mock_questions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "mock_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mock_sessions: {
+        Row: {
+          company: string
+          context: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          include_fit: boolean
+          pdf_name: string | null
+          role: string
+        }
+        Insert: {
+          company: string
+          context?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          include_fit?: boolean
+          pdf_name?: string | null
+          role: string
+        }
+        Update: {
+          company?: string
+          context?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          include_fit?: boolean
+          pdf_name?: string | null
+          role?: string
+        }
+        Relationships: []
+      }
+      mock_settings: {
+        Row: {
+          architect_model: string
+          grader_model: string
+          id: number
+          updated_at: string
+        }
+        Insert: {
+          architect_model?: string
+          grader_model?: string
+          id?: number
+          updated_at?: string
+        }
+        Update: {
+          architect_model?: string
+          grader_model?: string
+          id?: number
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1688,6 +2016,18 @@ export type Database = {
     }
     Functions: {
       owner_today: { Args: never; Returns: string }
+      opened_letters: {
+        Args: never
+        Returns: {
+          body: string
+          deliver_at: string
+          email_error: string | null
+          emailed_at: string | null
+          id: string
+          opened_at: string
+          written_at: string
+        }[]
+      }
       add_application_reminder: {
         Args: {
           p_company: string
@@ -1980,6 +2320,18 @@ export type Database = {
           p_variant?: string
           p_weight_lb?: number
           p_workout_id: string
+        }
+        Returns: Json
+      }
+      spend_transaction: {
+        Args: {
+          p_amount: number
+          p_category?: string
+          p_date: string
+          p_note?: string
+          p_tool?: string
+          p_transaction_id: string
+          p_what: string
         }
         Returns: Json
       }

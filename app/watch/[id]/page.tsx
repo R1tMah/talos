@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { IconRefresh, IconSliders } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { ScreenHeader } from "@/components/ui";
@@ -10,7 +10,6 @@ import { JobsView } from "@/components/watch/Jobs";
 import { NewsletterView } from "@/components/watch/Newsletter";
 import { SourceForm } from "@/components/watch/SourceForm";
 import { Fallback, Headlines, SourceFooter, TeamView, TransitCard, WeatherCard } from "@/components/watch/Views";
-import { PrepView } from "@/components/watch/Prep";
 import { loadSource, watchApi, type WatchSource } from "@/lib/watch/data";
 import type { NewsSnap } from "@/lib/watch/types";
 
@@ -64,7 +63,7 @@ export default function WatchSourcePage() {
         stickyBack
         right={
           <>
-            {s.kind !== "transit" && s.kind !== "prep" && (
+            {s.kind !== "transit" && (
               <button type="button" className="icon-btn" aria-label="Refresh now" disabled={busy} onClick={refresh}>
                 <IconRefresh className={busy ? "spin" : undefined} />
               </button>
@@ -81,11 +80,6 @@ export default function WatchSourcePage() {
       {s.kind === "transit" && <TransitCard s={s} full />}
       {s.kind === "weather" && <WeatherCard s={s} full />}
       {s.kind === "calendar" && <CalendarCard s={s} full />}
-      {s.kind === "prep" && (
-        <Suspense>
-          <PrepView s={s} />
-        </Suspense>
-      )}
       {s.kind === "espn_team" && (
         <>
           <Fallback s={s} />
@@ -129,7 +123,7 @@ export default function WatchSourcePage() {
             setEditing(false);
             if (!(await watchApi.save(s.id, v))) return setNotice("Failed to save.");
             // New settings mean the stored snapshot is for the old ones: fetch again now.
-            if (s.kind !== "transit" && s.kind !== "prep" && JSON.stringify(v.config) !== JSON.stringify(s.config)) await refresh();
+            if (s.kind !== "transit" && JSON.stringify(v.config) !== JSON.stringify(s.config)) await refresh();
             else await reload();
           }}
         />

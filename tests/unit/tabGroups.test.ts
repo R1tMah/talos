@@ -26,7 +26,7 @@ describe("tab groups", () => {
   it("Journals is Personal, Work, Content (Long Term is its own page); Recruiting is Applications, Callbacks", () => {
     expect(GROUPS.journals.map((t) => t.tab)).toEqual(["personal", "work", "content"]);
     expect(GROUPS.recruiting.map((t) => t.tab)).toEqual(["applications", "callbacks"]);
-    expect(GROUPS.interviews.map((t) => t.tab)).toEqual(["leetcode", "system-design", "ai-assisted"]);
+    expect(GROUPS.interviews.map((t) => t.tab)).toEqual(["leetcode", "system-design", "ai-assisted", "behavioral"]);
   });
 
   it("reads only the group's own tab names from the URL", () => {

@@ -205,7 +205,7 @@ export function IngredientsSheet({
   );
 }
 
-// ---- Log a saved meal, optionally leaving some of it out -------------------------------
+// ---- Log a saved meal: less of something, more of something, or something extra ----------
 
 export function LogMealSheet({
   meals, foods, initialMealId, initialDate, onClose, onLog,
@@ -215,12 +215,19 @@ export function LogMealSheet({
   initialMealId?: string;
   initialDate: string;
   onClose: () => void;
-  onLog: (mealId: string, portions: number, date: string, minus: MealItem[]) => void;
+  /**
+   * `minus`: servings per portion left out (the saved-meal log subtracts them).
+   * `extra`: servings eaten on top, in total (more of an ingredient than the meal has,
+   * or a food that isn't in it); each is logged as its own food entry.
+   */
+  onLog: (mealId: string, portions: number, date: string, minus: MealItem[], extra: MealItem[]) => void;
 }) {
   const [mealId, setMealId] = useState(initialMealId ?? meals[0]?.id ?? "");
   const [portions, setPortions] = useState(1);
   const [date, setDate] = useState(initialDate);
   const [eaten, setEaten] = useState<Record<string, number>>({});
+  // Foods that aren't in the meal, added on top: servings per portion.
+  const [added, setAdded] = useState<MealItem[]>([]);
   const meal = meals.find((m) => m.id === mealId);
 
   if (!meal) {
@@ -232,11 +239,18 @@ export function LogMealSheet({
   }
 
   const eatenOf = (i: MealItem) => eaten[i.foodId] ?? i.servings;
-  const minus = meal.items.map((i) => ({ foodId: i.foodId, servings: +(i.servings - eatenOf(i)).toFixed(2) })).filter((m) => m.servings > 0);
+  const diffs = meal.items.map((i) => ({ foodId: i.foodId, servings: +(eatenOf(i) - i.servings).toFixed(2) }));
+  const minus = diffs.filter((d) => d.servings < 0).map((d) => ({ ...d, servings: -d.servings }));
+  // Per portion: more of an ingredient than the meal has, plus foods added on top.
+  const morePer = [...diffs.filter((d) => d.servings > 0), ...added.filter((a) => a.servings > 0)];
+  const extra = morePer.map((m) => ({ ...m, servings: +(m.servings * portions).toFixed(2) }));
   const less = sumItems(minus, foods);
+  const more = sumItems(morePer, foods);
   // Preview only; the database does the real math.
-  const cal = Math.max(0, Math.round((meal.cal - less.cal) * portions));
-  const p = Math.max(0, Math.round((meal.p - less.p) * portions * 10) / 10);
+  const cal = Math.max(0, Math.round((meal.cal - less.cal + more.cal) * portions));
+  const p = Math.max(0, Math.round((meal.p - less.p + more.p) * portions * 10) / 10);
+  const addable = [...foods.values()].filter((f) => !meal.items.some((i) => i.foodId === f.id) && !added.some((a) => a.foodId === f.id));
+  const changed = minus.length > 0 || morePer.length > 0 || added.length > 0;
 
   return (
     <Sheet title="Log saved meal" onClose={onClose}>
@@ -249,6 +263,7 @@ export function LogMealSheet({
             onChange={(e) => {
               setMealId(e.target.value);
               setEaten({});
+              setAdded([]);
             }}
           >
             {meals.map((m) => (
@@ -272,8 +287,8 @@ export function LogMealSheet({
         <>
           <div className="section-title" style={{ margin: "var(--s-4) 0 var(--s-1)" }}>
             <span className="label">What you had</span>
-            {minus.length > 0 && (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEaten({})}>
+            {changed && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => (setEaten({}), setAdded([]))}>
                 Reset
               </button>
             )}
@@ -286,20 +301,52 @@ export function LogMealSheet({
                 <div key={i.foodId} className={`ing-row${v === 0 ? " removed" : ""}`}>
                   <span className="ing-name">
                     <span className="cell-main">{f?.name ?? "Unknown food"}</span>
-                    <span className="cell-sub num">of {g(i.servings)}</span>
+                    <span className="cell-sub num">
+                      {v > i.servings ? `${g(i.servings)} in the meal, +${g(+(v - i.servings).toFixed(2))} extra` : `of ${g(i.servings)}`}
+                    </span>
                   </span>
                   <Stepper
                     label={`servings of ${f?.name ?? "food"}`}
                     value={v}
-                    max={i.servings}
                     step={i.servings % 1 === 0 ? 1 : 0.5}
                     onChange={(n) => setEaten({ ...eaten, [i.foodId]: n })}
                   />
                 </div>
               );
             })}
+            {added.map((a) => {
+              const f = foods.get(a.foodId);
+              return (
+                <div key={a.foodId} className={`ing-row${a.servings === 0 ? " removed" : ""}`}>
+                  <span className="ing-name">
+                    <span className="cell-main">{f?.name ?? "Unknown food"}</span>
+                    <span className="cell-sub num">extra{f ? `, ${fmtNum(f.cal)} cal per ${g(f.amount)} ${f.unit}` : ""}</span>
+                  </span>
+                  <Stepper
+                    label={`servings of ${f?.name ?? "food"}`}
+                    value={a.servings}
+                    step={0.5}
+                    onChange={(n) => setAdded(added.map((x) => (x.foodId === a.foodId ? { ...x, servings: n } : x)))}
+                  />
+                </div>
+              );
+            })}
           </div>
         </>
+      )}
+
+      {addable.length > 0 && (
+        <label className="field" style={{ marginTop: "var(--s-3)" }}>
+          <span className="label">Add something else</span>
+          <select className="input" value="" onChange={(e) => e.target.value && setAdded([...added, { foodId: e.target.value, servings: 1 }])}>
+            <option value="">Choose a food</option>
+            {addable.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       <div className="totals-line num" style={{ marginTop: "var(--s-2)" }}>
@@ -309,7 +356,7 @@ export function LogMealSheet({
         </span>
       </div>
       <div className="sheet-actions">
-        <button type="button" className="btn btn-primary" disabled={!date} onClick={() => onLog(meal.id, portions, date, minus)}>
+        <button type="button" className="btn btn-primary" disabled={!date} onClick={() => onLog(meal.id, portions, date, minus, extra)}>
           Log
         </button>
       </div>

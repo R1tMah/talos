@@ -165,7 +165,7 @@ Money spent with an amount ("$14 chipotle", "uber 18.40") is log_spending. If wh
 If nothing fits, or you would be guessing, call no_match with your best readings. Always respond with tool calls only.`;
 
 /** Records the call's token counts for Settings > API usage. Never fails the chat. */
-async function logUsage(ctx: Ctx, res: Anthropic.Message) {
+export async function logUsage(ctx: Pick<Ctx, "db">, res: Anthropic.Message) {
   try {
     const u = res.usage;
     const { error } = await ctx.db.from("api_usage").insert({
@@ -182,7 +182,7 @@ async function logUsage(ctx: Ctx, res: Anthropic.Message) {
 }
 
 let client: Anthropic | null = null;
-const anthropic = () => (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
+export const anthropic = () => (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
 
 export async function callModel(ctx: Ctx): Promise<Call[] | null> {
   const foodName = new Map(ctx.foods.map((f) => [f.id, f.name]));

@@ -8,6 +8,10 @@ import { createClient } from "@/utils/supabase/client";
 // 1.25x and cache reads 0.1x the input rate (the app doesn't use prompt caching today).
 export const PRICES: Record<string, { input: number; output: number; longAbove?: number; long?: { input: number; output: number } }> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5, longAbove: 100_000, long: { input: 0.5, output: 2.5 } },
+  // Learning's Architect (lib/learning/architect.ts).
+  "claude-sonnet-5-5": { input: 2, output: 10 },
+  // Behavioral mocks, when Opus is picked for a role in Settings.
+  "claude-opus-5-5": { input: 4, output: 20 },
 };
 const CACHE_WRITE = 1.25;
 const CACHE_READ = 0.1;

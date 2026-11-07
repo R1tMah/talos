@@ -105,14 +105,14 @@ function dateFor(input: Input, today: string) {
 }
 
 /** The owner's own words for `s`, or null if they don't appear in the message. */
-function verbatim(s: unknown, text: string): string | null {
+export function verbatim(s: unknown, text: string): string | null {
   if (typeof s !== "string" || !s.trim()) return null;
   const i = text.toLowerCase().indexOf(s.toLowerCase());
   return i >= 0 ? text.slice(i, i + s.length) : null;
 }
 
 /** True when `n` is literally one of the numbers the owner typed. */
-function typed(n: unknown, text: string): n is number {
+export function typed(n: unknown, text: string): n is number {
   if (typeof n !== "number" || !Number.isFinite(n)) return false;
   return (text.match(/\d+(?:\.\d+)?/g) ?? []).some((t) => Number(t) === n);
 }
@@ -344,6 +344,41 @@ const logSpending: ToolDef = {
     const out = await rpc(db, "log_spending", { p_date: r.date, p_amount: r.amount, p_what: r.what, p_category: r.category, p_tool: "log_spending" });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     return { status: "saved", label: `Spent $${num(out.row.amount).toFixed(2)}, ${String(out.row.what)} (${String(out.row.category)})`, actionId: out.action_id ?? null };
+  },
+};
+
+// ---- End of day (EOD) ------------------------------------------------------------------
+// Never offered to the model: /api/eod builds the proposal from the owner's answers, and
+// "Save EOD" commits it here, every entry in one database transaction (save_eod).
+
+const NOTE_LABEL: Record<string, string> = { journal: "Work journal", personal: "Personal journal", content: "Content idea", talos: "Talos improvement" };
+const clip = (s: string) => (s.length > 60 ? `${s.slice(0, 60)}…` : s);
+type EodSaved = { status?: string; saved?: { table: string; row: Record<string, unknown>; action_id: string | null }[] };
+
+const eodLabel = (x: NonNullable<EodSaved["saved"]>[number]) => {
+  if (x.table === "notes") return `${NOTE_LABEL[String(x.row.kind)] ?? "Note"}: ${clip(String(x.row.body))}`;
+  if (x.table === "reminders") return `Done: ${clip(String(x.row.body))}`;
+  return `Spent $${num(x.row.amount).toFixed(2)}, ${String(x.row.what)} (${String(x.row.category)})`;
+};
+
+const saveEod: ToolDef = {
+  name: "save_eod",
+  display: "End of day",
+  // The reminders ticked on the card ("done": comma-separated ids). Only ones the card
+  // offered count, so a request can't complete some other reminder.
+  fill(r, values) {
+    const offered = new Set(((r.reminders ?? []) as { id: string }[]).map((x) => x.id));
+    const done = String(values.done ?? "").split(",").map((s) => s.trim()).filter((id) => offered.has(id));
+    return { ...r, done: [...new Set(done)] };
+  },
+  async commit(r, db) {
+    const out = (await rpc(db, "save_eod", {
+      p_date: r.date, p_notes: r.notes ?? [], p_spending: r.spending ?? [], p_done: r.done ?? [], p_tool: "eod",
+    })) as EodSaved | null;
+    if (out?.status === "empty") return { status: "failed", detail: "Nothing to save: no entries and no reminders ticked." };
+    if (out?.status !== "saved" || !out.saved?.length) return { status: "failed", detail: "Nothing was saved. Try again." };
+    const cards = out.saved.map((x) => ({ label: eodLabel(x), actionId: x.action_id ?? null }));
+    return { status: "saved", label: cards[0].label, actionId: cards[0].actionId, also: cards.slice(1) };
   },
 };
 
@@ -2342,7 +2377,7 @@ export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
     addReminder, addLongTermReminder, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
-    addSubscription, cancelSubscription, logSpending,
+    addSubscription, cancelSubscription, logSpending, saveEod,
   ].map((t) => [t.name, t]),
 );
 

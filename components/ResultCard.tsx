@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ChatCard } from "@/lib/agent/cards";
+import { targetLabel } from "@/lib/eod";
 import type { ChatTab } from "@/lib/tabs";
 import { fmtDay, fmtNum, logicalToday } from "@/lib/date";
 import { ChangeList } from "./ChangeList";
@@ -20,6 +21,11 @@ export interface CardHandlers {
   pickTab: (tab: ChatTab) => void;
   /** Tabs that can be picked (not archived). */
   tabs: { key: ChatTab; label: string }[];
+  /** The open EOD question: skip it, or stop the interview. Absent on answered ones. */
+  eodSkip?: () => void;
+  eodStop?: () => void;
+  /** Save EOD, with the ids of the reminders ticked on the card. */
+  saveEod: (doneReminderIds: string[]) => void;
   dismiss: () => void;
 }
 
@@ -62,6 +68,33 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
 
     case "unsure":
       return <UnsureCard card={card} on={on} />;
+
+    // An EOD question, asked by the chat page one at a time.
+    case "ask":
+      return (
+        <div className={`rc${card.resolved ? " resolved" : ""}`}>
+          <span className="label">
+            End of day · {card.step} of {card.of}
+          </span>
+          <span className="rc-text">{card.text}</span>
+          {card.resolved
+            ? card.resolved !== "answered" && <Done>{card.resolved === "skipped" ? "Skipped" : "Stopped"}</Done>
+            : on?.eodSkip && (
+                <div className="rc-actions">
+                  <button type="button" className="btn btn-sm" onClick={on.eodSkip}>
+                    Skip
+                  </button>
+                  <button type="button" className="btn btn-sm" onClick={on.eodStop}>
+                    Stop
+                  </button>
+                </div>
+              )}
+        </div>
+      );
+
+    // Everything the EOD answers will save, nothing written until Save EOD.
+    case "eod":
+      return <EodCard card={card} on={on} />;
 
     case "warning":
       return (
@@ -247,6 +280,88 @@ function UnsureCard({ card, on }: { card: Extract<ChatCard, { kind: "unsure" }>;
                 </button>
               ))}
           </>
+        )
+      )}
+    </div>
+  );
+}
+
+/** "Due today", "Due Nov 4" (overdue), or nothing for an undated reminder. */
+const dueText = (due: string | null) => (!due ? "" : due === logicalToday() ? "Due today" : `Due ${fmtDay(due)}`);
+
+/**
+ * End of day: everything that will be saved, plus the open reminders due today or overdue
+ * to tick off. Nothing is written until Save EOD, which saves the entries and marks the
+ * ticked reminders done together.
+ */
+function EodCard({ card, on }: { card: Extract<ChatCard, { kind: "eod" }>; on?: CardHandlers }) {
+  const [done, setDone] = useState<ReadonlySet<string>>(new Set());
+  const reminders = card.reminders ?? [];
+  const toggle = (id: string) =>
+    setDone((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const nothing = !card.notes.length && !card.spending.length && done.size === 0;
+  return (
+    <div className={`rc${card.resolved ? " resolved" : ""}`}>
+      <span className="label">End of day · {fmtDay(card.date)}</span>
+      {(card.notes.length > 0 || card.spending.length > 0) && (
+        <div className="eod-lines">
+          {card.notes.map((n, i) => (
+            <div key={`n${i}`} className="eod-line">
+              <span className="eod-key">{targetLabel(n.kind)}</span>
+              <span className="eod-val">{n.body}</span>
+            </div>
+          ))}
+          {card.spending.map((s, i) => (
+            <div key={`s${i}`} className="eod-line">
+              <span className="eod-key">Spending</span>
+              <span className="eod-val num">
+                ${s.amount.toFixed(2)} · {s.what} <span className="faint">({s.category})</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {reminders.length > 0 && (
+        <div className="eod-lines">
+          <span className="eod-key">Reminders: tick what got done</span>
+          {reminders.map((r) => (
+            <label key={r.id} className="eod-check">
+              <input
+                type="checkbox"
+                checked={done.has(r.id)}
+                disabled={!!card.resolved || !on}
+                onChange={() => toggle(r.id)}
+              />
+              <span className="eod-val">
+                {r.body}
+                {r.due && <span className="faint eod-due"> · {dueText(r.due)}</span>}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+      {card.unclear?.map((u, i) => (
+        <span key={`u${i}`} className="rc-detail">
+          {u}
+        </span>
+      ))}
+      {card.resolved ? (
+        <Done>{card.resolved === "saved" ? "Saved" : "Cancelled"}</Done>
+      ) : (
+        on && (
+          <div className="rc-actions">
+            <button type="button" className="btn btn-primary" disabled={nothing} onClick={() => on.saveEod([...done])}>
+              Save EOD
+            </button>
+            <button type="button" className="btn" onClick={on.cancel}>
+              Cancel
+            </button>
+          </div>
         )
       )}
     </div>

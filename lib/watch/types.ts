@@ -1,7 +1,7 @@
 // Shapes shared by the Watch adapters (server) and the Watch screens (client).
 // A snapshot is exactly what a source returned, trimmed to what the tab shows.
 
-export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter" | "calendar" | "prep";
+export type WatchKind = "espn_team" | "espn_news" | "headlines" | "jobs" | "weather" | "transit" | "newsletter" | "calendar";
 
 // ---- Settings, one shape per adapter ----------------------------------------------------
 
@@ -187,6 +187,5 @@ export function fallbackLink(kind: WatchKind, config: Record<string, unknown>): 
     case "transit": return `https://www.mbta.com/schedules/${c.route}/line`;
     case "newsletter": return c.url || "https://www.morningbrew.com/issues/latest";
     case "calendar": return "https://calendar.google.com/calendar/r";
-    case "prep": return "/watch";
   }
 }

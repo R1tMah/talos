@@ -14,6 +14,8 @@ export const ARCHIVABLE = [
   { key: "sysdesign", label: "System Design Mocks", href: "/tabs/interviews?tab=system-design" },
   { key: "aiassisted", label: "AI-Assisted Mocks", href: "/tabs/interviews?tab=ai-assisted" },
   { key: "longterm", label: "Long Term", href: "/tabs/long-term" }, // under "Once in a while" on Tabs
+  { key: "learning", label: "Learning", href: "/tabs/learning" },
+  { key: "behavioral", label: "Behavioral Mocks", href: "/tabs/interviews?tab=behavioral" },
 ] as const;
 
 export type TabKey = (typeof ARCHIVABLE)[number]["key"];
@@ -28,8 +30,8 @@ export const CHAT_TABS = [
   { key: "weight", label: "Weight" },
   { key: "nutrition", label: "Nutrition" },
   // System Design and AI-Assisted Mocks stay out of chat: their entries are long summaries pasted into the tab.
-  // Long Term stays out too: no chat tool writes seasons yet.
-  ...ARCHIVABLE.filter((t) => t.key !== "sysdesign" && t.key !== "aiassisted" && t.key !== "longterm").map(({ key, label }) => ({ key, label })),
+  // Long Term stays out too: no chat tool writes seasons yet. Learning too: curriculums start from its form for now.
+  ...ARCHIVABLE.filter((t) => t.key !== "sysdesign" && t.key !== "aiassisted" && t.key !== "longterm" && t.key !== "learning" && t.key !== "behavioral").map(({ key, label }) => ({ key, label })),
   { key: "subscriptions", label: "Subscriptions" },
   { key: "spending", label: "Spending" },
 ] as const;

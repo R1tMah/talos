@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { TOOLS } from "@/lib/agent/tools";
-import { monthLabel, monthSummary, shiftMonth, type Spend } from "@/lib/spending";
+import { monthLabel, monthSummary, shiftMonth, spendCategoryFor, type Spend } from "@/lib/spending";
 import { ctxFor, fakeDb } from "../helpers/fakeDb";
 
 const spend = (date: string, amount: number, category: Spend["category"], what = "x"): Spend =>
@@ -126,4 +126,19 @@ describe("priced saved meals", () => {
     );
     expect(r).toMatchObject({ status: "ready", resolved: { spend: false } });
   });
+});
+
+describe("a bank transaction's category, for prefilling Spending", () => {
+  it.each([
+    ["Food and drink", "Food & drink"],
+    ["Groceries", "Groceries"],
+    ["Transportation", "Transport"],
+    ["Travel", "Transport"],
+    ["Entertainment", "Entertainment"],
+    ["Medical", "Health"],
+    ["Personal care", "Health"],
+    ["General merchandise", "Shopping"],
+    ["Rent and utilities", "Other"],
+    [null, "Other"],
+  ])("%s -> %s", (bank, want) => expect(spendCategoryFor(bank)).toBe(want));
 });

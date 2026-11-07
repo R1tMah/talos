@@ -11,7 +11,6 @@ import { isStale, watchApi, type WatchSource } from "@/lib/watch/data";
 import { fallbackLink, type Game, type PlayerSnap, type NewsSnap, type TeamSnap, type TransitConfig, type TransitSnap, type WeatherDay, type WeatherSnap } from "@/lib/watch/types";
 import { CalendarCard } from "./Calendar";
 import { NewsletterCard } from "./Newsletter";
-import { PrepCard } from "./Prep";
 import { ago, clock, dayClock, deg, hostOf, hourLabel, isNight, localClock, localHour, shortDate, sky } from "./format";
 import { WeatherIcon } from "./WeatherIcon";
 
@@ -49,8 +48,8 @@ export function Fallback({ s }: { s: WatchSource }) {
 
 /** Footer on a source's page: when it last updated, and the original. */
 export function SourceFooter({ s }: { s: WatchSource }) {
-  // Live (transit) or not fetched at all (prep): nothing to say about updates.
-  if (s.kind === "transit" || s.kind === "prep") return null;
+  // Live (transit): nothing to say about updates.
+  if (s.kind === "transit") return null;
   return (
     <p className="watch-foot faint">
       Updated {ago(s.fetchedAt)}{s.error ? ` · last try failed: ${s.error}` : ""} ·{" "}
@@ -487,7 +486,6 @@ export function WatchCard({ s }: { s: WatchSource }) {
     case "jobs": return <JobsCard s={s} />;
     case "newsletter": return <NewsletterCard s={s} />;
     case "calendar": return <CalendarCard s={s} />;
-    case "prep": return <PrepCard s={s} />;
     default: return null;
   }
 }

@@ -15,6 +15,8 @@ const TABLES = [
   "leetcode_log", "applications", "application_reminders", "reminders", "callbacks", "notes",
   "runs", "workouts", "sets", "exercises", "plans", "plan_exercises",
   "finance_transactions", "checking_balances", "vanguard_holdings", "net_worth_snapshots", "spending",
+  "curriculums", "curriculum_modules", "module_messages",
+  "mock_sessions", "mock_questions", "mock_answers",
 ] as const satisfies readonly (keyof Database["public"]["Tables"])[];
 
 const PAGE = 1000; // PostgREST returns at most this many rows per request

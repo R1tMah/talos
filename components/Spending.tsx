@@ -15,7 +15,8 @@ import { fmtMoney } from "@/lib/finances";
 import { ROLLING_DAYS, SPENDING_SINCE, SPEND_CATEGORIES, monthLabel, monthOf, monthSummary, rollingSummary, shiftMonth, type Spend, type SpendCategory } from "@/lib/spending";
 import { spendingApi, useSpending, type SpendInput, type WriteResult } from "@/lib/spendingData";
 
-const FIELDS: Field[] = [
+/** The spending form, shared with Finances > Accounts' "add to spending" button. */
+export const SPEND_FIELDS: Field[] = [
   { name: "amount", label: "Amount ($)", type: "number", step: "0.01" },
   { name: "what", label: "What", placeholder: "Chipotle, Uber home, textbook…", full: true },
   { name: "category", label: "Category", type: "select", options: [...SPEND_CATEGORIES] },
@@ -25,13 +26,16 @@ const FIELDS: Field[] = [
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-const toInput = (v: Record<string, unknown>): SpendInput => ({
+export const toSpendInput = (v: Record<string, unknown>): SpendInput => ({
   date: v.date as string,
   amount: Math.round((v.amount as number) * 100) / 100,
   what: String(v.what).trim(),
   category: v.category as SpendCategory,
   note: String(v.note ?? "").trim() || null,
 });
+
+export const checkSpend = (v: Record<string, unknown>) =>
+  !finite(v.amount) || v.amount <= 0 ? "Amount must be more than 0." : !String(v.what ?? "").trim() ? "Say what it was." : !v.date ? "Date is required." : null;
 
 export function SpendingView() {
   const { rows, failed, reload } = useSpending();
@@ -151,11 +155,9 @@ export function SpendingView() {
       {sheet && (
         <FormSheet
           title={sheet === "new" ? "Add purchase" : "Edit purchase"}
-          fields={FIELDS}
+          fields={SPEND_FIELDS}
           confirm={sheet !== "new"}
-          validate={(v) =>
-            !finite(v.amount) || v.amount <= 0 ? "Amount must be more than 0." : !String(v.what ?? "").trim() ? "Say what it was." : !v.date ? "Date is required." : null
-          }
+          validate={checkSpend}
           initial={
             sheet === "new"
               ? { amount: "", what: "", category: "Food & drink", date: isNow ? today : `${month}-01`, note: "" }
@@ -164,7 +166,7 @@ export function SpendingView() {
           onClose={() => setSheet(null)}
           onDelete={sheet !== "new" ? () => (run(spendingApi.remove(sheet.id)), setSheet(null)) : undefined}
           onSubmit={(v) => {
-            run(sheet === "new" ? spendingApi.log(toInput(v)) : spendingApi.update(sheet.id, toInput(v)));
+            run(sheet === "new" ? spendingApi.log(toSpendInput(v)) : spendingApi.update(sheet.id, toSpendInput(v)));
             setSheet(null);
           }}
         />

@@ -262,6 +262,7 @@ function Nutrition() {
           </div>
 
           <SummaryStrip
+            grid
             items={[
               { label: isThisWeek ? "Week so far" : `Week of ${fmtDay(ws)}`, value: fmtNum(weekTotal), unit: "kcal" },
               { label: "Days logged", value: weekRows.length, sub: `of ${weekLen}` },
@@ -281,7 +282,6 @@ function Nutrition() {
             onRowClick={(r) => setSheet(r.portions != null ? { kind: "portions", row: r } : { kind: "typed", row: r })}
             onDelete={(r) => run(nutritionApi.removeEntry(r.id))}
             columns={[
-              { key: "time", label: "Time", width: "44px", render: (r) => <span className="faint">{r.time}</span> },
               {
                 key: "name", label: "Food", width: "1fr",
                 render: (r) => (
@@ -300,25 +300,33 @@ function Nutrition() {
           />
 
           {days.length > 0 && (
-            <>
-              <SectionTitle>Logged days</SectionTitle>
-              <DataTable
-                rows={days.map((d) => ({ ...d, id: d.date }))}
-                onRowClick={(r) => setDate(r.date)}
-                columns={[
-                  { key: "date", label: "Day", width: "1fr", render: (r) => `${fmtDow(r.date)} ${fmtDay(r.date)}` },
-                  {
-                    key: "cal", label: "kcal", width: "96px", align: "right",
-                    render: (r) => (
-                      <span className="num">
-                        {fmtNum(r.cal)} <span className="faint">/ {fmtNum(r.calTarget)}</span>
-                      </span>
-                    ),
-                  },
-                  { key: "p", label: "P", width: "48px", align: "right", render: (r) => <span className="muted">{grams(r.p)}</span> },
-                ]}
-              />
-            </>
+            <details className="card archived-acc">
+              <summary>
+                <span className="label">Logged days ({days.length})</span>
+                <IconChevron />
+              </summary>
+              {days.map((d) => (
+                <button
+                  key={d.date}
+                  type="button"
+                  className="row"
+                  aria-current={d.date === date ? "date" : undefined}
+                  onClick={() => {
+                    setDate(d.date);
+                    // Back up to that day's totals and entries.
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                >
+                  <span className="row-label" style={d.date === date ? { color: "var(--accent)", fontWeight: 600 } : undefined}>
+                    {fmtDow(d.date)} {fmtDay(d.date)}
+                  </span>
+                  <span className="num" style={{ fontSize: "var(--t-sm)" }}>
+                    {fmtNum(d.cal)} <span className="faint">/ {fmtNum(d.calTarget)}</span>
+                  </span>
+                  <span className="num muted" style={{ fontSize: "var(--t-sm)", minWidth: 44, textAlign: "right" }}>{grams(d.p)} g</span>
+                </button>
+              ))}
+            </details>
           )}
         </>
       )}
@@ -490,11 +498,18 @@ function Nutrition() {
           initialMealId={sheet.meal?.id}
           initialDate={date}
           onClose={() => setSheet(null)}
-          onLog={(mealId, portions, d, minus) => {
+          onLog={async (mealId, portions, d, minus, extra) => {
             const meal = meals.find((m) => m.id === mealId)!;
             const spent = meal.price == null ? "" : ` Added ${money(Math.max(0.01, Math.round(meal.price * portions * 100) / 100))} to spending.`;
-            run(nutritionApi.logMeal(d, mealId, portions, minus), `Logged ${meal.name} to ${fmtDay(d)}.${spent}`);
             setSheet(null);
+            // Extras (more of an ingredient, or a food not in the meal) are their own entries, each with its own Undo.
+            const more = extra.length ? ` Plus ${extra.map((x) => `${grams(x.servings)}× ${foodById.get(x.foodId)?.name ?? "food"}`).join(", ")}.` : "";
+            await run(nutritionApi.logMeal(d, mealId, portions, minus), `Logged ${meal.name} to ${fmtDay(d)}.${more}${spent}`);
+            for (const x of extra) {
+              const r = await nutritionApi.logFood(d, x.foodId, x.servings);
+              if (r.status !== "saved") setNotice({ text: `Logged ${meal.name}, but not the extra ${foodById.get(x.foodId)?.name ?? "food"}.`, ok: false });
+            }
+            if (extra.length) await reload();
           }}
         />
       )}

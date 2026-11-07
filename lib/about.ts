@@ -34,14 +34,16 @@ export const ABOUT_TABS: AboutTab[] = [
   { key: "nutrition", label: "Nutrition", where: "Tabs", about: "Calories and protein per day against targets set in Settings. Log one-off foods, saved meals (with ingredients, and an optional price that also logs spending), or foods from the library." },
   { key: "workout", label: "Workout & Lifts", where: "Tabs", about: "Live workout logging with a rest timer, and lift progression charts (estimated one-rep max).", off: true },
   { key: "leetcode", label: "LeetCode", where: "Tabs > Interviews", about: "Problems worked on, with result, hints used, minutes, notes, difficulty and topic, weekly counts, and a redo queue for ones to try again." },
-  { key: "sysdesign", label: "System Design Mocks", where: "Tabs > Interviews", about: "Summaries of mock system design rounds, pasted in after each one, plus the day's session from the System Design prep plan on Watch." },
+  { key: "sysdesign", label: "System Design Mocks", where: "Tabs > Interviews", about: "Summaries of mock system design rounds, pasted in after each one." },
   { key: "aiassisted", label: "AI-Assisted Mocks", where: "Tabs > Interviews", about: "Summaries of mock AI-assisted coding rounds (coding with an AI assistant allowed)." },
+  { key: "behavioral", label: "Behavioral Mocks", where: "Tabs > Interviews", about: "Full mock behavioral rounds. Give the company, role and the job description (PDF or pasted); an Architect model writes one tailored question for each of six areas (conflict, failure, ambiguity, leadership, ownership, teamwork), plus \"Why this company?\" if you want it, each with a rubric and a target length. Answer each out loud with the mic while a clock counts up; a Grader model grades the content, and the app takes off a Yap Penalty (1 point per full 15 seconds over the target, at most 3). The summary has the overall score; copy the full scorecard as Markdown, or any question's second-opinion prompt for another model. Which model plays each role is set in Settings." },
   { key: "runs", label: "Runs", where: "Tabs", about: "Distance, time and pace for each run, with weekly mileage." },
   { key: "applications", label: "Applications", where: "Tabs > Recruiting", about: "Job applications sent and their status, plus a list of postings to apply to, with reminders." },
   { key: "callbacks", label: "Callbacks", where: "Tabs > Recruiting", about: "Recruiter calls, online assessments and interviews, with scores and outcomes." },
   { key: "personal", label: "Personal Journal", where: "Tabs > Journals", about: "Personal journal entries in the owner's own words." },
   { key: "journal", label: "Work Journal", where: "Tabs > Journals", about: "Notes on work: what was done, learned, and decided." },
   { key: "content", label: "Content", where: "Tabs > Journals", about: "Ideas for content to make." },
+  { key: "learning", label: "Learning", where: "Tabs", about: "AI-built curriculums. Give a topic, where you're starting from, which days you'll study and optionally a finish-by date (\"6 weeks\" or \"Dec 20\"); an Architect model (Claude Sonnet 5.5) writes the modules, each with a diagram and 3 or 4 bullets. Each lesson is a Socratic chat with a Tutor model (Claude Haiku 5.5) that marks the module complete once you've shown you get it (or use Mark done). Recalibrate rewrites the rest more gently when you're stuck. Missed days shift the schedule (with a finish-by date it shows whether you're on track); today's lesson shows at the top of Watch." },
   { key: "longterm", label: "Long Term", where: "Tabs > Once in a while", about: "Seasons (a semester, a summer, a break), each with its plan written at the start and dated updates and reviews along the way." },
   { key: "reminders", label: "Long-Term Reminders", where: "Tabs > Once in a while", about: "Things to remember months out. Each waits here until its \"show from\" day, then joins the reminders banner." },
   { key: "portfolio", label: "Portfolio", where: "Tabs > Once in a while", about: "Edits the public portfolio site's projects, timeline and experience cards; saves go live after the site rebuilds." },
@@ -63,7 +65,6 @@ export const WATCH_KINDS: Record<WatchKind, { label: string; about: string }> = 
   transit: { label: "Train departures", about: "live departures for the commute, switching direction at a set time of day, with alerts" },
   newsletter: { label: "Newsletter", about: "the latest issue of a newsletter, read from its public page, with a markets card" },
   calendar: { label: "Google Calendar", about: "upcoming events from chosen Google calendars" },
-  prep: { label: "Study plan", about: "a day-by-day study plan (like System Design prep) with today's session and progress" },
 };
 
 export interface AboutWatchTab {

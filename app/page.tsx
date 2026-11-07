@@ -11,6 +11,8 @@ import { dataChanged, showToast, undo, undoCalendarEvent } from "@/lib/undo";
 import { useDictation } from "@/lib/useDictation";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { CHAT_TABS, tabFromReply, type ChatTab } from "@/lib/tabs";
+import { eodCommand, isCancel, isEodTime, isSkip, targetTab, type EodAnswer, type EodQuestion } from "@/lib/eod";
+import { loadEodQuestions } from "@/lib/eodData";
 import { orderChips } from "@/lib/chipRank";
 import { useTopChips } from "@/lib/chipRankData";
 import { chatStore, useChat, type Msg } from "@/lib/chatStore";
@@ -95,11 +97,82 @@ export default function ChatPage() {
   const setCard = (id: string, fn: (c: ChatCard) => ChatCard) =>
     setMsgs((xs) => xs.map((m) => (m.id === id && m.role === "app" ? { ...m, card: fn(m.card) } : m)));
 
+  // ---- End of day ----------------------------------------------------------------------
+  // "EOD" asks the owner's questions (Settings > End of day) one at a time, right here,
+  // with no server calls. The answers go to /api/eod once, which returns one card to
+  // Save EOD or Cancel. "EOD: <a whole paragraph>" skips the questions.
+  const [eod, setEod] = useState<{ qs: EodQuestion[]; i: number; answers: EodAnswer[]; askId: string } | null>(null);
+  // From 10 PM (until the 4 AM day change) an EOD button sits at the top right.
+  // Checked each minute and whenever the app comes back to the foreground.
+  const [eodTime, setEodTime] = useState(false);
+  useEffect(() => {
+    const check = () => setEodTime(isEodTime());
+    check();
+    const timer = setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, []);
+  const said = (t: string, pending = false): Msg => {
+    const m: Msg = { id: uid(), role: "user", text: t, ts: Date.now(), pending };
+    append(m);
+    return m;
+  };
+  const ask = (qs: EodQuestion[], i: number, answers: EodAnswer[]) => {
+    const m = reply({ kind: "ask", text: qs[i].prompt, step: i + 1, of: qs.length });
+    append(m);
+    setEod({ qs, i, answers, askId: m.id });
+  };
+  const startEod = async () => {
+    const all = await loadEodQuestions();
+    const qs = (all ?? []).filter((q) => q.enabled && !archived?.has(targetTab(q.target)));
+    if (!all) return showToast({ text: "Couldn't load your end-of-day questions.", tone: "error" });
+    if (!qs.length) return showToast({ text: "No end-of-day questions are on. Turn some on in Settings.", tone: "error" });
+    ask(qs, 0, []);
+  };
+  /** Sends answers (or a one-shot message) to /api/eod; the card lands under `after`. */
+  const postEod = async (payload: { answers: EodAnswer[] } | { text: string }, after?: Msg) => {
+    chatStore.wait(1);
+    const res = await post<ChatResponse>("/api/eod", { ...payload, clientMsgId: after?.id ?? uid() });
+    chatStore.wait(-1);
+    const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
+    speak(cards.map(reply), after?.id);
+  };
+  /** The open question's answer; null skips it. The last one sends everything. */
+  const answerEod = (t: string | null) => {
+    if (!eod) return;
+    setCard(eod.askId, (c) => ({ ...c, resolved: t === null ? "skipped" : "answered" }) as ChatCard);
+    const answers = t === null ? eod.answers : [...eod.answers, { target: eod.qs[eod.i].target, text: t }];
+    if (eod.i + 1 < eod.qs.length) return ask(eod.qs, eod.i + 1, answers);
+    setEod(null);
+    // Sent even when everything was skipped: the card still lists today's reminders.
+    postEod({ answers: answers.filter((a) => !isSkip(a.text)) });
+  };
+  const stopEod = () => {
+    if (!eod) return;
+    setCard(eod.askId, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard);
+    setEod(null);
+  };
+
   const send = async () => {
     const t = text.trim();
     if (!t || busy) return;
     dictation.cancel(); // late words must not refill the cleared box
     setText("");
+    if (eod) {
+      said(t);
+      if (isCancel(t)) return stopEod();
+      return answerEod(isSkip(t) ? null : t);
+    }
+    // A tab chip means an ordinary message, even one that starts with "EOD".
+    const cmd = chosen ? null : eodCommand(t);
+    if (cmd?.kind === "start") {
+      said(t);
+      return startEod();
+    }
+    if (cmd?.kind === "oneShot") return postEod({ text: cmd.text }, said(t, true));
     // Naming a tab under an open "Where does this go?" sends the original message to that tab.
     const open = chosen ? null : openUnsure();
     const named = open ? tabFromReply(t) : null;
@@ -186,8 +259,16 @@ export default function ChatPage() {
         taRef.current?.focus();
       },
       confirm: () => {
+        if (m.card.kind === "eod") return confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "saved" }) as ChatCard);
         if (m.card.kind !== "confirm") return;
         confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "confirmed" }) as ChatCard);
+      },
+      // Only the EOD question being asked right now can be skipped or stopped.
+      eodSkip: eod && m.id === eod.askId ? () => answerEod(null) : undefined,
+      eodStop: eod && m.id === eod.askId ? stopEod : undefined,
+      saveEod: (ids) => {
+        if (m.card.kind !== "eod") return;
+        confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "saved" }) as ChatCard, { done: ids.join(",") });
       },
       cancel: () => setCard(m.id, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard),
       pickTab: (tab) => {
@@ -207,6 +288,19 @@ export default function ChatPage() {
 
   return (
     <>
+      {eodTime && !eod && (
+        <button
+          type="button"
+          className="btn btn-sm btn-primary eod-fab"
+          disabled={busy}
+          onClick={() => {
+            said("EOD");
+            startEod();
+          }}
+        >
+          EOD
+        </button>
+      )}
       <main className="chat">
         {msgs.length === 0 && !busy && (
           <div className="talos-hello">
@@ -261,6 +355,7 @@ export default function ChatPage() {
                 type="button"
                 className="tab-chip"
                 aria-pressed={chosen === c.key}
+                disabled={!!eod} // answers go where their question says
                 onClick={() => setChosen((cur) => (cur === c.key ? null : c.key))}
               >
                 {c.label}
@@ -291,7 +386,9 @@ export default function ChatPage() {
               ref={taRef}
               rows={1}
               value={text}
-              placeholder={dictation.listening ? "Listening…" : chosen ? `Log to ${tabName(chosen)}` : "Log anything"}
+              placeholder={
+                dictation.listening ? "Listening…" : eod ? "Answer, or type skip" : chosen ? `Log to ${tabName(chosen)}` : "Log anything"
+              }
               enterKeyHint="send"
               autoCapitalize="sentences"
               onChange={(e) => {

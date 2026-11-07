@@ -8,13 +8,16 @@ import { PlaidConnections } from "@/components/PlaidConnections";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { SubscriptionsView } from "@/components/Subscriptions";
-import { SpendingView } from "@/components/Spending";
+import { SPEND_FIELDS, SpendingView, checkSpend, toSpendInput } from "@/components/Spending";
+import { IconCheck, IconWallet } from "@/components/Icons";
 import { Fab, ScreenHeader, Segmented, SectionTitle, Tag } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
 import { flow, fmtMoney, monthStart, vanguardTotal, type Holding, type Transaction } from "@/lib/finances";
 import { financesApi, useFinances, type TransactionInput, type WriteResult } from "@/lib/financesData";
 import { FLAGS } from "@/lib/flags";
 import { financesExport } from "@/lib/screenExports";
+import { spendCategoryFor } from "@/lib/spending";
+import { spendingApi, useSpending } from "@/lib/spendingData";
 
 // Finances: PNC checking (balance + transactions) and Vanguard holdings, synced from
 // Plaid or entered by hand. Kept out of chat and the weekly review.
@@ -62,6 +65,11 @@ export default function FinancesPage() {
   const [balanceSheet, setBalanceSheet] = useState(false);
   const [holdingSheet, setHoldingSheet] = useState<Holding | "new" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // A transaction being added to Spending (the wallet button on its row).
+  const [spendSheet, setSpendSheet] = useState<Transaction | null>(null);
+  const spending = useSpending();
+  // Transactions already in Spending: their rows show a check instead of the button.
+  const spent = useMemo(() => new Set((spending.rows ?? []).map((s) => s.txnId).filter(Boolean)), [spending.rows]);
   // Accounts (checking, Vanguard), Spending or Subscriptions; ?view=spending / ?view=subscriptions opens straight to one.
   const [view, setView] = useState<"accounts" | "spending" | "subscriptions">("accounts");
   useEffect(() => {
@@ -171,6 +179,30 @@ export default function FinancesPage() {
             key: "amount", label: "Amount", width: "auto", align: "right",
             render: (t) => <span className="num" style={t.amount > 0 ? { color: "var(--accent)" } : undefined}>{fmtMoney(t.amount, { sign: true })}</span>,
           },
+          {
+            // Money out only: one tap opens Spending's form filled in from the transaction.
+            key: "spend", label: "", width: "36px", align: "right",
+            render: (t) =>
+              t.amount >= 0 ? null : spent.has(t.id) ? (
+                <span className="txn-spent" aria-label="In spending" title="In spending">
+                  <IconCheck size={16} />
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="icon-btn txn-spend"
+                  aria-label={`Add ${t.description} to spending`}
+                  title="Add to spending"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSpendSheet(t);
+                  }}
+                >
+                  <IconWallet size={16} />
+                </button>
+              ),
+          },
         ]}
       />
 
@@ -224,6 +256,29 @@ export default function FinancesPage() {
           onSubmit={(v) => {
             run(txnSheet === "new" ? financesApi.logTransaction(toTxn(v)) : financesApi.updateTransaction(txnSheet.id, toTxn(v)));
             setTxnSheet(null);
+          }}
+        />
+      )}
+
+      {spendSheet && (
+        <FormSheet
+          title="Add to spending"
+          submitLabel="Add"
+          fields={SPEND_FIELDS}
+          validate={checkSpend}
+          initial={{
+            amount: Math.abs(spendSheet.amount), what: spendSheet.description, category: spendCategoryFor(spendSheet.category),
+            date: spendSheet.date, note: spendSheet.note ?? "",
+          }}
+          onClose={() => setSpendSheet(null)}
+          onSubmit={async (v) => {
+            const t = spendSheet;
+            setSpendSheet(null);
+            setNotice(null);
+            const r = await spendingApi.fromTransaction(t.id, toSpendInput(v));
+            if (r.status === "conflict") setNotice(`${t.description} is already in Spending.`);
+            else if (r.status !== "saved") setNotice("Failed");
+            await spending.reload();
           }}
         />
       )}

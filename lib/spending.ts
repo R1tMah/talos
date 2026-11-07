@@ -14,6 +14,24 @@ export interface Spend {
   what: string;
   category: SpendCategory;
   note: string | null;
+  /** The checking transaction it was added from (Finances > Accounts), if any. */
+  txnId?: string | null;
+}
+
+/**
+ * A spending category for a bank transaction's category ("Food and drink", from Plaid),
+ * for prefilling the form. Only clear matches; anything else is Other, and the owner can change it.
+ */
+export function spendCategoryFor(bank: string | null | undefined): SpendCategory {
+  const b = (bank ?? "").toLowerCase();
+  if (/grocer/.test(b)) return "Groceries";
+  if (/food|drink|restaurant|coffee/.test(b)) return "Food & drink";
+  if (/transport|travel|gas|uber|lyft|transit/.test(b)) return "Transport";
+  if (/entertainment/.test(b)) return "Entertainment";
+  if (/medical|health|personal care|pharmac/.test(b)) return "Health";
+  if (/education|school|tuition/.test(b)) return "School";
+  if (/merchandise|shopping/.test(b)) return "Shopping";
+  return "Other";
 }
 
 /** Tracking starts here: nothing earlier counts, in either the month or the rolling view. */

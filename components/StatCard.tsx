@@ -56,10 +56,10 @@ export interface StripItem {
   sub?: ReactNode;
 }
 
-/** Horizontal summary at the top of each data tab. */
-export function SummaryStrip({ items }: { items: StripItem[] }) {
+/** Horizontal summary at the top of each data tab; `grid` lays four out as 2×2 boxes instead, so nothing scrolls. */
+export function SummaryStrip({ items, grid }: { items: StripItem[]; grid?: boolean }) {
   return (
-    <div className="card strip">
+    <div className={grid ? "card strip strip-grid" : "card strip"}>
       {items.map((it) => (
         <div key={it.label}>
           <span className="label">{it.label}</span>

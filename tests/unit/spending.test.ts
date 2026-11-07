@@ -98,3 +98,32 @@ describe("rolling 30 days", () => {
     expect(rollingStart("2026-11-24")).toBe("2026-10-26"); // then it rolls
   });
 });
+
+describe("priced saved meals", () => {
+  const bowl = { id: "m-priced", name: "Priced Bowl", aliases: [], unit: "bowl", price: 12.45, items: [] };
+  const check = (text: string, portions: number | null = null) =>
+    TOOLS.log_saved_meal.check!(
+      { meal: "Priced Bowl", portions, without: [], extra: [], days_ago: null, confidence: 1 },
+      ctxFor(text, fakeDb().db, { meals: [bowl] }),
+    );
+
+  it("logging one also logs its spending, price × portions", async () => {
+    const r = await check("priced bowl x2", 2);
+    expect(r).toMatchObject({ status: "ready", resolved: { spend: true } });
+    expect(r.status === "ready" && r.fields).toContainEqual(["Spending", "$24.90"]);
+  });
+
+  it("an amount the owner typed is left to log_spending, so it isn't counted twice", async () => {
+    const r = await check("priced bowl $14");
+    expect(r).toMatchObject({ status: "ready", resolved: { spend: false } });
+    expect(r.status === "ready" && r.fields.some(([k]) => k === "Spending")).toBe(false);
+  });
+
+  it("an unpriced meal logs no spending", async () => {
+    const r = await TOOLS.log_saved_meal.check!(
+      { meal: "Priced Bowl", portions: null, without: [], extra: [], days_ago: null, confidence: 1 },
+      ctxFor("priced bowl", fakeDb().db, { meals: [{ ...bowl, price: null }] }),
+    );
+    expect(r).toMatchObject({ status: "ready", resolved: { spend: false } });
+  });
+});

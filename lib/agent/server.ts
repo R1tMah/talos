@@ -19,7 +19,7 @@ export async function ownerDb(): Promise<Db | null> {
 export async function loadCtx(db: Db, text: string): Promise<{ ctx: Ctx; threshold: number } | null> {
   const [settings, meals, foods, items] = await Promise.all([
     db.from("settings").select("timezone, confidence_threshold, archived_tabs").eq("id", 1).single(),
-    db.from("saved_meals").select("id, name, aliases, portion_unit").is("deleted_at", null).order("name"),
+    db.from("saved_meals").select("id, name, aliases, portion_unit, price").is("deleted_at", null).order("name"),
     db.from("foods").select("id, name, aliases, serving_unit").is("deleted_at", null).order("name"),
     db.from("saved_meal_items").select("saved_meal_id, food_id, servings").is("deleted_at", null).order("created_at"),
   ]);
@@ -32,7 +32,7 @@ export async function loadCtx(db: Db, text: string): Promise<{ ctx: Ctx; thresho
       today: logicalDateIn(settings.data.timezone),
       clock: clockIn(settings.data.timezone),
       meals: meals.data.map((m) => ({
-        id: m.id, name: m.name, aliases: m.aliases, unit: m.portion_unit,
+        id: m.id, name: m.name, aliases: m.aliases, unit: m.portion_unit, price: m.price == null ? null : Number(m.price),
         items: items.data.filter((i) => i.saved_meal_id === m.id).map((i) => ({ foodId: i.food_id, servings: Number(i.servings) })),
       })),
       foods: foods.data.map((f) => ({ id: f.id, name: f.name, aliases: f.aliases, unit: f.serving_unit })),

@@ -9,6 +9,7 @@ import { ScreenHeader, Segmented } from "@/components/ui";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { buildBackup } from "@/lib/backup";
 import { fmtNum, todayISO } from "@/lib/date";
+import { DAYS, hourLabel } from "@/lib/email/weekly";
 import { FLAGS } from "@/lib/flags";
 import { buildReviewPacket } from "@/lib/reviewPacket";
 import { settingsApi, useSettings, type SettingsResult } from "@/lib/settingsData";
@@ -52,11 +53,12 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Whether the Sunday email is on, for its row; null while loading. */
+/** The weekly email's row value ("Sun · 1 PM" or "Off"); null while loading. */
 function useWeeklyEmailOn() {
-  const [on, setOn] = useState<boolean | null>(null);
+  const [on, setOn] = useState<string | null>(null);
   useEffect(() => {
-    createClient().from("weekly_email").select("enabled").eq("id", 1).maybeSingle().then(({ data }) => data && setOn(data.enabled));
+    createClient().from("weekly_email").select("enabled, send_day, send_hour").eq("id", 1).maybeSingle()
+      .then(({ data }) => data && setOn(data.enabled ? `${DAYS[data.send_day].slice(0, 3)} · ${hourLabel(data.send_hour)}` : "Off"));
   }, []);
   return on;
 }
@@ -194,12 +196,13 @@ export default function SettingsPage() {
 
       <span className="label group-title">Talos</span>
       <div className="card list">
+        <Row label="About Talos" href="/settings/about" />
         <Row label="Talos Improvements" href="/settings/talos" />
       </div>
 
       <span className="label group-title">Weekly email</span>
       <div className="card list">
-        <Row label="Sunday digest" value={weeklyOn == null ? undefined : weeklyOn ? "On" : "Off"} href="/settings/weekly-email" />
+        <Row label="Weekly digest" value={weeklyOn ?? undefined} href="/settings/weekly-email" />
       </div>
 
       <span className="label group-title">Appearance</span>

@@ -33,6 +33,18 @@ export function NotepadScreen({
   const { rows, failed, reload } = useNotes(kind);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState(false);
+  const [copied, setCopied] = useState<"" | "Copied" | "Failed">("");
+
+  /** Just this entry's text, exactly as written (the header's Export copies the whole tab). */
+  const copyEntry = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied("Copied");
+    } catch {
+      setCopied("Failed");
+    }
+    setTimeout(() => setCopied(""), 2000);
+  };
 
   const save = useCallback(async (d: Draft): Promise<Draft | null> => {
     if (d.text === d.saved) return d;
@@ -151,7 +163,17 @@ export function NotepadScreen({
           value={draft.text}
           onChange={(text) => setDraft({ ...draft, text })}
           onDone={done}
-          right={error ? <span style={{ color: "var(--danger)", fontSize: "var(--t-sm)", alignSelf: "center" }}>Failed</span> : undefined}
+          right={
+            <>
+              {error && <span style={{ color: "var(--danger)", fontSize: "var(--t-sm)", alignSelf: "center" }}>Failed</span>}
+              <button
+                type="button" className="btn btn-ghost btn-sm" disabled={!draft.text.trim()} onClick={() => copyEntry(draft.text)}
+                style={copied === "Failed" ? { color: "var(--danger)" } : undefined}
+              >
+                {copied || "Copy"}
+              </button>
+            </>
+          }
         />
       )}
     </main>

@@ -428,6 +428,36 @@ html[data-swipe="prev"] :is(.screen, .chat) {
   border-radius: var(--r-md);
 }
 
+/* Sticky back (long reading pages like Watch): the back button stays pinned top-left of the
+   screen column while the page scrolls, on a frosted chip so it reads over content. The
+   ::before holds its old spot in the header, so the title doesn't shift. */
+.header-sticky-back::before {
+  content: "";
+  width: calc(var(--tap) - 12px);
+  flex: none;
+}
+
+.header-sticky-back .back {
+  position: fixed;
+  z-index: 20;
+  top: calc(var(--safe-t) + var(--s-2) + (52px - var(--tap)) / 2);
+  left: calc(max(var(--gutter), 50vw - 280px + var(--gutter)) - 12px);
+  margin-left: 0;
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+}
+
+/* The screen's entry animation uses transform, which would pin the button to the screen
+   instead of the viewport until it ends (a visible jump on wide windows). */
+.screen:has(.header-sticky-back),
+html[data-swipe] .screen:has(.header-sticky-back) {
+  animation: none;
+}
+
 .section-title {
   display: flex;
   justify-content: space-between;
@@ -443,6 +473,26 @@ html[data-swipe="prev"] :is(.screen, .chat) {
 
 .pad {
   padding: var(--s-4);
+}
+
+/* Settings > About: plain reading text, one card per section. */
+.about-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.about-section p {
+  margin: 0;
+}
+.about-section ul {
+  margin: 0;
+  padding-left: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
 }
 
 /* ============================================================
@@ -1065,6 +1115,30 @@ html.kb-open .tabbar {
   text-overflow: ellipsis;
 }
 
+/* A compact picker on the right of a row (Settings > Weekly email: day, time). */
+.row-select {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--t-sm);
+  text-align: right;
+  padding: var(--s-2) 0;
+}
+
+.row-select:disabled {
+  opacity: 0.45;
+}
+
+/* The weekly email's own HTML, shown in a sheet. Light like the email itself. */
+.email-preview {
+  width: 100%;
+  height: 65vh;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: #f5f6f8;
+}
+
 .row svg.chev {
   color: var(--text-3);
   flex: none;
@@ -1362,6 +1436,28 @@ select.input {
 
 .rc-chips {
   display: grid;
+  gap: var(--s-2);
+}
+
+/* "Where does this go?": the tab picked for a message like this last time. */
+.chip-suggested {
+  border-color: var(--accent-line);
+}
+
+.chip-note {
+  margin-left: var(--s-2);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.rc-more {
+  align-self: flex-start;
+}
+
+.rc-tabs {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--s-2);
 }
 
@@ -2688,6 +2784,12 @@ button.cal-day:active {
   justify-content: space-between;
   gap: var(--s-3);
   font-size: var(--t-sm);
+}
+
+.watch-line-end {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
 }
 
 .watch-empty {

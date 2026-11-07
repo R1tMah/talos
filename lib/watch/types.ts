@@ -60,6 +60,7 @@ export interface Game {
   id: string;
   date: string; // ISO start time
   opp: string; // abbreviation
+  oppName?: string; // full name, "Los Angeles Lakers" (missing on snapshots from before it was kept)
   home: boolean;
   state: "pre" | "in" | "post";
   us: number | null;

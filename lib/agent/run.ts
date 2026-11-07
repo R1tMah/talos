@@ -9,9 +9,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { fmtDay } from "@/lib/date";
 import { CHAT_TABS, type TabKey } from "@/lib/tabs";
 import { archivedMessage, loadArchived, tabOf } from "./archive";
+import { learnedTab, loadPastPicks, suggest } from "./learned";
 import { inScope } from "./scope";
 import type { CardOption, ChatCard } from "./cards";
-import { chainEventStarts, MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
+import { chainEventStarts, LONG_TERM_NAMED, MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
 
 export const MODEL = "claude-haiku-5-5";
 const MARGIN = 0.15; // the top reading must lead the runner-up by this much to auto-save
@@ -42,6 +43,7 @@ const NAMED: Record<string, RegExp> = {
   add_subscription: /\bsubscri(?:be|bed|bing|ption)s?\b/i,
   cancel_subscription: /\b(?:cancel(?:l?ed)?|unsubscribed)\b/i,
   log_spending: /\b(?:spent|spend|paid|bought)\b|\$\s?\d/i,
+  add_long_term_reminder: LONG_TERM_NAMED,
 };
 const BARE_LEETCODE = /^\s*(?:leet\s?code|lc)(?:\s+problem)?\s*[.!]?\s*$/i;
 
@@ -117,6 +119,10 @@ function retense(name: string, input: Record<string, unknown>, text: string): Ca
       input: { company: input.company, position: input.position ?? null, applied_days_ago: null, status: null, resume_name: null, confidence },
     };
   }
+  // "add a long term reminder to ..." is always long-term, whatever the model picked.
+  if (name === "add_reminder" && LONG_TERM_NAMED.test(text)) {
+    return { name: "add_long_term_reminder", input: { text: input.text ?? null, show_text: null, due_text: input.due_text ?? null, confidence } };
+  }
   // "remind me to apply to Ramp" is a posting to apply to, not a general reminder.
   if (name === "add_reminder") {
     const body = typeof input.text === "string" ? input.text : text;
@@ -149,6 +155,8 @@ export function settleApplications(calls: Call[], text: string): Call[] {
 const SYSTEM = `You file short messages from the owner of a personal tracking app. Each message is something they did or want saved: a weigh-in, food, a run, a LeetCode problem, a job application, a reminder, a subscription started or cancelled, money spent, a content idea, a work journal entry, a personal journal entry or an idea for improving this app (Talos).
 
 Job applications go by the owner's verb: "apply to X" (want to, need to, remind me to, apply later) is plan_application, the list of postings to apply to; "applied to X" is add_application, an application already sent. Neither is add_reminder.
+
+"Add a long term reminder to X" (any message saying "long term reminder") is add_long_term_reminder, never add_reminder: put when it should start showing in show_text and the deadline in due_text, as written.
 
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
@@ -235,9 +243,10 @@ const confOf = (input: Record<string, unknown>) => (typeof input.confidence === 
 
 async function optionsFrom(name: string, check: Check, propose: Propose): Promise<CardOption[]> {
   const display = TOOLS[name]?.display ?? name;
-  if (check.status === "ready") return [{ tool: display, fields: check.fields, proposalId: await propose(name, check.resolved, true) }];
+  const tab = (r: Resolved) => tabOf(name, r) ?? undefined;
+  if (check.status === "ready") return [{ tool: display, fields: check.fields, proposalId: await propose(name, check.resolved, true), tab: tab(check.resolved) }];
   if (check.status === "ambiguous")
-    return Promise.all(check.options.map(async (o) => ({ tool: display, fields: o.fields, proposalId: await propose(name, o.resolved, true) })));
+    return Promise.all(check.options.map(async (o) => ({ tool: display, fields: o.fields, proposalId: await propose(name, o.resolved, true), tab: tab(o.resolved) })));
   return [];
 }
 
@@ -270,6 +279,7 @@ export async function decide(rawCalls: Call[], ctx: Ctx, threshold: number, prop
   const runnerUp = Math.max(0, ...alts.map((a) => a.confidence));
   const writes = calls.filter((c) => c.name !== "no_match" && TOOLS[c.name]?.check);
   const cards: ChatCard[] = [];
+  const saved: { name: string; resolved: Resolved }[] = [];
 
   for (const call of writes) {
     const tool = TOOLS[call.name];
@@ -312,7 +322,15 @@ export async function decide(rawCalls: Call[], ctx: Ctx, threshold: number, prop
       });
       continue;
     }
-    cards.push(...(await commitCard(call.name, check.resolved, ctx, propose)));
+    const out = await commitCard(call.name, check.resolved, ctx, propose, { left: false });
+    if (out[0]?.kind === "saved") saved.push({ name: call.name, resolved: check.resolved });
+    cards.push(...out);
+  }
+
+  // One "left today" after all the message's food is in, per day logged to.
+  for (const date of foodDates(saved)) {
+    const left = await leftCard(ctx.db, date);
+    if (left) cards.push(left);
   }
 
   if (!writes.length) {
@@ -320,11 +338,60 @@ export async function decide(rawCalls: Call[], ctx: Ctx, threshold: number, prop
     for (const a of alts.sort((x, y) => y.confidence - x.confidence)) if (options.length < 3) options.push(...(await optionsFrom(a.name, a.check, propose)));
     cards.push(options.length ? { kind: "unsure", options: options.slice(0, 3) } : { kind: "failed", detail: "Couldn't tell where this goes." });
   }
+  // Put what the owner chose for a message like this before first. A tab chip already settled it.
+  if (ctx.tab || !cards.some((c) => c.kind === "unsure" && !c.title)) return cards;
+  return suggest(cards, learnedTab(ctx.text, await loadPastPicks(ctx.db), ctx.archived ?? new Set()));
+}
+
+// Tools that log food: after they save, chat says what's left of that day's calories and protein.
+const FOOD_TOOLS = new Set(["log_food", "log_saved_meal"]);
+
+/**
+ * That day's calories and protein against its targets, after everything just logged.
+ * Null if either can't be read: the food is saved either way, so nothing fails over it.
+ */
+export async function leftCard(db: Ctx["db"], date: string): Promise<ChatCard | null> {
+  try {
+    const [day, targets] = await Promise.all([
+      db.from("daily_totals").select("calories, protein_g").eq("logical_date", date).maybeSingle(),
+      db.rpc("targets_for", { p_date: date }),
+    ]);
+    if (day.error || targets.error) return null;
+    const t = (Array.isArray(targets.data) ? targets.data[0] : targets.data) as { calorie_target?: unknown; protein_target_g?: unknown } | null;
+    const calTarget = Number(t?.calorie_target), proteinTarget = Number(t?.protein_target_g);
+    if (!Number.isFinite(calTarget) || !Number.isFinite(proteinTarget)) return null;
+    return {
+      kind: "left", date, calTarget, proteinTarget,
+      cal: Number(day.data?.calories ?? 0), protein: Number(day.data?.protein_g ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** The food tools' saved dates in `cards`' order of tools, once each. */
+const foodDates = (saved: { name: string; resolved: Resolved }[]) =>
+  [...new Set(saved.filter((s) => FOOD_TOOLS.has(s.name) && typeof s.resolved.date === "string").map((s) => s.resolved.date as string))];
+
+/**
+ * Commits a checked proposal and turns the result into cards (a save can carry a follow-up offer).
+ * A food save ends with what's left for the day, unless `left: false` (decide() adds one for the
+ * whole message instead, so three foods in one message get one summary).
+ */
+export async function commitCard(
+  name: string, resolved: Resolved, ctx: Pick<Ctx, "db" | "archived">, propose: Propose, opts: { left?: boolean } = {},
+): Promise<ChatCard[]> {
+  const cards = await commitCards(name, resolved, ctx, propose);
+  if (opts.left !== false && cards[0]?.kind === "saved") {
+    for (const date of foodDates([{ name, resolved }])) {
+      const left = await leftCard(ctx.db, date);
+      if (left) cards.push(left);
+    }
+  }
   return cards;
 }
 
-/** Commits a checked proposal and turns the result into cards (a save can carry a follow-up offer). */
-export async function commitCard(name: string, resolved: Resolved, ctx: Pick<Ctx, "db" | "archived">, propose: Propose): Promise<ChatCard[]> {
+async function commitCards(name: string, resolved: Resolved, ctx: Pick<Ctx, "db" | "archived">, propose: Propose): Promise<ChatCard[]> {
   const tool = TOOLS[name];
   if (!tool) return [{ kind: "failed" }];
   // Every chat write (and every confirm) passes through here: an archived tab is refused

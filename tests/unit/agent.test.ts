@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/sdk", async () => (await import("../helpers/model")).sdkM
 import type { ChatCard } from "@/lib/agent/cards";
 import { commitCard, preRoute, run } from "@/lib/agent/run";
 import { MODEL_TOOLS, TOOLS, type Ctx } from "@/lib/agent/tools";
-import { logicalDateIn } from "@/lib/date";
+import { addDays, logicalDateIn } from "@/lib/date";
 import { ctxFor, fakeDb, MEALS, proposals, TODAY } from "../helpers/fakeDb";
 import { model } from "../helpers/model";
 
@@ -261,13 +261,27 @@ describe("7. Applications", () => {
   const app = (company: string, extra: Record<string, unknown> = {}) =>
     call("add_application", { company, position: null, applied_days_ago: null, status: null, resume_name: null, confidence: 0.95, ...extra });
 
-  it('#54 "applied to Stripe" lists position, date, status and resume name as missing and creates no row', async () => {
+  it('#54 "applied to Stripe" defaults to SWE, Applied and today, asks only for the resume name, and creates no row', async () => {
     model.toolCalls(app("Stripe"));
     const r = await send("applied to Stripe");
     expect(kinds(r.cards)).toEqual(["missing"]);
     const card = r.cards[0] as Extract<ChatCard, { kind: "missing" }>;
-    expect(card.missing.map((m) => m.name)).toEqual(["position", "applied_date", "status", "resume_name"]);
+    expect(card.missing.map((m) => m.name)).toEqual(["resume_name"]);
     expect(r.writes()).toEqual([]);
+  });
+
+  it("a day the owner names wins over today", async () => {
+    const check = (days: number | null) =>
+      TOOLS.add_application.check!({ company: "Stripe", position: null, status: null, resume_name: null, confidence: 0.95, applied_days_ago: days }, ctxFor("applied to Stripe", fakeDb().db));
+    expect(await check(null)).toMatchObject({ resolved: { applied_date: TODAY } });
+    expect(await check(1)).toMatchObject({ resolved: { applied_date: addDays(TODAY, -1) } });
+  });
+
+  it("a role or status the owner names wins over the defaults", async () => {
+    const check = (input: Record<string, unknown>) =>
+      TOOLS.add_application.check!({ company: "Stripe", applied_days_ago: 0, resume_name: null, confidence: 0.95, position: null, status: null, ...input }, ctxFor("applied to Stripe", fakeDb().db));
+    expect(await check({})).toMatchObject({ resolved: { position: "SWE", status: "Applied" } });
+    expect(await check({ position: "ML Engineer", status: "OA" })).toMatchObject({ resolved: { position: "ML Engineer", status: "OA Stage" } });
   });
 
   it("#55 / #61 filling the fields creates the row; the agent never fills a default", () => {

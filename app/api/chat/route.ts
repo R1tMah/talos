@@ -15,7 +15,7 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   const db = await ownerDb();
   if (!db) return failed(401);
 
-  let body: { text?: unknown; clientMsgId?: unknown; tab?: unknown };
+  let body: { text?: unknown; clientMsgId?: unknown; tab?: unknown; fixes?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -27,6 +27,11 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   // Optional tab chip; anything that isn't a known tab is rejected rather than ignored.
   if (body.tab != null && !isChatTab(body.tab)) return failed(400);
   const tab = body.tab as ChatTab | undefined;
+  // Answering "Where does this go?" with a tab: the earlier message (by its clientMsgId)
+  // went there. Remembered so a message like it suggests that tab first next time.
+  if (tab && typeof body.fixes === "string" && body.fixes && body.fixes !== clientMsgId) {
+    await db.from("message_log").update({ corrected: true, corrected_tab: tab }).eq("client_msg_id", body.fixes);
+  }
 
   // The same message sent twice gets the first answer back, not a second write.
   const seen = await db.from("message_log").select("response").eq("client_msg_id", clientMsgId).maybeSingle();

@@ -6,16 +6,18 @@ import { IconBack, IconPlus } from "./Icons";
 import { TalosAvatar } from "./TalosAvatar";
 
 export function ScreenHeader({
-  title, back, right, brand,
+  title, back, right, brand, stickyBack,
 }: {
   title: string;
   back?: string;
+  /** Keeps the back button pinned on screen while the page scrolls (long reading pages). */
+  stickyBack?: boolean;
   right?: ReactNode;
   /** The hologram lockup: Talos beside the title in the shimmering wordmark, instead of metal. */
   brand?: boolean;
 }) {
   return (
-    <header className="header">
+    <header className={back && stickyBack ? "header header-sticky-back" : "header"}>
       {back && (
         <Link href={back} className="back" aria-label="Back">
           <IconBack />

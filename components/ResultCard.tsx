@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { ChatCard } from "@/lib/agent/cards";
+import type { ChatTab } from "@/lib/tabs";
+import { fmtDay, fmtNum, logicalToday } from "@/lib/date";
 import { ChangeList } from "./ChangeList";
 import { IconAlert, IconCheck, IconQuestion, IconX } from "./Icons";
 import { OptionChip } from "./OptionChip";
@@ -13,8 +16,18 @@ export interface CardHandlers {
   fill: () => void;
   /** Absent when there's no prompt to bring back. */
   retry?: () => void;
+  /** "Where does this go?" answered with a tab: the message is sent again to it. */
+  pickTab: (tab: ChatTab) => void;
+  /** Tabs that can be picked (not archived). */
+  tabs: { key: ChatTab; label: string }[];
   dismiss: () => void;
 }
+
+/** "1,450 cal left", "320 cal over": what's left of a target, never a negative number. */
+export const leftText = (left: number, unit: string) => {
+  const n = Math.round(Math.abs(left));
+  return left >= 0 ? `${fmtNum(n)} ${unit} left` : `${fmtNum(n)} ${unit} over`;
+};
 
 const Done = ({ children }: { children: string }) => (
   <span className="faint" style={{ fontSize: "var(--t-sm)" }}>
@@ -48,27 +61,7 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
       );
 
     case "unsure":
-      return (
-        <div className={`rc${card.resolved ? " resolved" : ""}`}>
-          <div className="rc-line">
-            <span className="rc-icon warn">
-              <IconQuestion />
-            </span>
-            <span className="rc-title">{card.title ?? "Where does this go?"}</span>
-          </div>
-          {card.resolved ? (
-            <Done>Picked</Done>
-          ) : (
-            on && (
-              <div className="rc-chips">
-                {card.options.map((o, i) => (
-                  <OptionChip key={o.proposalId} tool={o.tool} fields={o.fields} onClick={() => on.choose(i)} />
-                ))}
-              </div>
-            )
-          )}
-        </div>
-      );
+      return <UnsureCard card={card} on={on} />;
 
     case "warning":
       return (
@@ -152,6 +145,23 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
         </div>
       );
 
+    case "left": {
+      // "Today" while it is; the date once it isn't (Chat history, or food logged to another day).
+      const when = card.date === logicalToday() ? "Today" : fmtDay(card.date);
+      return (
+        <div className="rc">
+          <div className="rc-line">
+            <span className="rc-text num">
+              {when}: {leftText(card.calTarget - card.cal, "cal")}, {leftText(card.proteinTarget - card.protein, "g protein")}
+            </span>
+          </div>
+          <span className="faint num" style={{ fontSize: "var(--t-sm)" }}>
+            {fmtNum(Math.round(card.cal))} / {fmtNum(card.calTarget)} cal · {Math.round(card.protein)} / {card.proteinTarget} g protein
+          </span>
+        </div>
+      );
+    }
+
     case "failed":
       return (
         <div className="rc">
@@ -176,4 +186,69 @@ export function ResultCard({ card, on }: { card: ChatCard; on?: CardHandlers }) 
         </div>
       );
   }
+}
+
+const LAST_TIME = "Last time";
+
+/**
+ * "Where does this go?": the model's best readings, then any tab. When the owner filed a
+ * message like this before, that tab comes first and says so.
+ */
+function UnsureCard({ card, on }: { card: Extract<ChatCard, { kind: "unsure" }>; on?: CardHandlers }) {
+  const [picking, setPicking] = useState(false);
+  const suggested = card.suggested ? on?.tabs.find((t) => t.key === card.suggested) : undefined;
+  const optionHit = suggested && card.options.findIndex((o) => o.tab === suggested.key);
+  return (
+    <div className={`rc${card.resolved ? " resolved" : ""}`}>
+      <div className="rc-line">
+        <span className="rc-icon warn">
+          <IconQuestion />
+        </span>
+        <span className="rc-title">{card.title ?? "Where does this go?"}</span>
+      </div>
+      {card.resolved ? (
+        <Done>Picked</Done>
+      ) : (
+        on && (
+          <>
+            {suggested && <span className="rc-detail">You put something like this in {suggested.label} last time.</span>}
+            <div className="rc-chips">
+              {suggested && optionHit === -1 && (
+                <button type="button" className="chip chip-suggested" onClick={() => on.pickTab(suggested.key)}>
+                  <span className="chip-tool">
+                    {suggested.label}
+                    <span className="chip-note">{LAST_TIME}</span>
+                  </span>
+                </button>
+              )}
+              {card.options.map((o, i) => (
+                <OptionChip
+                  key={o.proposalId}
+                  tool={o.tool}
+                  fields={o.fields}
+                  note={suggested && i === optionHit ? LAST_TIME : undefined}
+                  onClick={() => on.choose(i)}
+                />
+              ))}
+            </div>
+            {/* A narrower question (which saved meal?) is answered from its own options. */}
+            {!card.title &&
+              (picking ? (
+                <div className="rc-tabs" role="group" aria-label="Put it in a tab">
+                  {on.tabs.map((t) => (
+                    <button key={t.key} type="button" className="tab-chip" onClick={() => on.pickTab(t.key)}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button type="button" className="btn btn-sm rc-more" onClick={() => setPicking(true)}>
+                  Something else…
+                </button>
+              ))}
+          </>
+        )
+      )}
+    </div>
+  );
 }

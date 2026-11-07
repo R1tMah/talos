@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ConfirmResponse } from "@/lib/agent/cards";
+import { tabOf } from "@/lib/agent/archive";
 import { commitCard } from "@/lib/agent/run";
 import { ownerDb, proposer } from "@/lib/agent/server";
 import { TOOLS, type Resolved } from "@/lib/agent/tools";
@@ -55,7 +56,8 @@ export async function POST(req: Request): Promise<NextResponse<ConfirmResponse>>
   }
 
   // Picking from "Where does this go?" means the model wasn't confident: log it for tuning.
-  if (_option && message_id) await db.from("message_log").update({ corrected: true }).eq("id", message_id);
+  // The tab it went to is remembered, so a message like it suggests that tab first next time.
+  if (_option && message_id) await db.from("message_log").update({ corrected: true, corrected_tab: tabOf(name, resolved) }).eq("id", message_id);
 
   const cards = await commitCard(name, resolved, { db }, proposer(db, message_id));
   // Kept with the message so Chat history shows what the tap led to.

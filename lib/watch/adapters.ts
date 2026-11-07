@@ -10,7 +10,7 @@ import type {
   NewsletterConfig, NewsletterSnap, PlayerSnap, StatLine, TransitAlert, TransitConfig, TransitSnap, WeatherConfig, WeatherSnap,
 } from "./types";
 import { fallbackLink } from "./types";
-import { jobMatches } from "./match";
+import { jobMatches, postedRecently } from "./match";
 import { parseNewsletter } from "./newsletter";
 import { categoryOf, isOpen, onNewGradList } from "./simplify";
 
@@ -37,7 +37,7 @@ const ESPN = "https://site.api.espn.com/apis";
 
 interface EspnCompetitor {
   homeAway: "home" | "away";
-  team: { abbreviation: string };
+  team: { abbreviation: string; displayName?: string };
   score?: { displayValue?: string } | string;
   winner?: boolean;
 }
@@ -81,6 +81,7 @@ export async function fetchTeam(c: TeamConfig): Promise<TeamSnap> {
       id: e.id,
       date: e.date,
       opp: them.team.abbreviation,
+      oppName: them.team.displayName,
       home: us.homeAway === "home",
       state: comp.status.type.state,
       us: scoreOf(us),
@@ -335,7 +336,7 @@ export async function fetchJobs(c: JobsConfig): Promise<JobsFetch> {
     };
     open.set(l.id, job);
     // listings.json also holds scraped postings the README leaves out; only the list counts.
-    if (onNewGradList(l) && jobMatches(job, c)) matched.add(l.id);
+    if (onNewGradList(l) && postedRecently(job) && jobMatches(job, c)) matched.add(l.id);
   }
   return { open, matched };
 }

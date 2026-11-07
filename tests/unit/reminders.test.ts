@@ -57,3 +57,78 @@ describe("add_reminder", () => {
     expect(r.writes[0].args.p_due).toBeNull();
   });
 });
+
+describe("far-off dates, for long-term reminders", () => {
+  it.each([
+    ["in 6 months", "2027-04-11"],
+    ["in 2 years", "2028-10-11"],
+    ["2027-03-01", "2027-03-01"],
+    ["3/1/2027", "2027-03-01"],
+    ["3/1/27", "2027-03-01"],
+    ["Mar 1, 2027", "2027-03-01"],
+    ["march 1st 2027", "2027-03-01"],
+    ["March 2027", "2027-03-01"],
+  ])("%s -> %s", (text, want) => expect(dueFrom(text, TODAY)).toBe(want));
+
+  it("a day that doesn't exist is null", () => {
+    expect(dueFrom("Feb 30, 2027", TODAY)).toBeNull();
+    expect(dueFrom("2/30/2027", TODAY)).toBeNull();
+  });
+
+  it("a month on from the 31st lands on the month's last day", () => {
+    expect(dueFrom("in 1 month", "2027-01-31")).toBe("2027-02-28");
+  });
+});
+
+describe("add_long_term_reminder", () => {
+  beforeEach(() => model.reset());
+  const send = async (text: string, call: { name: string; input: Record<string, unknown> }) => {
+    model.toolCalls({ ...call, input: { confidence: 0.95, ...call.input } });
+    const f = fakeDb();
+    const r = await run(ctxFor(text, f.db), 0.85, proposals().propose);
+    return { ...r, writes: f.writes() };
+  };
+  const lt = (input: Record<string, unknown>) => ({ name: "add_long_term_reminder", input });
+
+  it("saves the owner's words with the show-from and due dates code worked out", async () => {
+    const r = await send("add a long term reminder to renew my passport, show it Feb 1 2027, due Mar 15 2027", lt({ text: "renew my passport", show_text: "Feb 1 2027", due_text: "Mar 15 2027" }));
+    expect(r.cards[0].kind).toBe("saved");
+    expect(r.writes[0]).toMatchObject({ fn: "add_reminder", args: { p_body: "renew my passport", p_surface: "2027-02-01", p_due: "2027-03-15", p_tool: "add_long_term_reminder" } });
+  });
+
+  it("without a show-from date, asks for one instead of guessing", async () => {
+    const r = await send("add a long term reminder to look into grad school", lt({ text: "look into grad school", show_text: null, due_text: null }));
+    expect(r.cards[0]).toMatchObject({ kind: "missing", missing: [{ name: "surface", type: "date" }] });
+    expect(r.writes).toHaveLength(0);
+  });
+
+  it("the phrase settles the tool even when the model is unsure", async () => {
+    const r = await send("add a long term reminder to call grandma, in 3 months", lt({ text: "call grandma", show_text: "in 3 months", due_text: null, confidence: 0.4 }));
+    expect(r.cards[0].kind).toBe("saved");
+    expect(r.writes[0].args.p_surface).toBe("2027-01-11");
+  });
+
+  it("a plain add_reminder for a 'long term reminder' message is turned into a long-term one", async () => {
+    const r = await send("add a long term reminder to renew my license", { name: "add_reminder", input: { text: "renew my license", due_text: null } });
+    expect(r.calls[0].name).toBe("add_long_term_reminder");
+    expect(r.cards[0].kind).toBe("missing");
+  });
+
+  it("a reworded body falls back to the owner's text minus 'add a long term reminder to'", async () => {
+    const r = await send("Add a long-term reminder to cancel the gym b4 renewal", lt({ text: "Cancel the gym before renewal.", show_text: null, due_text: null }));
+    expect(r.cards[0]).toMatchObject({ kind: "missing" });
+    expect((r.cards[0] as { title: string }).title).toBe("Long-term reminder: cancel the gym b4 renewal");
+  });
+
+  it("showing up after it's due is refused", async () => {
+    const r = await send("add a long term reminder to renew my passport, show it Apr 1 2027, due Mar 15 2027", lt({ text: "renew my passport", show_text: "Apr 1 2027", due_text: "Mar 15 2027" }));
+    expect(r.cards[0].kind).toBe("failed");
+    expect(r.writes).toHaveLength(0);
+  });
+
+  it("an ordinary 'remind me to' stays an ordinary reminder", async () => {
+    const r = await send("remind me to call the landlord", { name: "add_reminder", input: { text: "call the landlord", due_text: null } });
+    expect(r.writes[0]).toMatchObject({ fn: "add_reminder", args: { p_body: "call the landlord" } });
+    expect(r.writes[0].args.p_surface).toBeUndefined();
+  });
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createDictation, type RecognitionCtor } from "./dictation";
 
 /**
  * Speech-to-text through the browser's built-in recognizer (Web Speech API): free,
@@ -9,29 +10,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * keyboard's own dictation mic is the way to talk.
  *
  * It only fills the text field. Nothing is sent until the owner taps Send.
+ * The on/off rules live in ./dictation (tested without a browser).
  */
-
-// The DOM lib doesn't type the Web Speech API; just what this file uses.
-interface RecognitionResult {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface RecognitionEvent {
-  resultIndex: number;
-  results: ArrayLike<RecognitionResult>;
-}
-interface Recognition {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((e: RecognitionEvent) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-}
-type RecognitionCtor = new () => Recognition;
 
 function recognizer(): RecognitionCtor | null {
   if (typeof window === "undefined") return null;
@@ -42,49 +22,40 @@ function recognizer(): RecognitionCtor | null {
 export function useDictation(onText: (text: string) => void, onError: (message: string) => void) {
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
-  const rec = useRef<Recognition | null>(null);
+  // Latest callbacks, so the controller never calls a stale one.
+  const cb = useRef({ onText, onError });
+  cb.current = { onText, onError };
+  const ctl = useRef<ReturnType<typeof createDictation> | null>(null);
 
-  useEffect(() => setSupported(recognizer() !== null), []);
-  useEffect(() => () => rec.current?.abort(), []);
+  useEffect(() => {
+    const Ctor = recognizer();
+    setSupported(Ctor !== null);
+    if (!Ctor) return;
+    const c = createDictation(Ctor, navigator.language || "en-US", {
+      onText: (t) => cb.current.onText(t),
+      onError: (m) => cb.current.onError(m),
+      onListening: setListening,
+    });
+    ctl.current = c;
+    // Leaving the app (switching tabs, locking the phone) turns the mic off.
+    const onHidden = () => document.visibilityState === "hidden" && c.stop();
+    const onPageHide = () => c.cancel();
+    document.addEventListener("visibilitychange", onHidden);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("pagehide", onPageHide);
+      c.cancel();
+      ctl.current = null;
+    };
+  }, []);
 
   /** Starts listening. What's heard is appended to `base` (the text already typed). */
-  const start = useCallback(
-    (base: string) => {
-      const Ctor = recognizer();
-      if (!Ctor || rec.current) return;
-      const r = new Ctor();
-      r.lang = navigator.language || "en-US";
-      r.interimResults = true; // show words as they're recognized
-      r.continuous = false; // stop at the first pause
-      const prefix = base.trim() ? `${base.trimEnd()} ` : "";
-      r.onresult = (e) => {
-        let heard = "";
-        for (let i = 0; i < e.results.length; i++) heard += e.results[i][0].transcript;
-        onText(prefix + heard.trim());
-      };
-      r.onerror = (e) => {
-        // No speech or a deliberate stop isn't an error worth showing.
-        if (e.error === "no-speech" || e.error === "aborted") return;
-        onError(e.error === "not-allowed" || e.error === "service-not-allowed" ? "Microphone blocked" : "Failed");
-      };
-      r.onend = () => {
-        rec.current = null;
-        setListening(false);
-      };
-      rec.current = r;
-      setListening(true);
-      try {
-        r.start();
-      } catch {
-        rec.current = null;
-        setListening(false);
-        onError("Failed");
-      }
-    },
-    [onText, onError],
-  );
+  const start = useCallback((base: string) => ctl.current?.start(base), []);
+  /** Turns the mic off; the last words may still land for a moment. */
+  const stop = useCallback(() => ctl.current?.stop(), []);
+  /** Turns the mic off and drops anything still on its way (on Send, or when typing). */
+  const cancel = useCallback(() => ctl.current?.cancel(), []);
 
-  const stop = useCallback(() => rec.current?.stop(), []);
-
-  return { supported, listening, start, stop };
+  return { supported, listening, start, stop, cancel };
 }

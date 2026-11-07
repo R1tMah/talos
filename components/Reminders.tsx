@@ -9,7 +9,7 @@ import { IconCheck, IconPlus, IconX } from "./Icons";
 import { Tag } from "./ui";
 
 /** "Due Oct 25", "Due today", "Overdue, Oct 20": the date only, no nudging. */
-function dueText(due: string, today: string) {
+export function dueText(due: string, today: string) {
   if (due === today) return "Due today";
   return due < today ? `Overdue, ${fmtDay(due)}` : `Due ${fmtDay(due)}`;
 }
@@ -49,6 +49,7 @@ export function Reminders() {
                 </span>
                 <span className="reminder-meta">
                   <Tag tone="tag-outline">{fmtOpenFor(r.created)}</Tag>
+                  {r.surface && <Tag tone="tag-outline">Long-term</Tag>}
                   {r.due && (
                     <span className="cell-sub num" style={r.due < today ? { color: "var(--danger)" } : undefined}>
                       {dueText(r.due, today)}
@@ -67,28 +68,47 @@ export function Reminders() {
         )}
       </section>
 
-      {sheet && (
-        <FormSheet
-          title={sheet === "new" ? "Reminder" : "Edit reminder"}
-          submitLabel={sheet === "new" ? "Add" : "Save"}
-          confirm={sheet !== "new"}
-          fields={[
-            { name: "body", label: "Remind me to", type: "textarea", trim: false, full: true },
-            { name: "due", label: "Due (optional)", type: "date" },
-          ]}
-          validate={(v) => (!String(v.body ?? "").trim() ? "Write the reminder first." : null)}
-          initial={sheet === "new" ? { body: "", due: "" } : { body: sheet.body, due: sheet.due ?? "" }}
-          onClose={() => setSheet(null)}
-          onDelete={sheet !== "new" ? () => (generalRemindersApi.dismiss(sheet.id).then(report), setSheet(null)) : undefined}
-          onSubmit={async (v) => {
-            const s = sheet;
-            setSheet(null);
-            const body = v.body as string;
-            const due = (v.due as string) || null;
-            report(s === "new" ? await generalRemindersApi.add(body, due, today) : await generalRemindersApi.update(s.id, body, due));
-          }}
-        />
-      )}
+      {sheet && <ReminderSheet reminder={sheet === "new" ? null : sheet} longTerm={sheet !== "new" && !!sheet.surface} onClose={() => setSheet(null)} />}
     </>
+  );
+}
+
+/**
+ * Add or edit one reminder. `longTerm` adds the required "Show on TALOS from" date: the
+ * reminder stays on its own tab until then, then joins the banner. Editing keeps a
+ * long-term reminder long-term.
+ */
+export function ReminderSheet({ reminder, longTerm, onClose }: { reminder: GeneralReminder | null; longTerm: boolean; onClose: () => void }) {
+  const today = logicalToday();
+  const report = (r: { status: string }) => r.status !== "saved" && showToast({ text: "Failed", tone: "error" });
+  const isNew = !reminder;
+
+  return (
+    <FormSheet
+      title={isNew ? (longTerm ? "Long-term reminder" : "Reminder") : longTerm ? "Edit long-term reminder" : "Edit reminder"}
+      submitLabel={isNew ? "Add" : "Save"}
+      confirm={!isNew}
+      fields={[
+        { name: "body", label: "Remind me to", type: "textarea", trim: false, full: true },
+        ...(longTerm ? [{ name: "surface", label: "Show on TALOS from", type: "date" as const }] : []),
+        { name: "due", label: "Due (optional)", type: "date" },
+      ]}
+      validate={(v) => {
+        if (!String(v.body ?? "").trim()) return "Write the reminder first.";
+        if (longTerm && !v.surface) return "Pick the day it should show up on TALOS.";
+        if (longTerm && v.due && String(v.surface) > String(v.due)) return "It should show up on or before the due date.";
+        return null;
+      }}
+      initial={{ body: reminder?.body ?? "", due: reminder?.due ?? "", ...(longTerm ? { surface: reminder?.surface ?? "" } : {}) }}
+      onClose={onClose}
+      onDelete={reminder ? () => (generalRemindersApi.dismiss(reminder.id).then(report), onClose()) : undefined}
+      onSubmit={async (v) => {
+        onClose();
+        const body = v.body as string;
+        const due = (v.due as string) || null;
+        const surface = longTerm ? (v.surface as string) : null;
+        report(reminder ? await generalRemindersApi.update(reminder.id, body, due, surface) : await generalRemindersApi.add(body, due, today, surface));
+      }}
+    />
   );
 }

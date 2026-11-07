@@ -52,6 +52,8 @@ export interface Meal {
   unit: string;
   cal: number;
   p: number;
+  /** Price per portion in dollars. When set, logging the meal also logs spending. */
+  price: number | null;
   items: MealItem[];
 }
 
@@ -101,6 +103,7 @@ const toMeal = (r: MealRow, items: MealItem[] = []): Meal => ({
   unit: r.portion_unit,
   cal: r.calories,
   p: Number(r.protein_g),
+  price: num(r.price),
   items,
 });
 
@@ -188,6 +191,8 @@ export interface MealInput extends Macros {
   name: string;
   aliases: string[];
   unit: string;
+  /** Dollars per portion, or null for none. */
+  price: number | null;
 }
 
 export interface FoodInput extends Macros {
@@ -196,6 +201,9 @@ export interface FoodInput extends Macros {
   amount: number;
   unit: string;
 }
+
+// Null clears a meal's price; generated arg types don't mark it as allowed.
+const priceArg = (v: number | null) => v as number;
 
 const itemsJson = (items: MealItem[]) => items.map((i) => ({ food_id: i.foodId, servings: i.servings }));
 
@@ -207,12 +215,18 @@ export const nutritionApi = {
         p_date: date, p_description: name, p_calories: m.cal, p_protein_g: m.p,
       }),
     ),
-  /** `minus`: servings of the meal's own ingredients to leave out of this log, per portion. */
+  /**
+   * `minus`: servings of the meal's own ingredients to leave out of this log, per portion.
+   * A priced meal also logs Food & drink spending (price × portions), linked to this entry.
+   */
   logMeal: async (date: string, mealId: string, portions: number, minus: MealItem[] = []) =>
     parse(
       "food_log",
       await createClient().rpc("log_saved_meal", { p_date: date, p_meal_id: mealId, p_portions: portions, p_minus: itemsJson(minus) }),
     ),
+  /** A food from the library: its macros × servings, copied into one entry. */
+  logFood: async (date: string, foodId: string, servings: number) =>
+    parse("food_log", await createClient().rpc("log_food_item", { p_date: date, p_food_id: foodId, p_servings: servings })),
   updateTyped: async (id: string, date: string, name: string, m: Macros) =>
     parse("food_log", 
       await createClient().rpc("update_food_entry", {
@@ -226,14 +240,14 @@ export const nutritionApi = {
   saveMeal: async (m: MealInput) =>
     parse("saved_meals", 
       await createClient().rpc("save_meal", {
-        p_name: m.name, p_aliases: m.aliases, p_portion_unit: m.unit, p_calories: m.cal, p_protein_g: m.p,
+        p_name: m.name, p_aliases: m.aliases, p_portion_unit: m.unit, p_calories: m.cal, p_protein_g: m.p, p_price: priceArg(m.price),
       }),
     ),
   updateMeal: async (id: string, m: MealInput) =>
     parse("saved_meals", 
       await createClient().rpc("update_meal", {
         p_id: id, p_name: m.name, p_aliases: m.aliases, p_portion_unit: m.unit,
-        p_calories: m.cal, p_protein_g: m.p, p_carbs_g: untracked, p_fat_g: untracked,
+        p_calories: m.cal, p_protein_g: m.p, p_carbs_g: untracked, p_fat_g: untracked, p_price: priceArg(m.price),
       }),
     ),
   removeMeal: async (id: string) => parse("saved_meals", await createClient().rpc("delete_meal", { p_id: id })),

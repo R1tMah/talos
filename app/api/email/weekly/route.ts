@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ownerDb } from "@/lib/agent/server";
-import { gather, isDue, render, type Section } from "@/lib/email/weekly";
+import { gather, isDue, isItem, render } from "@/lib/email/weekly";
 import { NeedsMailAccess, sendToSelf } from "@/lib/google/gmail";
 import { createAdminClient } from "@/utils/supabase/admin";
 
@@ -15,9 +15,10 @@ const fromCron = (req: Request) => {
 
 /**
  * The weekly email. Two callers:
- *   - pg_cron every 15 minutes (Bearer WATCH_CRON_SECRET): sends if it's Sunday 1 PM
- *     or later where the owner is and it hasn't gone out today.
+ *   - pg_cron every 15 minutes (Bearer WATCH_CRON_SECRET): sends if it's the owner's send
+ *     day at or after their send hour where they are, and it hasn't gone out that day.
  *   - the owner's "Send test email" button: sends now, without counting as this week's.
+ *     With {"preview": true} it sends nothing and returns the subject and HTML instead.
  * The proxy lets this path through without a session; the checks here decide.
  */
 export async function POST(req: Request) {
@@ -33,19 +34,22 @@ export async function POST(req: Request) {
   if (cfg.error || settings.error) return NextResponse.json({ error: "couldn't read settings" }, { status: 500 });
   const tz = settings.data.timezone;
 
-  let sunday: string | null = null;
+  const preview = !cron && (await req.json().catch(() => ({})) as { preview?: unknown }).preview === true;
+
+  let sendDay: string | null = null;
   if (cron) {
     if (!cfg.data.enabled) return NextResponse.json({ sent: false, why: "off" });
-    const due = isDue(tz, cfg.data.last_sent_on);
+    const due = isDue(tz, cfg.data.last_sent_on, new Date(), { day: cfg.data.send_day, hour: cfg.data.send_hour });
     if (!due.due) return NextResponse.json({ sent: false, why: "not due" });
-    sunday = due.sunday;
+    sendDay = due.day;
   }
 
   try {
-    const data = await gather(admin, cfg.data.sections as Section[], tz);
-    const mail = render(data, new URL(req.url).origin);
+    const data = await gather(admin, cfg.data.sections.filter(isItem), tz);
+    const mail = render(data, new URL(req.url).origin, { hideEmpty: cfg.data.hide_empty });
+    if (preview) return NextResponse.json({ subject: mail.subject, html: mail.html });
     await sendToSelf(admin, cron ? mail.subject : `[Test] ${mail.subject}`, mail.text, mail.html);
-    if (sunday) await admin.from("weekly_email").update({ last_sent_on: sunday, last_error: null }).eq("id", 1);
+    if (sendDay) await admin.from("weekly_email").update({ last_sent_on: sendDay, last_error: null }).eq("id", 1);
     return NextResponse.json({ sent: true });
   } catch (e) {
     const message = (e instanceof Error ? e.message : String(e)).slice(0, 300);

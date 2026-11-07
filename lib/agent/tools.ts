@@ -25,6 +25,8 @@ export interface SavedMeal {
   name: string;
   aliases: string[];
   unit: string;
+  /** Dollars per portion. When set, logging the meal also logs spending. */
+  price?: number | null;
   /** Ingredient tags: servings of a library food per portion. Empty when untagged. */
   items: { foodId: string; servings: number }[];
 }
@@ -148,7 +150,14 @@ function parseMinutes(t: string | null): number | null {
   return secs == null ? null : Math.round((secs / 60) * 100) / 100;
 }
 
-type RpcOut = { status?: string; row?: Record<string, unknown>; action_id?: string | null; existing?: Record<string, unknown> };
+type RpcOut = {
+  status?: string; row?: Record<string, unknown>; action_id?: string | null; existing?: Record<string, unknown>;
+  /** log_saved_meal on a priced meal: the spending row it also logged. */
+  spending?: Record<string, unknown> | null; spending_action_id?: string | null;
+};
+
+/** The owner typed an amount ("$14", "spent", "paid"): chat's log_spending covers the money. */
+const TYPED_SPEND = /\b(?:spent|spend|paid|bought)\b|\$\s?\d/i;
 
 async function rpc(db: Db, fn: string, args: Record<string, unknown>): Promise<RpcOut | null> {
   // Function names and args come from this file only; the generated types can't
@@ -606,16 +615,22 @@ const logSavedMeal: ToolDef = {
       return out;
     };
 
+    // A priced meal logs its spending too, unless the owner typed an amount: then
+    // log_spending records what they typed and this would count it twice.
+    const typedMoney = TYPED_SPEND.test(ctx.text);
+
     const toOption = (m: SavedMeal, alias: string | null = null) => {
       const minus = minusFor(m);
       if (typeof minus === "string") return minus;
+      const spend = m.price != null && !typedMoney;
       const fields: [string, string][] = [["Meal", m.name], ["Portions", `${portions} ${m.unit}`], ["Date", fmtDay(date)]];
+      if (spend) fields.push(["Spending", `$${Math.max(0.01, Math.round(m.price! * portions * 100) / 100).toFixed(2)}`]);
       if (minus.length) fields.push(["Without", minus.map((x) => (x.servings === x.has ? x.food.name : `${g(x.servings)} of ${g(x.has)} ${x.food.name}`)).join(", ")]);
       if (extras.length) fields.push(["Plus", extras.map((x) => countName(x.servings, x.food.name)).join(", ")]);
       if (alias) fields.push(["Adds alias", alias]);
       return {
         resolved: {
-          date, meal_id: m.id, portions, alias,
+          date, meal_id: m.id, portions, alias, spend,
           minus: minus.map((x) => ({ food_id: x.food.id, servings: x.servings })),
           extras: extras.map((x) => ({ food_id: x.food.id, servings: x.servings })),
         } as Resolved,
@@ -655,6 +670,7 @@ const logSavedMeal: ToolDef = {
   async commit(r, db) {
     const out = await rpc(db, "log_saved_meal", {
       p_date: r.date, p_meal_id: r.meal_id, p_portions: r.portions, p_tool: "log_saved_meal", p_minus: r.minus ?? [],
+      p_spend: r.spend !== false,
     });
     if (out?.status !== "saved" || !out.row) return { status: "failed" };
     const row = out.row;
@@ -664,6 +680,9 @@ const logSavedMeal: ToolDef = {
       actionId: out.action_id ?? null,
       also: [],
     };
+    // Priced meal: the spending it logged, with its own Undo.
+    const spent = out.spending;
+    if (spent) saved.also!.push({ label: `Spent $${num(spent.amount).toFixed(2)}, ${String(spent.what)} (${String(spent.category)})`, actionId: out.spending_action_id ?? null });
     // Foods eaten with it: each its own entry, with its own Undo.
     for (const x of (r.extras ?? []) as { food_id: string; servings: number }[]) {
       const e = await rpc(db, "log_food_item", { p_date: r.date, p_food_id: x.food_id, p_servings: x.servings, p_tool: "log_saved_meal" });
@@ -1270,6 +1289,9 @@ const applyFoodUpdate: ToolDef = {
 // Mirrors BASE_STATUSES in lib/applicationsData.ts (a client module, so not imported here).
 const STATUSES = ["Applied", "OA Stage", "Interview", "Offer", "Rejected"];
 
+/** The role chat uses for an application or to-apply entry when the owner names none. */
+const DEFAULT_POSITION = "SWE";
+
 /** The owner's status word mapped onto a known status; anything else is kept as typed. */
 function statusOf(s: unknown): string | null {
   if (typeof s !== "string" || !s.trim()) return null;
@@ -1357,9 +1379,11 @@ const addApplication: ToolDef = {
     const days = input.applied_days_ago;
     const resolved: Resolved = {
       company,
-      position: typeof input.position === "string" && input.position.trim() ? input.position.trim() : null,
-      applied_date: typeof days === "number" && Number.isInteger(days) && days >= 0 && days <= 365 ? addDays(ctx.today, -days) : null,
-      status: statusOf(input.status),
+      // The owner's defaults: a role not named is SWE, and a status not named is Applied.
+      position: typeof input.position === "string" && input.position.trim() ? input.position.trim() : DEFAULT_POSITION,
+      // No day named means today; "yesterday", "3 days ago" etc. come through as applied_days_ago.
+      applied_date: typeof days === "number" && Number.isInteger(days) && days >= 0 && days <= 365 ? addDays(ctx.today, -days) : ctx.today,
+      status: statusOf(input.status) ?? "Applied",
       resume_name: verbatim(input.resume_name, ctx.text),
     };
     // Applying to something on the "to apply" list checks that reminder off instead of adding a
@@ -1442,7 +1466,7 @@ const planApplication: ToolDef = {
   async check(input, ctx) {
     const company = String(input.company ?? "").trim();
     if (!company) return { status: "invalid", detail: "No company named." };
-    const position = typeof input.position === "string" && input.position.trim() ? input.position.trim() : null;
+    const position = typeof input.position === "string" && input.position.trim() ? input.position.trim() : DEFAULT_POSITION;
     const resolved: Resolved = { company, position, date: ctx.today };
     if (!position) return { status: "missing", resolved, title: `Reminder: apply to ${company}`, missing: [{ name: "position", label: "Position", type: "text" }] };
     // Applying to a company (even the same role) again is normal; past applications are shown, not warned about.
@@ -1603,6 +1627,21 @@ const logCallback: ToolDef = {
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
+/** "YYYY-MM-DD" when that day exists (no Feb 30), else null. */
+function realDate(y: number, mo: number, d: number): string | null {
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/** `n` calendar months on, clamped to the month's last day (Jan 31 + 1 month = Feb 28). */
+function addMonths(s: string, n: number): string {
+  const [y, mo, d] = s.split("-").map(Number);
+  const first = new Date(y, mo - 1 + n, 1);
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  return realDate(first.getFullYear(), first.getMonth() + 1, Math.min(d, last))!;
+}
+
 /**
  * A due date from the owner's own words, worked out by code (the model never computes
  * dates): "today", "tomorrow", "in 3 days", "friday" (the next one), "11/1", "Nov 1".
@@ -1617,6 +1656,18 @@ export function dueFrom(text: string | null, today: string): string | null {
   if (m) return addDays(today, Number(m[1]));
   m = t.match(/\bin\s+(\d+)\s+weeks?\b/);
   if (m) return addDays(today, 7 * Number(m[1]));
+  // Far-off dates, for long-term reminders: "in 6 months", "in 2 years", "2027-03-01",
+  // "3/1/2027", "Mar 1, 2027", "March 2027" (the 1st). A day that doesn't exist is null.
+  m = t.match(/\bin\s+(\d+)\s+(months?|years?)\b/);
+  if (m) return addMonths(today, Number(m[1]) * (m[2].startsWith("y") ? 12 : 1));
+  m = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (m) return realDate(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = t.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/);
+  if (m) return realDate(Number(m[3].length === 2 ? `20${m[3]}` : m[3]), Number(m[1]), Number(m[2]));
+  m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/);
+  if (m) return realDate(Number(m[3]), MONTH_NAMES.indexOf(m[1]) + 1, Number(m[2]));
+  m = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+(\d{4})\b/);
+  if (m) return realDate(Number(m[2]), MONTH_NAMES.indexOf(m[1]) + 1, 1);
   const wd = WEEKDAYS.findIndex((d) => new RegExp(`\\b${d.slice(0, 3)}(${d.slice(3)})?\\b`).test(t));
   if (wd >= 0) {
     const now = new Date(`${today}T12:00:00`).getDay();
@@ -1646,7 +1697,8 @@ const addReminder: ToolDef = {
     name: "add_reminder",
     description:
       "Something the owner wants to be reminded of, e.g. 'remind me to call the landlord', 'renew passport by Nov 1'. " +
-      "Never for job applications: 'apply to X' is plan_application and 'applied to X' is add_application. Not for logging something already done.",
+      "Never for job applications: 'apply to X' is plan_application and 'applied to X' is add_application. Not for logging something already done. " +
+      "Not for a 'long term reminder' (add_long_term_reminder).",
     // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
     strict: false,
     input_schema: {
@@ -1679,6 +1731,76 @@ const addReminder: ToolDef = {
     const body = String(out.row.body);
     const short = body.length > 60 ? `${body.slice(0, 60)}…` : body;
     return { status: "saved", label: `Reminder: ${short}${out.row.due_date ? `, due ${fmtDay(String(out.row.due_date))}` : ""}`, actionId: out.action_id ?? null };
+  },
+};
+
+// "add a long term reminder to ...", "long-term reminder: ...". Everything after is the owner's text.
+export const LONG_TERM_PREFIX = /^\s*(?:(?:please\s+)?(?:add|set|make|create)\s+)?(?:an?\s+)?long[\s-]?term\s+reminders?\s*(?:to\s+|for\s+|[:\-–—]\s*)?/i;
+/** The phrase that names the tool outright, anywhere in the message. */
+export const LONG_TERM_NAMED = /\blong[\s-]?term\s+reminders?\b/i;
+
+/** "Mar 3", or "Mar 3, 2028" when it's not this year: long-term dates can be years out. */
+const fmtFar = (d: string, today: string) => (d.slice(0, 4) === today.slice(0, 4) ? fmtDay(d) : `${fmtDay(d)}, ${d.slice(0, 4)}`);
+
+const addLongTermReminder: ToolDef = {
+  name: "add_long_term_reminder",
+  display: "Long-term reminder",
+  definition: {
+    name: "add_long_term_reminder",
+    description:
+      "A long-term reminder: something to remember months out, kept on its own tab until the day the owner wants it shown. " +
+      "Always when the message says 'long term reminder' ('add a long term reminder to renew my passport, show it Feb 1, due Mar 15'). " +
+      "show_text is when it should start showing up ('show it Feb 1', 'surface in 6 months', 'starting March 2027'); due_text is the deadline ('due', 'by').",
+    // Not strict: strict tools share a 16-nullable-field budget. Code re-checks every argument.
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["text", "show_text", "due_text", "confidence"],
+      properties: {
+        text: { type: "string", description: "What to remember, copied exactly from the message, without 'add a long term reminder to' and without the dates." },
+        show_text: { type: ["string", "null"], description: "When it should start showing, exactly as the owner wrote it ('Feb 1', 'in 6 months'). Null if not said." },
+        due_text: { type: ["string", "null"], description: "The due date exactly as the owner wrote it. Null if none." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    // The owner's own words: the model's span if it appears verbatim, else the message
+    // minus a leading "add a long term reminder to".
+    const m = ctx.text.match(LONG_TERM_PREFIX);
+    const body = verbatim(input.text, ctx.text) ?? (m ? ctx.text.slice(m[0].length) : ctx.text);
+    if (!body.trim()) return { status: "invalid", detail: "The reminder is empty." };
+    const showText = verbatim(input.show_text, ctx.text);
+    const dueText = verbatim(input.due_text, ctx.text);
+    const surface = dueFrom(showText, ctx.today);
+    const due = dueFrom(dueText, ctx.today);
+    if (dueText && !due) return { status: "invalid", detail: `Couldn't read the due date ("${dueText}"). Say a date, like "Mar 15, 2027".` };
+    if (surface && due && surface > due) return { status: "invalid", detail: `It would show up (${fmtFar(surface, ctx.today)}) after it's due (${fmtFar(due, ctx.today)}).` };
+    const resolved: Resolved = { body, surface, due, date: ctx.today };
+    if (!surface) {
+      return {
+        status: "missing", resolved,
+        title: `Long-term reminder: ${body.length > 40 ? `${body.slice(0, 40)}…` : body}`,
+        missing: [{ name: "surface", label: showText ? `Show on TALOS from ("${showText}")` : "Show on TALOS from", type: "date" }],
+      };
+    }
+    const fields: [string, string][] = [["Reminder", body], ["Shows on TALOS", fmtFar(surface, ctx.today)]];
+    if (due) fields.push(["Due", fmtFar(due, ctx.today)]);
+    return { status: "ready", resolved, fields, warnings: [] };
+  },
+  fill(r, values) {
+    const v = String(values.surface ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return "Pick the day it should show up on TALOS.";
+    if (r.due && v > String(r.due)) return "It should show up on or before the due date.";
+    return { ...r, surface: v };
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "add_reminder", { p_body: r.body, p_due: r.due, p_date: r.date, p_surface: r.surface, p_tool: "add_long_term_reminder" });
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    const body = String(out.row.body);
+    const short = body.length > 60 ? `${body.slice(0, 60)}…` : body;
+    return { status: "saved", label: `Long-term reminder: ${short}, shows ${fmtFar(String(r.surface), String(r.date))}`, actionId: out.action_id ?? null };
   },
 };
 
@@ -2181,7 +2303,7 @@ const portfolioSetHidden: ToolDef = {
 
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
-  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_event",
+  "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_long_term_reminder", "add_event",
   "portfolio_add_project", "portfolio_set_timeline_month", "portfolio_add_card", "portfolio_set_hidden",
   "add_subscription", "cancel_subscription", "log_spending",
 ] as const;
@@ -2217,7 +2339,7 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
-    addReminder, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
+    addReminder, addLongTermReminder, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
     addSubscription, cancelSubscription, logSpending,

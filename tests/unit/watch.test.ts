@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { commuteLeg, parseFeed } from "@/lib/watch/adapters";
-import { jobMatches } from "@/lib/watch/match";
+import { jobMatches, postedRecently } from "@/lib/watch/match";
 import { companyKey } from "@/lib/watch/data";
 import type { TransitConfig } from "@/lib/watch/types";
 
@@ -86,6 +86,16 @@ describe("Watch: SimplifyJobs README rules", async () => {
     expect(categoryOf({ title: "FPGA Engineer", category: null })).toBe("Hardware Engineering");
     expect(categoryName("Software")).toBe("Software Engineering");
     expect(jobMatches({ title: "x", locations: [], category: "Software Engineering" }, { categories: ["Software"], locations: [], exclude: [] })).toBe(true);
+  });
+});
+
+describe("Watch: jobs posted in the last week", () => {
+  it("keeps postings up to 7 days old and drops older ones", () => {
+    const now = Date.parse("2026-11-06T12:00:00Z");
+    expect(postedRecently({ posted: "2026-11-05T12:00:00Z" }, now)).toBe(true);
+    expect(postedRecently({ posted: "2026-10-30T12:00:00Z" }, now)).toBe(true);
+    expect(postedRecently({ posted: "2026-10-30T11:59:00Z" }, now)).toBe(false);
+    expect(postedRecently({ posted: "not a date" }, now)).toBe(false);
   });
 });
 

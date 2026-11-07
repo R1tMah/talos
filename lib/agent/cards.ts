@@ -10,6 +10,7 @@ export interface CardOption {
   tool: string; // display name, e.g. "Saved meal"
   fields: [string, string][];
   proposalId: string;
+  tab?: string; // the tab it would save to
 }
 
 export interface MissingField {
@@ -22,12 +23,15 @@ export interface MissingField {
 
 export type ChatCard =
   | { kind: "saved"; label: string; actionId: string | null; googleEvent?: { calendarId: string; eventId: string }; undone?: boolean }
-  | { kind: "unsure"; options: CardOption[]; title?: string; resolved?: "picked" }
+  // `suggested`: the tab the owner chose for a message like this before (lib/agent/learned.ts).
+  | { kind: "unsure"; options: CardOption[]; title?: string; suggested?: string; resolved?: "picked" }
   // Also used for "ask first" confirmations (a calendar event): then `title` and `action` replace the warning wording.
   | { kind: "warning"; detail: string; proposalId: string; text: string; title?: string; action?: string; resolved?: "saved" | "edit" }
   | { kind: "confirm"; title: string; changes: Change[]; proposalId: string; resolved?: "confirmed" | "cancelled" }
   | { kind: "missing"; title: string; missing: MissingField[]; proposalId: string; resolved?: "filled" | "cancelled" }
-  | { kind: "failed"; detail?: string };
+  | { kind: "failed"; detail?: string }
+  // After food is logged: that day's totals against its targets, read from the database (no model).
+  | { kind: "left"; date: string; cal: number; calTarget: number; protein: number; proteinTarget: number };
 
 export interface ChatResponse {
   cards: ChatCard[];

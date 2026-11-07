@@ -12,6 +12,7 @@ import { fmtDay, fmtNum } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
 import { FLAGS } from "@/lib/flags";
 import { useArchivedTabs } from "@/lib/archivedTabs";
+import { useLongTermReminders } from "@/lib/generalReminders";
 import { useHomeStats } from "@/lib/homeStats";
 import { GROUPS } from "@/lib/tabGroups";
 import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
@@ -46,6 +47,9 @@ export default function TabsPage() {
   // Archived tabs drop off the grid and sit in the accordion at the bottom.
   const archived = useArchivedTabs();
   const seasons = useSeasonSummary();
+  const longTerm = useLongTermReminders();
+  // The next long-term reminder still waiting to show up on TALOS.
+  const nextUp = longTerm.rows?.find((r) => !r.surfaced);
   const shown = (k: TabKey) => !archived?.has(k);
   // Without LeetCode, the Interviews headline is the mock count of whichever mock tabs are shown.
   const mockTotal = mocks == null || aiMocks == null ? null : (shown("sysdesign") ? mocks : 0) + (shown("aiassisted") ? aiMocks : 0);
@@ -54,8 +58,8 @@ export default function TabsPage() {
   // Content, Work and Personal share one Journals card; it hides when all three are archived.
   const journals = GROUPS.journals.filter((j) => shown(j.key));
   const journalCount = stats ? journals.reduce((a, j) => a + stats.notes[j.key].n, 0) : null;
-  // Occasional tabs, folded away under "Once in a while": Long Term (unless archived) and the sites.
-  const occasional = (shown("longterm") ? 1 : 0) + ONCE_IN_A_WHILE.length;
+  // Occasional tabs, folded away under "Once in a while": Long Term (unless archived), Long-Term Reminders and the sites.
+  const occasional = (shown("longterm") ? 1 : 0) + 1 + ONCE_IN_A_WHILE.length;
 
   return (
     <main className="screen">
@@ -164,6 +168,14 @@ export default function TabsPage() {
               rows={[{ label: "Current", value: seasons?.current ?? "–" }]}
             />
           )}
+          <StatCard
+            compact
+            title="Long-Term Reminders"
+            href="/tabs/reminders"
+            value={longTerm.rows ? longTerm.rows.length : longTerm.failed ? "Failed" : "–"}
+            unit={longTerm.rows ? (longTerm.rows.length === 1 ? "reminder" : "reminders") : undefined}
+            rows={[{ label: "Next shows", value: nextUp ? fmtDay(nextUp.surface) : "–" }]}
+          />
           {ONCE_IN_A_WHILE.map((t) => (
             <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />
           ))}

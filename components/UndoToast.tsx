@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { onToast, type ToastMsg } from "@/lib/undo";
+import { IconX } from "./Icons";
 
 /** One toast at a time above the tab bar: "Saved: ... · Undo", then "Undid: ... · Redo". */
 export function UndoToast() {
@@ -55,6 +56,19 @@ export function UndoToast() {
           {toast.action.label}
         </button>
       )}
+      {/* Closes it now instead of waiting out the 6 seconds. */}
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label="Dismiss"
+        style={{ width: 28, height: 28, marginRight: -6, color: "var(--text-3)" }}
+        onClick={() => {
+          if (timer.current) clearTimeout(timer.current);
+          setToast(null);
+        }}
+      >
+        <IconX size={16} />
+      </button>
     </div>
   );
 }

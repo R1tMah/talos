@@ -614,6 +614,7 @@ export type Database = {
         Row: {
           client_msg_id: string
           corrected: boolean
+          corrected_tab: string | null
           created_at: string
           id: string
           model: string | null
@@ -626,6 +627,7 @@ export type Database = {
         Insert: {
           client_msg_id: string
           corrected?: boolean
+          corrected_tab?: string | null
           created_at?: string
           id?: string
           model?: string | null
@@ -638,6 +640,7 @@ export type Database = {
         Update: {
           client_msg_id?: string
           corrected?: boolean
+          corrected_tab?: string | null
           created_at?: string
           id?: string
           model?: string | null
@@ -909,6 +912,7 @@ export type Database = {
           due_date: string | null
           id: string
           noted_date: string
+          surface_date: string | null
         }
         Insert: {
           body: string
@@ -918,6 +922,7 @@ export type Database = {
           due_date?: string | null
           id?: string
           noted_date: string
+          surface_date?: string | null
         }
         Update: {
           body?: string
@@ -927,6 +932,7 @@ export type Database = {
           due_date?: string | null
           id?: string
           noted_date?: string
+          surface_date?: string | null
         }
         Relationships: []
       }
@@ -1019,6 +1025,7 @@ export type Database = {
           id: string
           name: string
           portion_unit: string
+          price: number | null
           protein_g: number
         }
         Insert: {
@@ -1031,6 +1038,7 @@ export type Database = {
           id?: string
           name: string
           portion_unit?: string
+          price?: number | null
           protein_g: number
         }
         Update: {
@@ -1043,6 +1051,7 @@ export type Database = {
           id?: string
           name?: string
           portion_unit?: string
+          price?: number | null
           protein_g?: number
         }
         Relationships: []
@@ -1212,6 +1221,7 @@ export type Database = {
           category: string
           created_at: string
           deleted_at: string | null
+          food_log_id: string | null
           id: string
           logical_date: string
           note: string | null
@@ -1222,6 +1232,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          food_log_id?: string | null
           id?: string
           logical_date: string
           note?: string | null
@@ -1232,6 +1243,7 @@ export type Database = {
           category?: string
           created_at?: string
           deleted_at?: string | null
+          food_log_id?: string | null
           id?: string
           logical_date?: string
           note?: string | null
@@ -1402,26 +1414,35 @@ export type Database = {
       weekly_email: {
         Row: {
           enabled: boolean
+          hide_empty: boolean
           id: number
           last_error: string | null
           last_sent_on: string | null
           sections: string[]
+          send_day: number
+          send_hour: number
           updated_at: string
         }
         Insert: {
           enabled?: boolean
+          hide_empty?: boolean
           id?: number
           last_error?: string | null
           last_sent_on?: string | null
           sections?: string[]
+          send_day?: number
+          send_hour?: number
           updated_at?: string
         }
         Update: {
           enabled?: boolean
+          hide_empty?: boolean
           id?: number
           last_error?: string | null
           last_sent_on?: string | null
           sections?: string[]
+          send_day?: number
+          send_hour?: number
           updated_at?: string
         }
         Relationships: []
@@ -1550,13 +1571,15 @@ export type Database = {
         }
         Relationships: []
       }
-      open_reminders: {
+      open_long_term_reminders: {
         Row: {
           body: string | null
           created_at: string | null
           due_date: string | null
           id: string | null
           noted_date: string | null
+          surface_date: string | null
+          surfaced: boolean | null
         }
         Insert: {
           body?: string | null
@@ -1564,6 +1587,8 @@ export type Database = {
           due_date?: string | null
           id?: string | null
           noted_date?: string | null
+          surface_date?: string | null
+          surfaced?: boolean | null
         }
         Update: {
           body?: string | null
@@ -1571,6 +1596,35 @@ export type Database = {
           due_date?: string | null
           id?: string | null
           noted_date?: string | null
+          surface_date?: string | null
+          surfaced?: boolean | null
+        }
+        Relationships: []
+      }
+      open_reminders: {
+        Row: {
+          body: string | null
+          created_at: string | null
+          due_date: string | null
+          id: string | null
+          noted_date: string | null
+          surface_date: string | null
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          noted_date?: string | null
+          surface_date?: string | null
+        }
+        Update: {
+          body?: string | null
+          created_at?: string | null
+          due_date?: string | null
+          id?: string | null
+          noted_date?: string | null
+          surface_date?: string | null
         }
         Relationships: []
       }
@@ -1633,6 +1687,7 @@ export type Database = {
       }
     }
     Functions: {
+      owner_today: { Args: never; Returns: string }
       add_application_reminder: {
         Args: {
           p_company: string
@@ -1677,7 +1732,13 @@ export type Database = {
         Returns: Json
       }
       add_reminder: {
-        Args: { p_body: string; p_date: string; p_due: string; p_tool?: string }
+        Args: {
+          p_body: string
+          p_date: string
+          p_due: string
+          p_surface?: string
+          p_tool?: string
+        }
         Returns: Json
       }
       add_scheduled_reminder: { Args: { p_body: string }; Returns: Json }
@@ -1906,6 +1967,7 @@ export type Database = {
           p_meal_id: string
           p_minus?: Json
           p_portions?: number
+          p_spend?: boolean
           p_tool?: string
         }
         Returns: Json
@@ -2024,6 +2086,7 @@ export type Database = {
           p_name: string
           p_portion_unit: string
           p_protein_g: number
+          p_price?: number
           p_tool?: string
         }
         Returns: Json
@@ -2205,6 +2268,7 @@ export type Database = {
           p_name: string
           p_portion_unit: string
           p_protein_g: number
+          p_price?: number
           p_tool?: string
         }
         Returns: Json
@@ -2223,7 +2287,13 @@ export type Database = {
         Returns: Json
       }
       update_reminder: {
-        Args: { p_body: string; p_due: string; p_id: string; p_tool?: string }
+        Args: {
+          p_body: string
+          p_due: string
+          p_id: string
+          p_surface?: string
+          p_tool?: string
+        }
         Returns: Json
       }
       update_run: {

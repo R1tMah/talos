@@ -274,6 +274,33 @@ const vs = (g: Game) => `${g.home ? "vs" : "@"} ${g.opp}`;
 const result = (g: Game) =>
   g.us == null || g.them == null ? g.detail : `${g.state === "post" ? (g.us > g.them ? "W" : "L") : ""} ${g.us}-${g.them}`.trim();
 
+// A stream page for the game, home team first: methstreams.gs/stream/los-angeles-lakers-vs-portland-trail-blazers
+const slug = (name: string) => name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// Full names by ESPN abbreviation, for snapshots saved before games kept the opponent's name.
+const NBA_NAMES: Record<string, string> = {
+  ATL: "Atlanta Hawks", BOS: "Boston Celtics", BKN: "Brooklyn Nets", CHA: "Charlotte Hornets", CHI: "Chicago Bulls",
+  CLE: "Cleveland Cavaliers", DAL: "Dallas Mavericks", DEN: "Denver Nuggets", DET: "Detroit Pistons", GS: "Golden State Warriors",
+  HOU: "Houston Rockets", IND: "Indiana Pacers", LAC: "LA Clippers", LAL: "Los Angeles Lakers", MEM: "Memphis Grizzlies",
+  MIA: "Miami Heat", MIL: "Milwaukee Bucks", MIN: "Minnesota Timberwolves", NO: "New Orleans Pelicans", NY: "New York Knicks",
+  OKC: "Oklahoma City Thunder", ORL: "Orlando Magic", PHI: "Philadelphia 76ers", PHX: "Phoenix Suns", POR: "Portland Trail Blazers",
+  SAC: "Sacramento Kings", SA: "San Antonio Spurs", TOR: "Toronto Raptors", UTAH: "Utah Jazz", WSH: "Washington Wizards",
+};
+function streamUrl(t: TeamSnap, g: Game): string | null {
+  const opp = g.oppName ?? NBA_NAMES[g.opp.toUpperCase()];
+  if (!opp) return null;
+  const [home, away] = g.home ? [t.name, opp] : [opp, t.name];
+  return `https://methstreams.gs/stream/${slug(home)}-vs-${slug(away)}`;
+}
+function WatchLink({ t, g }: { t: TeamSnap; g: Game }) {
+  const url = streamUrl(t, g);
+  if (!url) return null;
+  return (
+    <a className="btn btn-sm" href={url} target="_blank" rel="noopener noreferrer">
+      Watch
+    </a>
+  );
+}
+
 export function TeamCard({ s }: { s: WatchSource }) {
   const t = s.data as TeamSnap | null;
   const last = t?.recent[0];
@@ -288,13 +315,19 @@ export function TeamCard({ s }: { s: WatchSource }) {
           {next && (
             <div className="watch-line">
               <span>{next.state === "in" ? <Tag tone="tag-accent">Live</Tag> : "Next"} {vs(next)}</span>
-              <span className="faint num">{next.state === "in" ? result(next) + " · " + next.detail : dayClock(next.date)}</span>
+              <span className="watch-line-end">
+                <span className="faint num">{next.state === "in" ? result(next) + " · " + next.detail : dayClock(next.date)}</span>
+                <WatchLink t={t} g={next} />
+              </span>
             </div>
           )}
           {last && (
             <div className="watch-line">
               <span>Last {vs(last)}</span>
-              <span className="faint num">{result(last)}</span>
+              <span className="watch-line-end">
+                <span className="faint num">{result(last)}</span>
+                <WatchLink t={t} g={last} />
+              </span>
             </div>
           )}
           {t.players?.map((p) => (
@@ -329,8 +362,8 @@ export function TeamView({ s }: { s: WatchSource }) {
       </div>
       {t.players?.map((p) => <PlayerStats key={p.name} p={p} />)}
       {t.missingPlayers?.length ? <p className="faint">Not on the roster: {t.missingPlayers.join(", ")}</p> : null}
-      <GameList title="Upcoming" games={t.upcoming} when={(g) => (g.state === "in" ? g.detail : dayClock(g.date))} />
-      <GameList title="Recent" games={t.recent} when={(g) => shortDate(g.date)} />
+      <GameList title="Upcoming" games={t.upcoming} team={t} when={(g) => (g.state === "in" ? g.detail : dayClock(g.date))} />
+      <GameList title="Recent" games={t.recent} team={t} when={(g) => shortDate(g.date)} />
     </>
   );
 }
@@ -379,7 +412,7 @@ function PlayerStats({ p }: { p: PlayerSnap }) {
   );
 }
 
-function GameList({ title, games, when }: { title: string; games: Game[]; when: (g: Game) => string }) {
+function GameList({ title, games, team, when }: { title: string; games: Game[]; team?: TeamSnap; when: (g: Game) => string }) {
   if (!games.length) return null;
   return (
     <section className="card list">
@@ -389,6 +422,7 @@ function GameList({ title, games, when }: { title: string; games: Game[]; when: 
           <span className="row-label">{vs(g)}</span>
           {g.state !== "pre" && <span className="num">{result(g)}</span>}
           <span className="row-value num">{when(g)}{g.state === "pre" && g.tv ? ` · ${g.tv}` : ""}</span>
+          {team && <WatchLink t={team} g={g} />}
         </div>
       ))}
     </section>

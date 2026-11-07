@@ -98,7 +98,7 @@ export default function ChatPage() {
   const send = async () => {
     const t = text.trim();
     if (!t || busy) return;
-    dictation.stop();
+    dictation.cancel(); // late words must not refill the cleared box
     setText("");
     // Naming a tab under an open "Where does this go?" sends the original message to that tab.
     const open = chosen ? null : openUnsure();
@@ -108,10 +108,18 @@ export default function ChatPage() {
     // A picked tab chip goes with this one message, then clears.
     const tab = prompt ? named! : (chosen ?? undefined);
     setChosen(null);
+    await submit(t, tab, prompt ? { text: prompt.text, fixes: prompt.id } : undefined);
+  };
+
+  /**
+   * Sends one message. `t` is what the chat shows; `answer` re-sends an earlier message
+   * (by its id, `fixes`) to the tab the owner gave under "Where does this go?".
+   */
+  const submit = async (t: string, tab: ChatTab | undefined, answer?: { text: string; fixes: string }) => {
     const user: Msg = { id: uid(), role: "user", text: t, tab, ts: Date.now(), pending: true };
     append(user);
     chatStore.wait(1);
-    const res = await post<ChatResponse>("/api/chat", { text: prompt ? prompt.text : t, clientMsgId: user.id, tab });
+    const res = await post<ChatResponse>("/api/chat", { text: answer ? answer.text : t, clientMsgId: user.id, tab, fixes: answer?.fixes });
     chatStore.wait(-1);
     const cards = res?.cards?.length ? res.cards : [{ kind: "failed" } as ChatCard];
     speak(cards.map(reply), user.id);
@@ -182,6 +190,13 @@ export default function ChatPage() {
         confirm(m.id, m.card.proposalId, (c) => ({ ...c, resolved: "confirmed" }) as ChatCard);
       },
       cancel: () => setCard(m.id, (c) => ({ ...c, resolved: "cancelled" }) as ChatCard),
+      pickTab: (tab) => {
+        const p = promptFor(m.id);
+        if (m.card.kind !== "unsure" || !p || busy) return;
+        setCard(m.id, (c) => ({ ...c, resolved: "picked" }) as ChatCard);
+        submit(p.text, tab, { text: p.text, fixes: p.id });
+      },
+      tabs: chips,
       fill: () => setFillFor(m.id),
       dismiss: () => setMsgs((xs) => xs.filter((x) => x.id !== m.id)),
     };
@@ -279,7 +294,11 @@ export default function ChatPage() {
               placeholder={dictation.listening ? "Listening…" : chosen ? `Log to ${tabName(chosen)}` : "Log anything"}
               enterKeyHint="send"
               autoCapitalize="sentences"
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                // Typing takes over from dictation, so its next words don't overwrite the edit.
+                if (dictation.listening) dictation.cancel();
+                setText(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();

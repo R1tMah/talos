@@ -1,4 +1,4 @@
-// The Sunday email: when it's due, what it says, and the message Gmail gets.
+// The weekly email: when it's due, what it says, and the message Gmail gets.
 
 import { describe, expect, it } from "vitest";
 import { isDue, render, type WeeklyData } from "@/lib/email/weekly";
@@ -17,12 +17,24 @@ describe("when it's due", () => {
     ["2026-10-26T05:00:00Z", false, "1 AM Monday is still Sunday by the 4 AM rule, but the clock is before 1 PM"],
   ])("%s -> %s (%s)", (iso, want) => expect(isDue(NY, null, new Date(iso)).due).toBe(want));
   it("goes out once per Sunday", () => {
-    expect(isDue(NY, "2026-10-25", new Date("2026-10-25T18:00:00Z"))).toEqual({ due: false, sunday: "2026-10-25" });
+    expect(isDue(NY, "2026-10-25", new Date("2026-10-25T18:00:00Z"))).toEqual({ due: false, day: "2026-10-25" });
     expect(isDue(NY, "2026-10-18", new Date("2026-10-25T18:00:00Z")).due).toBe(true);
   });
 });
 
-const base: WeeklyData = { today: "2026-10-25", weekStart: "2026-10-19", sections: ["reminders", "health"] };
+describe("on the owner's day and hour", () => {
+  const wed8 = { day: 3, hour: 8 };
+  it.each([
+    ["2026-10-28T11:59:00Z", false, "Wednesday 7:59 AM EDT: not yet"],
+    ["2026-10-28T12:00:00Z", true, "Wednesday 8:00 AM EDT"],
+    ["2026-10-28T23:00:00Z", true, "later Wednesday catches up"],
+    ["2026-10-25T17:00:00Z", false, "Sunday 1 PM is no longer the day"],
+    ["2026-10-29T12:00:00Z", false, "Thursday"],
+  ])("%s -> %s (%s)", (iso, want) => expect(isDue(NY, null, new Date(iso), wed8).due).toBe(want));
+  it("once per send day", () => expect(isDue(NY, "2026-10-28", new Date("2026-10-28T13:00:00Z"), wed8).due).toBe(false));
+});
+
+const base: WeeklyData = { today: "2026-10-25", from: "2026-10-19", items: ["reminders", "weight", "food", "runs"] };
 
 describe("what it says", () => {
   it("reminders are grouped overdue, this week, later, undated, then To apply", () => {
@@ -68,10 +80,60 @@ describe("what it says", () => {
     expect(m.html).not.toContain("<script>");
   });
 
-  it("sections left out aren't in the email", () => {
-    const m = render({ ...base, sections: ["health"], runs: { count: 0, miles: 0 } }, null);
+  it("items left out aren't in the email", () => {
+    const m = render({ ...base, items: ["runs"], runs: { count: 0, miles: 0 } }, null);
     expect(m.subject).toBe("TALOS week of Oct 19");
     expect(m.text).not.toContain("REMINDERS");
+  });
+});
+
+describe("the new items", () => {
+  it("long-term reminders coming up are listed with when they show up", () => {
+    const m = render({ ...base, reminders: [], longTerm: [{ body: "renew passport", surface: "2026-11-10", due: "2026-12-01" }] }, null);
+    expect(m.text).toContain("Long-term, showing up in the next 30 days:");
+    expect(m.text).toContain("renew passport (shows Nov 10, due Dec 1)");
+    expect(m.text).not.toContain("Nothing open.");
+  });
+
+  it("spending has the week's total and each category, biggest first", () => {
+    const m = render({ ...base, items: ["spending"], spending: { total: 84.5, count: 3, byCategory: [{ category: "Groceries", amount: 60 }, { category: "Transport", amount: 24.5 }] } }, null);
+    expect(m.text).toContain("MONEY");
+    expect(m.text).toContain("Spent this week: $84.50 across 3:");
+    expect(m.text.indexOf("Groceries: $60.00")).toBeLessThan(m.text.indexOf("Transport: $24.50"));
+  });
+
+  it("career items can go in one at a time", () => {
+    const m = render({ ...base, items: ["leetcode"], leetcode: 4 }, null);
+    expect(m.text).toContain("LeetCode: 4 this week");
+    expect(m.text).not.toContain("Applied this week");
+  });
+});
+
+describe("leaving out empty lines", () => {
+  const quiet: WeeklyData = {
+    ...base, items: ["reminders", "weight", "food", "runs", "calendar"],
+    reminders: [], weight: { avg: null, n: 0, lastAvg: null }, runs: { count: 0, miles: 0 }, calendar: [],
+    food: { days: 3, avgCal: 2000, avgProtein: 150, calTarget: 2200, proteinTarget: 160, proteinDays: 1 },
+  };
+
+  it("drops the nothing-happened lines and sections left empty, keeps the rest", () => {
+    const m = render(quiet, null, { hideEmpty: true });
+    expect(m.text).not.toContain("no weigh-ins");
+    expect(m.text).not.toContain("Runs: none");
+    expect(m.text).not.toContain("REMINDERS");
+    expect(m.text).not.toContain("COMING UP");
+    expect(m.text).toContain("Calories: 2,000 a day on average");
+  });
+
+  it("off by default: the empty lines are shown", () => {
+    const m = render(quiet, null);
+    expect(m.text).toContain("Weight: no weigh-ins this week.");
+    expect(m.text).toContain("Nothing on the calendar.");
+  });
+
+  it("a week with nothing at all says so", () => {
+    const m = render({ ...quiet, food: { days: 0, avgCal: null, avgProtein: null, calTarget: 2200, proteinTarget: 160, proteinDays: 0 } }, null, { hideEmpty: true });
+    expect(m.text).toContain("Nothing to report this week.");
   });
 });
 

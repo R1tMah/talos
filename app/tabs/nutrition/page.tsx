@@ -35,6 +35,7 @@ const MEAL_FIELDS: Field[] = [
   { name: "aliases", label: "Aliases", full: true, placeholder: "Comma separated, e.g. flatbread dinner" },
   { name: "unit", label: "One portion is", placeholder: "serving, oz, scoop" },
   ...MACROS,
+  { name: "price", label: "Price ($ per portion)", type: "number", optional: true, placeholder: "Optional: logging it adds spending" },
 ];
 
 const FOOD_FIELDS: Field[] = [
@@ -75,7 +76,12 @@ const checkTyped = (v: Record<string, unknown>) =>
 const checkPortions = (v: Record<string, unknown>) =>
   bad(v.portions) || (v.portions as number) <= 0 ? "Portions must be more than 0." : !v.date ? "Date is required." : null;
 
-const checkMeal = (v: Record<string, unknown>) => (!String(v.name ?? "").trim() ? "Name is required." : checkMacros(v));
+const checkMeal = (v: Record<string, unknown>) =>
+  !String(v.name ?? "").trim()
+    ? "Name is required."
+    : v.price != null && (bad(v.price) || (v.price as number) <= 0)
+      ? "Price must be more than 0, or left empty."
+      : checkMacros(v);
 
 const macrosOf = (v: Record<string, unknown>): Macros => ({
   cal: Math.round(v.cal as number),
@@ -101,14 +107,18 @@ const mealOf = (v: Record<string, unknown>): MealInput => ({
   name: String(v.name).trim(),
   aliases: String(v.aliases ?? "").split(",").map((a) => a.trim()).filter(Boolean),
   unit: String(v.unit ?? "").trim() || "serving",
+  price: v.price == null ? null : Math.round((v.price as number) * 100) / 100,
   ...macrosOf(v),
 });
+
+const money = (n: number) => `$${n.toFixed(2)}`;
 
 type SheetState =
   | { kind: "choose" }
   | { kind: "typed"; row?: LogEntry }
   | { kind: "portions"; row: LogEntry }
   | { kind: "logMeal"; meal?: Meal }
+  | { kind: "logFood"; food: Food }
   | { kind: "mealHub"; meal: Meal }
   | { kind: "ingredients"; meal: Meal }
   | { kind: "meal"; row?: Meal }
@@ -328,6 +338,7 @@ function Nutrition() {
                   <div className="cell-main">{r.name}</div>
                   <div className="cell-sub">
                     per {r.unit}
+                    {r.price != null && ` · ${money(r.price)}`}
                     {r.aliases.length > 0 && ` · ${r.aliases.join(", ")}`}
                   </div>
                   {r.items.length > 0 && <div className="ing-summary">{itemsSummary(r.items, foodById)}</div>}
@@ -381,6 +392,22 @@ function Nutrition() {
             },
             { key: "cal", label: "kcal", width: "44px", align: "right", render: (r) => r.cal },
             { key: "p", label: "P", width: "40px", align: "right", render: (r) => <span className="muted">{grams(r.p)}</span> },
+            {
+              key: "log", label: "", width: "52px", align: "right",
+              render: (r) => (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSheet({ kind: "logFood", food: r });
+                  }}
+                >
+                  Log
+                </button>
+              ),
+            },
           ]}
         />
       )}
@@ -423,6 +450,23 @@ function Nutrition() {
         />
       )}
 
+      {sheet?.kind === "logFood" && (
+        <FormSheet
+          title={`Log ${sheet.food.name}`}
+          fields={PORTION_FIELDS.map((f) =>
+            f.name === "portions" ? { ...f, label: `Servings (${grams(sheet.food.amount)} ${sheet.food.unit} each)` } : f,
+          )}
+          validate={checkPortions}
+          initial={{ portions: 1, date }}
+          onClose={() => setSheet(null)}
+          onSubmit={(v) => {
+            const d = v.date as string;
+            run(nutritionApi.logFood(d, sheet.food.id, v.portions as number), `Logged ${sheet.food.name} to ${fmtDay(d)}.`);
+            setSheet(null);
+          }}
+        />
+      )}
+
       {sheet?.kind === "portions" && (
         <FormSheet
           title={sheet.row.name}
@@ -448,7 +492,8 @@ function Nutrition() {
           onClose={() => setSheet(null)}
           onLog={(mealId, portions, d, minus) => {
             const meal = meals.find((m) => m.id === mealId)!;
-            run(nutritionApi.logMeal(d, mealId, portions, minus), `Logged ${meal.name} to ${fmtDay(d)}.`);
+            const spent = meal.price == null ? "" : ` Added ${money(Math.max(0.01, Math.round(meal.price * portions * 100) / 100))} to spending.`;
+            run(nutritionApi.logMeal(d, mealId, portions, minus), `Logged ${meal.name} to ${fmtDay(d)}.${spent}`);
             setSheet(null);
           }}
         />

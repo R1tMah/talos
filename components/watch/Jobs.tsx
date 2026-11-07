@@ -10,7 +10,7 @@ import { logicalToday } from "@/lib/date";
 import { remindersApi, useReminders } from "@/lib/remindersData";
 import { showToast } from "@/lib/undo";
 import { companyKey, loadAppliedCompanies, loadJobs, newSince, watchApi, type JobItem, type WatchSource } from "@/lib/watch/data";
-import { jobMatches } from "@/lib/watch/match";
+import { jobMatches, postedRecently } from "@/lib/watch/match";
 import type { JobsConfig } from "@/lib/watch/types";
 import { shortDate } from "./format";
 
@@ -46,7 +46,7 @@ export function JobsView({ s }: { s: WatchSource }) {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (items ?? []).filter(
-      (j) => jobMatches(j, config) && (!q || `${j.company} ${j.title} ${j.locations.join(" ")}`.toLowerCase().includes(q)),
+      (j) => postedRecently(j) && jobMatches(j, config) && (!q || `${j.company} ${j.title} ${j.locations.join(" ")}`.toLowerCase().includes(q)),
     );
   }, [items, config, query]);
 

@@ -41,7 +41,7 @@ export default function WatchSourcePage() {
   if (s === null) {
     return (
       <main className="screen">
-        <ScreenHeader title="Watch" back="/watch" />
+        <ScreenHeader title="Watch" back="/watch" stickyBack />
         <p className="muted">Not found.</p>
       </main>
     );
@@ -61,6 +61,7 @@ export default function WatchSourcePage() {
       <ScreenHeader
         title={s.title}
         back="/watch"
+        stickyBack
         right={
           <>
             {s.kind !== "transit" && s.kind !== "prep" && (

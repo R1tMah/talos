@@ -24,6 +24,15 @@ export function needsGradDegree(j: Pick<JobData, "title" | "degrees">): boolean 
   return d.length > 0 && !d.some((x) => x.startsWith("bachelor")) && d.some((x) => x.startsWith("master") || x.startsWith("phd"));
 }
 
+/** Only postings from the last week are shown. */
+export const POSTED_WITHIN_DAYS = 7;
+
+/** Was the posting put up within the last POSTED_WITHIN_DAYS days? */
+export function postedRecently(j: Pick<JobData, "posted">, now = Date.now()): boolean {
+  const at = Date.parse(j.posted);
+  return !Number.isNaN(at) && now - at <= POSTED_WITHIN_DAYS * 86_400_000;
+}
+
 const lower = (xs: string[]) => xs.map((x) => x.trim().toLowerCase()).filter(Boolean);
 
 /** Does a listing pass the owner's filters? Empty lists mean "any". */

@@ -1,6 +1,6 @@
 "use client";
 
-// The Behavioral tab of Interviews: a full mock behavioral round.
+// Behavioral, one of the Interviews screens: a full mock behavioral round.
 //   1. Setup: company, role, the job description (PDF and/or pasted), and whether to end
 //      with "Why this company?".
 //   2. The Architect writes the whole round at once: one tailored question for each of the
@@ -33,7 +33,7 @@ type Stage =
 const dateOf = (s: MockSession) => fmtDay(s.created.slice(0, 10));
 const overallOf = (s: MockSession) => overall(s.questions.map(lastAnswer).filter((a) => a != null).map((a) => a!.final));
 
-export function BehavioralScreen({ switcher }: { switcher?: ReactNode }) {
+export function BehavioralScreen({ back = "/tabs/recruiting?tab=interviews" }: { back?: string }) {
   const history = useMockHistory();
   const [stage, setStage] = useState<Stage>({ kind: "setup" });
   const [busy, setBusy] = useState<string | null>(null);
@@ -63,8 +63,7 @@ export function BehavioralScreen({ switcher }: { switcher?: ReactNode }) {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Interviews" back="/tabs" right={<ArchiveButton tab="behavioral" />} />
-      {switcher}
+      <ScreenHeader title="Behavioral" back={back} right={<ArchiveButton tab="behavioral" />} />
       <ArchivedBar tab="behavioral" />
 
       {error && (

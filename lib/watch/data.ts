@@ -200,6 +200,8 @@ export interface GoogleStatus {
   canWrite?: boolean;
   /** The grant allows sending the weekly email from Gmail. */
   canSendMail?: boolean;
+  /** The grant allows reading Gmail, for Inbox updates. */
+  canReadMail?: boolean;
   calendars: { id: string; name: string; color: string | null; primary: boolean; writable: boolean }[];
   error?: string;
 }

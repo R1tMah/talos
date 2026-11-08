@@ -12,6 +12,7 @@ import { archivedMessage, loadArchived, tabOf } from "./archive";
 import { learnedTab, loadPastPicks, suggest } from "./learned";
 import { inScope } from "./scope";
 import type { CardOption, ChatCard } from "./cards";
+import { isLiftoffCsv } from "@/lib/liftoff";
 import { chainEventStarts, LONG_TERM_NAMED, MODEL_TOOLS, TOOLS, type Check, type Ctx, type Resolved } from "./tools";
 
 export const MODEL = "claude-haiku-5-5";
@@ -161,6 +162,8 @@ Job applications go by the owner's verb: "apply to X" (want to, need to, remind 
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
 Money spent with an amount ("$14 chipotle", "uber 18.40") is log_spending. If what they paid for is food or drink they had, also call log_food for the food (a priced meal is both); a non-food purchase is log_spending only.
+
+Something recommended to the owner (a book, show, album, restaurant, trip, hobby, money move) is add_experience; finishing something from that list ("I finished Atomic Habits", "checked off the Japan trip") is complete_experience. "Sarah recommended…" names who recommended it, not a callback or journal entry.
 
 If nothing fits, or you would be guessing, call no_match with your best readings. Always respond with tool calls only.`;
 
@@ -412,6 +415,11 @@ async function commitCards(name: string, resolved: Resolved, ctx: Pick<Ctx, "db"
 }
 
 export async function run(ctx: Ctx, threshold: number, propose: Propose): Promise<RunResult> {
+  // A pasted Liftoff export goes to the Lifts import whatever chip is picked: code parses it, no model.
+  if (isLiftoffCsv(ctx.text)) {
+    const calls: Call[] = [{ name: "import_liftoff", input: { confidence: 1 } }];
+    return { route: "rule", calls, cards: await decide(calls, ctx, threshold, propose) };
+  }
   if (ctx.tab) {
     if (ctx.archived?.has(ctx.tab)) return { route: "rule", calls: [], cards: [{ kind: "failed", detail: archivedMessage(ctx.tab as TabKey) }] };
     // Content / Work Journal / Personal Journal chip: the whole message is the note, saved as typed. No model.

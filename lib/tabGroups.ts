@@ -25,7 +25,7 @@ export const GROUPS = {
   ],
   interviews: [
     { tab: "leetcode", key: "leetcode", label: "LeetCode" },
-    { tab: "system-design", key: "sysdesign", label: "Sys Design" },
+    { tab: "system-design", key: "sysdesign", label: "System Design" },
     { tab: "ai-assisted", key: "aiassisted", label: "AI-Assisted" },
     { tab: "behavioral", key: "behavioral", label: "Behavioral" },
   ],

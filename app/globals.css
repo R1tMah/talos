@@ -4645,3 +4645,197 @@ button.cal-day:active {
   outline: 2px solid var(--accent-line);
   outline-offset: 1px;
 }
+
+/* ============================================================
+   Lifts (Liftoff imports)
+   ============================================================ */
+/* Search + pick an exercise; its chart and sessions follow. */
+.lift-pick {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.lift-session {
+  border-top: 1px solid var(--border);
+  padding: var(--s-3) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.lift-session-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.lift-session-ex {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--t-sm);
+}
+
+.lift-note {
+  font-size: var(--t-xs);
+  white-space: pre-wrap;
+}
+
+.liftoff-errors {
+  margin-top: var(--s-2);
+  font-size: var(--t-sm);
+  color: var(--danger);
+}
+
+.liftoff-errors ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+/* ============================================================
+   Recommendations & Experiences (tabs/experiences)
+   ============================================================ */
+.exp-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.exp-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  width: 100%;
+  text-align: left;
+  transition: opacity 240ms var(--ease), transform 240ms var(--ease), max-height 240ms var(--ease);
+  max-height: 160px;
+}
+
+/* Checked off: slides right and fades before it leaves the list. */
+.exp-row.leaving {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.exp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+}
+
+.exp-note {
+  white-space: normal;
+  font-style: italic;
+}
+
+.exp-stars {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--t-sm);
+  letter-spacing: 1px;
+}
+
+/* Just added: a short highlight while it's scrolled to the middle of the screen. */
+.exp-row.fresh {
+  animation: exp-fresh 1.8s var(--ease);
+}
+
+@keyframes exp-fresh {
+  0%, 40% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Lifts history: each workout day folds inside its week. */
+.lift-day {
+  border-top: 1px solid var(--border);
+}
+
+.lift-day > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: var(--tap);
+  padding: var(--s-2) var(--s-4);
+  cursor: pointer;
+}
+
+.lift-day > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lift-day > summary svg {
+  flex: none;
+  color: var(--text-3);
+  transition: transform var(--dur) var(--ease);
+}
+
+.lift-day[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.lift-day-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lift-day .lift-session {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* ---- Inbox updates: the banner asking about an application email ---- */
+.inbox-banner {
+  position: fixed;
+  z-index: 40;
+  top: calc(var(--safe-t) + var(--s-2));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 2 * var(--gutter)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border-color: var(--accent-line);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.inbox-banner-q {
+  font-weight: 600;
+}
+
+.inbox-banner-sub,
+.inbox-banner-mail {
+  font-size: var(--t-xs);
+}
+
+.inbox-banner-mail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inbox-help {
+  font-size: var(--t-sm);
+  margin: 0 var(--s-1);
+}
+
+.inbox-error {
+  color: var(--danger);
+  font-size: var(--t-sm);
+  margin: 0 var(--s-1);
+}

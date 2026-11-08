@@ -16,6 +16,7 @@ export const ARCHIVABLE = [
   { key: "longterm", label: "Long Term", href: "/tabs/long-term" }, // under "Once in a while" on Tabs
   { key: "learning", label: "Learning", href: "/tabs/learning" },
   { key: "behavioral", label: "Behavioral Mocks", href: "/tabs/interviews?tab=behavioral" },
+  { key: "experiences", label: "Recommendations", href: "/tabs/experiences" },
 ] as const;
 
 export type TabKey = (typeof ARCHIVABLE)[number]["key"];
@@ -54,6 +55,7 @@ const ALIASES: Record<ChatTab, string[]> = {
   talos: ["talos", "talos improvement", "talos idea"],
   subscriptions: ["subscription", "subs"],
   spending: ["spend", "spent", "money", "purchase", "purchases", "finances"],
+  experiences: ["recommendation", "recommendations", "experiences", "experience", "recs", "to try"],
 };
 
 /**

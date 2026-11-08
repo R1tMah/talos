@@ -8,13 +8,16 @@ import { Reminders } from "@/components/Reminders";
 import { IconChevron } from "@/components/Icons";
 import { StatCard } from "@/components/StatCard";
 import { ScreenHeader } from "@/components/ui";
-import { fmtDay, fmtNum, toISO } from "@/lib/date";
+import { fmtDay, fmtNum, logicalToday, toISO, weekStart } from "@/lib/date";
 import { BASE_STATUSES } from "@/lib/applicationsData";
-import { FLAGS } from "@/lib/flags";
 import { useArchivedTabs } from "@/lib/archivedTabs";
 import { useLongTermReminders } from "@/lib/generalReminders";
 import { useHomeStats } from "@/lib/homeStats";
+import { pickRows } from "@/lib/homeCards";
+import { useHomeCards } from "@/lib/homeCardsData";
+import { useLiftsSummary } from "@/lib/liftoffData";
 import { dueToday, useCurriculums } from "@/lib/learning/data";
+import { useExperiences } from "@/lib/experiencesData";
 import { GROUPS } from "@/lib/tabGroups";
 import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
 import { CLASSES, dayBounds } from "@/lib/chess";
@@ -45,9 +48,6 @@ export default function TabsPage() {
   const { data: stats, failed } = useHomeStats();
   const w = stats?.weight;
   const n = stats?.nutrition;
-  const lc = stats?.leetcode;
-  const mocks = stats ? stats.notes.sysdesign.n : null;
-  const aiMocks = stats ? stats.notes.aiassisted.n : null;
   const ap = stats?.applications;
   // Statuses actually in use, base order first, at most four rows on the card.
   const apStatuses = ap
@@ -55,28 +55,32 @@ export default function TabsPage() {
     : [];
   const pending = failed ? "Failed" : "–";
   const cbs = stats?.callbacks;
-  const lifts = stats?.lifts;
   const runs = stats?.runs;
   // Archived tabs drop off the grid and sit in the accordion at the bottom.
   const archived = useArchivedTabs();
+  // Which rows each card shows (Settings > Home cards); defaults until it loads.
+  const { config: cards } = useHomeCards();
+  const liftoff = useLiftsSummary(weekStart(logicalToday()));
   const seasons = useSeasonSummary();
   const longTerm = useLongTermReminders();
   // The next long-term reminder still waiting to show up on TALOS.
   const nextUp = longTerm.rows?.find((r) => !r.surfaced);
   const shown = (k: TabKey) => !archived?.has(k);
-  // Without LeetCode, the Interviews headline is the mock count of whichever mock tabs are shown.
-  const mockTotal = mocks == null || aiMocks == null ? null : (shown("sysdesign") ? mocks : 0) + (shown("aiassisted") ? aiMocks : 0);
   // Talos Improvements lives in Settings, so it isn't listed here even when archived.
   const archivedTabs = ARCHIVABLE.filter((t) => archived?.has(t.key) && t.key !== "talos");
   // Content, Work and Personal share one Journals card; it hides when all three are archived.
   const journals = GROUPS.journals.filter((j) => shown(j.key));
   const journalCount = stats ? journals.reduce((a, j) => a + stats.notes[j.key].n, 0) : null;
-  // Occasional tabs, folded away under "Once in a while": Long Term (unless archived), Long-Term Reminders and the sites.
-  const occasional = (shown("longterm") ? 1 : 0) + 2 + ONCE_IN_A_WHILE.length;
+  // Occasional tabs, folded away under "Once in a while": Learning and Long Term (unless archived), Long-Term Reminders, Future Letters and the sites.
+  const occasional = (shown("learning") ? 1 : 0) + (shown("longterm") ? 1 : 0) + 2 + ONCE_IN_A_WHILE.length;
   const letters = useSealedSummary();
   // Learning: lessons due today across curriculums, and the soonest one coming up.
   const learning = useCurriculums();
   const due = learning.rows ? dueToday(learning.rows) : [];
+  // Recommendations: how many are still to try, and the most recent one done.
+  const recs = useExperiences();
+  const recPending = recs.rows ? recs.rows.filter((r) => r.status === "pending").length : 0;
+  const recLatest = recs.rows?.find((r) => r.status === "completed");
   // Chess: games played today (4 AM day) and the three ratings, live from chess.com.
   const chess = useChess();
   const chessDay = dayBounds();
@@ -95,57 +99,34 @@ export default function TabsPage() {
           value={w ? (w.latest?.toFixed(1) ?? "–") : pending}
           unit={w?.latest != null ? "lb" : undefined}
           accent
-          rows={[
-            { label: `This wk${w?.thisWeek ? `, ${w.thisWeek.n}d` : ""}`, value: w?.thisWeek?.avg.toFixed(1) ?? "–" },
-            { label: "Last wk", value: w?.lastWeek?.avg.toFixed(1) ?? "–" },
-          ]}
+          rows={pickRows("weight", cards, [
+            { key: "thisWeek", label: `This wk${w?.thisWeek ? `, ${w.thisWeek.n}d` : ""}`, value: w?.thisWeek?.avg.toFixed(1) ?? "–" },
+            { key: "lastWeek", label: "Last wk", value: w?.lastWeek?.avg.toFixed(1) ?? "–" },
+          ])}
         />
         <StatCard
           title="Nutrition"
           href="/tabs/nutrition"
           value={n ? fmtNum(n.cal) : pending}
           unit={n ? "kcal" : undefined}
-          rows={[
-            { label: "Target", value: n ? fmtNum(n.calTarget) : "–" },
-            { label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
-          ]}
+          rows={pickRows("nutrition", cards, [
+            { key: "target", label: "Target", value: n ? fmtNum(n.calTarget) : "–" },
+            { key: "protein", label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
+            // Lifts lives in Nutrition now (Nutrition | Lifts).
+            { key: "lifts", label: "Workouts this wk", value: liftoff.data ? liftoff.data.week : "–" },
+          ])}
         />
-        {/* LeetCode, System Design, AI-Assisted and Behavioral share one Interviews card; each part hides when its tab is archived. */}
-        {(shown("leetcode") || shown("sysdesign") || shown("aiassisted") || shown("behavioral")) && (
-        <StatCard
-          title="Interviews"
-          href={`/tabs/interviews?tab=${shown("leetcode") ? "leetcode" : shown("sysdesign") ? "system-design" : shown("aiassisted") ? "ai-assisted" : "behavioral"}`}
-          value={shown("leetcode") ? (lc ? lc.week : pending) : (mockTotal ?? pending)}
-          unit={shown("leetcode") ? (lc ? "LC this wk" : undefined) : mockTotal != null ? (mockTotal === 1 ? "mock" : "mocks") : undefined}
-          rows={[
-            ...(shown("leetcode") ? [{ label: "Days this wk", value: lc ? lc.days : "–" }, { label: "Redo queue", value: lc ? lc.redo : "–" }] : []),
-            ...(shown("sysdesign") ? [{ label: "Sys design mocks", value: mocks ?? "–" }] : []),
-            ...(shown("aiassisted") ? [{ label: "AI-assisted mocks", value: aiMocks ?? "–" }] : []),
-          ]}
-        />
-        )}
-        {FLAGS.workout && (
-        <StatCard
-          title="Lifts"
-          href="/tabs/lifts"
-          value={lifts ? lifts.week : pending}
-          unit={lifts ? "this wk" : undefined}
-          rows={[
-            { label: "Last", value: lifts?.last ? lifts.last.plan : "–" },
-            { label: "On", value: lifts?.last ? fmtDay(lifts.last.date) : "–" },
-          ]}
-        />
-        )}
+        {/* Interviews (LeetCode, System Design, AI-Assisted, Behavioral) live in Recruiting now, with no card of their own. */}
         {shown("runs") && (
         <StatCard
           title="Runs"
           href="/tabs/runs"
           value={runs ? runs.miles : pending}
           unit={runs ? "mi this wk" : undefined}
-          rows={[
-            { label: "Runs this wk", value: runs ? runs.week : "–" },
-            { label: "Last", value: runs?.last ? `${runs.last.miles} mi, ${fmtDay(runs.last.date)}` : "–" },
-          ]}
+          rows={pickRows("runs", cards, [
+            { key: "count", label: "Runs this wk", value: runs ? runs.week : "–" },
+            { key: "last", label: "Last", value: runs?.last ? `${runs.last.miles} mi, ${fmtDay(runs.last.date)}` : "–" },
+          ])}
         />
         )}
         {/* Applications and Callbacks share one Recruiting card; each half hides when its tab is archived. */}
@@ -155,11 +136,12 @@ export default function TabsPage() {
           href={`/tabs/recruiting?tab=${shown("applications") ? "applications" : "callbacks"}`}
           value={shown("applications") ? (ap ? ap.total : pending) : cbs ? (cbs.Interview ?? 0) : pending}
           unit={shown("applications") ? (ap ? "applications" : undefined) : cbs ? "interviews" : undefined}
-          rows={[
-            ...(shown("applications") && shown("callbacks") ? [{ label: "Interviews", value: cbs ? (cbs.Interview ?? 0) : "–" }] : []),
-            ...(shown("callbacks") ? [{ label: "OAs", value: cbs ? (cbs.OA ?? 0) : "–" }, { label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" }] : []),
-            ...(!shown("callbacks") ? apStatuses.map((st) => ({ label: st, value: ap!.byStatus[st] })) : []),
-          ]}
+          rows={pickRows("recruiting", cards, [
+            ...(shown("applications") && shown("callbacks") ? [{ key: "interviews", label: "Interviews", value: cbs ? (cbs.Interview ?? 0) : "–" }] : []),
+            ...(shown("callbacks") ? [{ key: "oas", label: "OAs", value: cbs ? (cbs.OA ?? 0) : "–" }, { key: "recruiter", label: "Recruiter", value: cbs ? (cbs.Recruiter ?? 0) : "–" }] : []),
+            // Statuses: on when picked, and (on an untouched card) whenever Callbacks is archived, as before.
+            ...(shown("applications") && ap ? apStatuses.map((st) => ({ key: "statuses", label: st, value: ap.byStatus[st], fallback: !shown("callbacks") })) : []),
+          ])}
         />
         )}
         {journals.length > 0 && (
@@ -168,19 +150,19 @@ export default function TabsPage() {
           href={`/tabs/journals?tab=${journals[0].tab}`}
           value={journalCount ?? pending}
           unit={journalCount != null ? (journalCount === 1 ? "entry" : "entries") : undefined}
-          rows={journals.map((j) => ({ label: j.label, value: stats ? stats.notes[j.key].n : "–" }))}
+          rows={pickRows("journals", cards, journals.map((j) => ({ key: j.key, label: j.label, value: stats ? stats.notes[j.key].n : "–" })))}
         />
         )}
-        {shown("learning") && (
+        {shown("experiences") && (
         <StatCard
-          title="Learning"
-          href="/tabs/learning"
-          value={learning.rows ? due.length : learning.failed ? "Failed" : "–"}
-          unit={learning.rows ? (due.length === 1 ? "lesson today" : "lessons today") : undefined}
-          rows={[
-            { label: "Next", value: nextLesson ? nextLesson.next!.title : "–" },
-            { label: "Active", value: learning.rows ? learning.rows.filter((r) => r.status === "active").length : "–" },
-          ]}
+          title="Recommendations"
+          href="/tabs/experiences"
+          value={recs.rows ? recPending : recs.failed ? "Failed" : "–"}
+          unit={recs.rows ? "to try" : undefined}
+          rows={pickRows("experiences", cards, [
+            { key: "latest", label: "Latest", value: recLatest?.title ?? "–" },
+            { key: "done", label: "Done", value: recs.rows ? recs.rows.length - recPending : "–" },
+          ])}
         />
         )}
         <StatCard
@@ -188,7 +170,7 @@ export default function TabsPage() {
           href="/tabs/chess"
           value={chessToday ?? (chess.failed ? "Failed" : "–")}
           unit={chessToday != null ? (chessToday === 1 ? "game today" : "games today") : undefined}
-          rows={CLASSES.map((c) => ({ label: c.label, value: chess.data?.stats[c.key].rating ?? "–" }))}
+          rows={pickRows("chess", cards, CLASSES.map((c) => ({ key: c.key, label: c.label, value: chess.data?.stats[c.key].rating ?? "–" })))}
         />
       </div>
 
@@ -199,6 +181,20 @@ export default function TabsPage() {
           <IconChevron />
         </summary>
         <div className="grid-2">
+          {/* Learning: moved here from the daily grid; lessons due today still show at the top of Watch. */}
+          {shown("learning") && (
+            <StatCard
+              compact
+              title="Learning"
+              href="/tabs/learning"
+              value={learning.rows ? due.length : learning.failed ? "Failed" : "–"}
+              unit={learning.rows ? (due.length === 1 ? "lesson today" : "lessons today") : undefined}
+              rows={pickRows("learning", cards, [
+                { key: "next", label: "Next", value: nextLesson ? nextLesson.next!.title : "–" },
+                { key: "active", label: "Active", value: learning.rows ? learning.rows.filter((r) => r.status === "active").length : "–" },
+              ])}
+            />
+          )}
           {shown("longterm") && (
             <StatCard
               compact
@@ -206,7 +202,7 @@ export default function TabsPage() {
               href="/tabs/long-term"
               value={seasons ? seasons.count : pending}
               unit={seasons ? (seasons.count === 1 ? "season" : "seasons") : undefined}
-              rows={[{ label: "Current", value: seasons?.current ?? "–" }]}
+              rows={pickRows("longterm", cards, [{ key: "current", label: "Current", value: seasons?.current ?? "–" }])}
             />
           )}
           <StatCard
@@ -215,7 +211,7 @@ export default function TabsPage() {
             href="/tabs/reminders"
             value={longTerm.rows ? longTerm.rows.length : longTerm.failed ? "Failed" : "–"}
             unit={longTerm.rows ? (longTerm.rows.length === 1 ? "reminder" : "reminders") : undefined}
-            rows={[{ label: "Next shows", value: nextUp ? fmtDay(nextUp.surface) : "–" }]}
+            rows={pickRows("reminders", cards, [{ key: "next", label: "Next shows", value: nextUp ? fmtDay(nextUp.surface) : "–" }])}
           />
           <StatCard
             compact
@@ -223,7 +219,7 @@ export default function TabsPage() {
             href="/tabs/letters"
             value={letters ? letters.sealed : "–"}
             unit={letters ? "sealed" : undefined}
-            rows={[{ label: "Next unlocks", value: letters?.next ? fmtDay(toISO(new Date(letters.next))) : "–" }]}
+            rows={pickRows("letters", cards, [{ key: "next", label: "Next unlocks", value: letters?.next ? fmtDay(toISO(new Date(letters.next))) : "–" }])}
           />
           {ONCE_IN_A_WHILE.map((t) => (
             <StatCard key={t.key} compact title={t.label} href={t.href} value="Site" rows={[{ label: t.sub, value: "" }]} />

@@ -10,13 +10,14 @@ import type { Database } from "./database.types";
  * pending_proposals, lc_catalog.
  */
 const TABLES = [
-  "settings", "weights", "phases", "breaks",
+  "settings", "home_cards", "weights", "phases", "breaks",
   "food_log", "foods", "saved_meals", "saved_meal_items",
   "leetcode_log", "applications", "application_reminders", "reminders", "callbacks", "notes",
-  "runs", "workouts", "sets", "exercises", "plans", "plan_exercises",
+  "runs", "workouts", "sets", "exercises", "plans", "plan_exercises", "workout_log",
   "finance_transactions", "checking_balances", "vanguard_holdings", "net_worth_snapshots", "spending",
   "curriculums", "curriculum_modules", "module_messages",
   "mock_sessions", "mock_questions", "mock_answers",
+  "life_experiences",
 ] as const satisfies readonly (keyof Database["public"]["Tables"])[];
 
 const PAGE = 1000; // PostgREST returns at most this many rows per request

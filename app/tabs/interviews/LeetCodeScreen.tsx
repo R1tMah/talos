@@ -1,7 +1,7 @@
 "use client";
 
 import { ArchiveButton, ArchivedBar } from "@/components/TabArchive";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, type Field } from "@/components/FormSheet";
@@ -89,8 +89,8 @@ function CountLine({ label, counts, order }: { label: string; counts?: Record<st
   );
 }
 
-/** The LeetCode tab of Interviews. `switcher` is the LeetCode | System Design control. */
-export function LeetCodeScreen({ switcher }: { switcher?: ReactNode }) {
+/** LeetCode, one of the Interviews screens (opened from the Interviews hub; back goes there). */
+export function LeetCodeScreen({ back = "/tabs/recruiting?tab=interviews" }: { back?: string }) {
   const { data, failed, reload } = useLeetcodeData();
   const [sheet, setSheet] = useState<Attempt | "new" | null>(null);
   const [range, setRange] = useState<"week" | "all">("week");
@@ -118,8 +118,7 @@ export function LeetCodeScreen({ switcher }: { switcher?: ReactNode }) {
   if (!data) {
     return failed ? (
       <main className="screen">
-        <ScreenHeader title="Interviews" back="/tabs" />
-        {switcher}
+        <ScreenHeader title="LeetCode" back={back} />
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -137,8 +136,7 @@ export function LeetCodeScreen({ switcher }: { switcher?: ReactNode }) {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Interviews" back="/tabs" right={<><ArchiveButton tab="leetcode" /><ExportButton tab="leetcode" live="leetcode" /></>} />
-      {switcher}
+      <ScreenHeader title="LeetCode" back={back} right={<><ArchiveButton tab="leetcode" /><ExportButton tab="leetcode" live="leetcode" /></>} />
       <ArchivedBar tab="leetcode" />
 
       <SummaryStrip

@@ -6,6 +6,7 @@ import { TabBar } from "@/components/TabBar";
 import { RestWatcher } from "@/components/RestWatcher";
 import { SwipeNav } from "@/components/SwipeNav";
 import { UndoToast } from "@/components/UndoToast";
+import { InboxBanner } from "@/components/InboxBanner";
 import { Ready, StoreProvider } from "@/lib/store";
 import "./globals.css";
 
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <SwipeNav />
           <RestWatcher />
           <UndoToast />
+          <InboxBanner />
         </StoreProvider>
       </body>
     </html>

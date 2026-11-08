@@ -648,6 +648,60 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_messages: {
+        Row: { created_at: string; kind: string; message_id: string; received_at: string | null }
+        Insert: { created_at?: string; kind: string; message_id: string; received_at?: string | null }
+        Update: { created_at?: string; kind?: string; message_id?: string; received_at?: string | null }
+        Relationships: []
+      }
+      inbox_scan: {
+        Row: { enabled: boolean; id: number; last_error: string | null; last_scanned_at: string | null; started_at: string; updated_at: string }
+        Insert: { enabled?: boolean; id?: number; last_error?: string | null; last_scanned_at?: string | null; started_at?: string; updated_at?: string }
+        Update: { enabled?: boolean; id?: number; last_error?: string | null; last_scanned_at?: string | null; started_at?: string; updated_at?: string }
+        Relationships: []
+      }
+      pending_inbox_updates: {
+        Row: {
+          application_id: string | null
+          company: string
+          created_at: string
+          email_date: string
+          id: string
+          kind: string
+          message_id: string
+          proposed_status: string
+          role: string | null
+          sender: string | null
+          subject: string | null
+        }
+        Insert: {
+          application_id?: string | null
+          company: string
+          created_at?: string
+          email_date: string
+          id?: string
+          kind: string
+          message_id: string
+          proposed_status: string
+          role?: string | null
+          sender?: string | null
+          subject?: string | null
+        }
+        Update: {
+          application_id?: string | null
+          company?: string
+          created_at?: string
+          email_date?: string
+          id?: string
+          kind?: string
+          message_id?: string
+          proposed_status?: string
+          role?: string | null
+          sender?: string | null
+          subject?: string | null
+        }
+        Relationships: []
+      }
       lc_catalog: {
         Row: {
           aliases: string[]
@@ -733,6 +787,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      life_experiences: {
+        Row: {
+          category: string
+          completed_at: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          note: string | null
+          rating: number | null
+          recommended_by: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          category: string
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          note?: string | null
+          rating?: number | null
+          recommended_by?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          category?: string
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          note?: string | null
+          rating?: number | null
+          recommended_by?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
       }
       message_followups: {
         Row: {
@@ -1591,6 +1684,24 @@ export type Database = {
         }
         Relationships: []
       }
+      home_cards: {
+        Row: {
+          id: number
+          rows: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          rows?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          rows?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       mock_answers: {
         Row: {
           content_score: number
@@ -1736,6 +1847,60 @@ export type Database = {
           grader_model?: string
           id?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      workout_log: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          distance: number | null
+          duration: string | null
+          exercise: string
+          id: string
+          logical_date: string
+          notes: string | null
+          reps: number | null
+          rpe: number | null
+          seconds: number | null
+          set_order: number
+          started: string
+          weight: number | null
+          workout_name: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          distance?: number | null
+          duration?: string | null
+          exercise: string
+          id?: string
+          logical_date: string
+          notes?: string | null
+          reps?: number | null
+          rpe?: number | null
+          seconds?: number | null
+          set_order?: number
+          started: string
+          weight?: number | null
+          workout_name: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          distance?: number | null
+          duration?: string | null
+          exercise?: string
+          id?: string
+          logical_date?: string
+          notes?: string | null
+          reps?: number | null
+          rpe?: number | null
+          seconds?: number | null
+          set_order?: number
+          started?: string
+          weight?: number | null
+          workout_name?: string
         }
         Relationships: []
       }
@@ -2015,7 +2180,37 @@ export type Database = {
       }
     }
     Functions: {
+      import_liftoff: { Args: { p_sets: Json; p_tool?: string }; Returns: Json }
       owner_today: { Args: never; Returns: string }
+      add_experience: {
+        Args: {
+          p_category: string
+          p_completed?: boolean
+          p_note?: string
+          p_rating?: number
+          p_recommended_by?: string
+          p_title: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      complete_experience: {
+        Args: {
+          p_id: string
+          p_note?: string
+          p_rating?: number
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      delete_experience: {
+        Args: {
+          p_id: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      apply_inbox_update: { Args: { p_id: string }; Returns: Json }
       opened_letters: {
         Args: never
         Returns: {
@@ -2554,6 +2749,18 @@ export type Database = {
           p_kind: string
           p_outcome: string
           p_score: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      update_experience: {
+        Args: {
+          p_category: string
+          p_id: string
+          p_note: string
+          p_rating: number
+          p_recommended_by: string
+          p_title: string
           p_tool?: string
         }
         Returns: Json

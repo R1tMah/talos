@@ -97,6 +97,8 @@ export function describeRow(table: string, r: Row | null): string {
       return `fund ${str(r.fund)}`;
     case "spending":
       return `spending $${Number(r.amount).toFixed(2)}, ${str(r.what)}`;
+    case "life_experiences":
+      return `${r.status === "completed" ? "experience" : "recommendation"} "${str(r.title)}"`;
     default:
       return table;
   }

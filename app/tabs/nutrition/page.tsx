@@ -1,11 +1,12 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
 import { IconBack, IconChevron } from "@/components/Icons";
+import { LiftsScreen } from "@/components/LiftsScreen";
 import { IngredientsSheet, itemsSummary, LogMealSheet, MealSheet } from "@/components/MealSheets";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
@@ -124,7 +125,7 @@ type SheetState =
   | { kind: "meal"; row?: Meal }
   | { kind: "food"; row?: Food };
 
-function Nutrition() {
+function Nutrition({ switcher }: { switcher: ReactNode }) {
   const params = useSearchParams();
   const today = logicalToday();
   const initialView = params.get("view");
@@ -150,6 +151,7 @@ function Nutrition() {
     return failed ? (
       <main className="screen">
         <ScreenHeader title="Nutrition" back="/tabs" />
+        {switcher}
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -181,6 +183,7 @@ function Nutrition() {
   return (
     <main className="screen">
       <ScreenHeader title="Nutrition" back="/tabs" right={<ExportButton tab="nutrition" live="nutrition" />} />
+      {switcher}
       <Segmented
         options={[
           { value: "log", label: "Log" },
@@ -574,10 +577,34 @@ function Nutrition() {
   );
 }
 
+/**
+ * Nutrition | Lifts, switched at the top. The pick is kept in the URL (?tab=lifts) so back
+ * and refresh return to it; Lifts is components/LiftsScreen.tsx.
+ */
+function NutritionOrLifts() {
+  const params = useSearchParams();
+  const [tab, setTab] = useState<"nutrition" | "lifts">(params.get("tab") === "lifts" ? "lifts" : "nutrition");
+  const switcher = (
+    <Segmented
+      options={[
+        { value: "nutrition", label: "Nutrition" },
+        { value: "lifts", label: "Lifts" },
+      ]}
+      value={tab}
+      onChange={(t) => {
+        setTab(t);
+        window.history.replaceState(null, "", t === "lifts" ? "/tabs/nutrition?tab=lifts" : "/tabs/nutrition");
+        window.scrollTo({ top: 0 });
+      }}
+    />
+  );
+  return tab === "lifts" ? <LiftsScreen switcher={switcher} /> : <Nutrition switcher={switcher} />;
+}
+
 export default function NutritionPage() {
   return (
     <Suspense>
-      <Nutrition />
+      <NutritionOrLifts />
     </Suspense>
   );
 }

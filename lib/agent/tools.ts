@@ -12,11 +12,13 @@ import { addDays, daysBetween, fmtDay } from "@/lib/date";
 import type { Change } from "@/lib/types";
 import { fmtDuration, parseDuration } from "@/lib/duration";
 import { isSpendCategory, SPEND_CATEGORIES, type SpendCategory } from "@/lib/spending";
+import { importSummary, parseLiftoff, sessionKey } from "@/lib/liftoff";
 import { foodWarnings, leetcodeWarnings, portionWarnings, runWarnings, weightWarnings } from "@/lib/validate";
 import type { MissingField } from "./cards";
 import { closest, nameScore } from "./fuzzy";
 import { matchTitle } from "./lcMatch";
 import { CADENCES, cadenceIn, priceLabel, type Cadence } from "@/lib/subscriptions";
+import { EXPERIENCE_CATEGORIES, isExperienceCategory, type ExperienceCategory } from "@/lib/experiences";
 
 export type Db = SupabaseClient<Database>;
 
@@ -1725,6 +1727,49 @@ export function dueFrom(text: string | null, today: string): string | null {
 // "remind me to ...", "reminder: ..." prefixes. Everything after is the owner's text.
 const REMIND_PREFIX = /^\s*(?:remind\s+me\s+(?:to\s+)?|reminder\s*[:\-–—]?\s*|don'?t\s+forget\s+(?:to\s+)?)/i;
 
+// ---- Lifts: a pasted Liftoff export --------------------------------------------------------
+
+/**
+ * A Liftoff CSV pasted into chat (routed here by its header line, never by the model).
+ * Code parses and checks every cell; any bad line stops the whole import and is named.
+ * Always asks first, saying how many workouts it adds and how many it replaces.
+ */
+const importLiftoff: ToolDef = {
+  name: "import_liftoff",
+  display: "Lifts import",
+  confirm: { title: "Import these workouts?", action: "Import" },
+  async check(_input, ctx) {
+    const { sets, errors } = parseLiftoff(ctx.text);
+    if (errors.length) {
+      const more = errors.length > 5 ? ` (and ${errors.length - 5} more)` : "";
+      return { status: "invalid", detail: `Nothing was imported. ${errors.slice(0, 5).join(" ")}${more}` };
+    }
+    const starts = [...new Set(sets.map(sessionKey))];
+    const { data: existing } = await ctx.db.from("workout_log").select("started").is("deleted_at", null).in("started", starts);
+    const replaced = new Set((existing ?? []).map((e) => e.started)).size;
+    const sum = importSummary(sets, replaced, fmtDay);
+    const fields: [string, string][] = [["Workouts", String(sum.workouts)], ["Sets", String(sets.length)], ["Dates", sum.dates]];
+    if (replaced) fields.push(["Replaces", `${replaced} already imported`]);
+    const summary = sum.text;
+    return { status: "ready", resolved: { sets: sets as unknown as Json }, fields, warnings: [summary] };
+  },
+  async commit(r, db) {
+    // Called directly (not through rpc()) so a database error comes back with its message.
+    const { data, error } = await (db.rpc as unknown as (f: string, a: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>)(
+      "import_liftoff", { p_sets: r.sets, p_tool: "import_liftoff" },
+    );
+    if (error) return { status: "failed", detail: `Nothing was imported: ${error.message}` };
+    const out = data as (RpcOut & { sessions?: number; replaced?: number; sets?: number; detail?: string }) | null;
+    if (out?.status !== "saved") return { status: "failed", detail: out?.detail };
+    const n = Number(out.sessions ?? 0);
+    return {
+      status: "saved",
+      label: `Lifts: ${n} ${n === 1 ? "workout" : "workouts"}, ${out.sets} sets${out.replaced ? ` (${out.replaced} replaced)` : ""}`,
+      actionId: null,
+    };
+  },
+};
+
 const addReminder: ToolDef = {
   name: "add_reminder",
   display: "Reminder",
@@ -2336,11 +2381,148 @@ const portfolioSetHidden: ToolDef = {
   },
 };
 
+// ---- Recommendations & Experiences ------------------------------------------------------
+
+type PendingExp = { id: string; title: string; category: string; recommended_by: string | null };
+
+async function pendingExperiences(db: Db): Promise<PendingExp[]> {
+  const { data } = await db.from("life_experiences").select("id, title, category, recommended_by").eq("status", "pending").is("deleted_at", null);
+  return data ?? [];
+}
+
+const expCategory = (v: unknown): ExperienceCategory | null => (isExperienceCategory(v) ? v : null);
+
+/** Card fields for checking a pending item off. */
+const completeOption = (e: PendingExp) => ({
+  resolved: { mode: "complete", id: e.id, title: e.title } as Resolved,
+  fields: [["Done", e.title], ["Category", e.category], ...(e.recommended_by ? [["Recommended by", e.recommended_by] as [string, string]] : [])] as [string, string][],
+});
+
+/** The pending items a phrase means: one clear match, a few close ones, or none. */
+function pickPending(said: string, pending: PendingExp[]) {
+  const hits = closest(said, pending, (e) => [e.title]);
+  if (!hits.length) return { kind: "none" as const };
+  if (hits.length > 1 && hits[1].score > hits[0].score - 0.15) return { kind: "ambiguous" as const, items: hits.map((h) => h.item) };
+  return { kind: "one" as const, item: hits[0].item };
+}
+
+const addExperience: ToolDef = {
+  name: "add_experience",
+  display: "Recommendation",
+  definition: {
+    name: "add_experience",
+    description:
+      "Something recommended to the owner to read, watch, listen to, eat at, try or do: 'add Atomic Habits to books recommended by Sarah', " +
+      "'Dave says I should try bouldering', 'Mom recommended the Roth IRA', 'add Kendrick's new album'. Also something they already did that " +
+      "isn't on their list ('I did a bouldering class, Dave recommended it'): set completed. Finishing something already on the list is complete_experience. " +
+      "Not a reminder, journal entry or spending.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "category", "recommended_by", "completed", "confidence"],
+      properties: {
+        title: { type: "string", description: "The thing itself, copied as the owner wrote it ('Atomic Habits', 'Japan trip')." },
+        category: { type: ["string", "null"], enum: [...EXPERIENCE_CATEGORIES, null], description: "The closest category. Null if none fits." },
+        recommended_by: { type: ["string", "null"], description: "Who or what recommended it, copied as written ('Sarah', 'Twitter'). Null if not said." },
+        completed: { type: "boolean", description: "True only if the owner says they already did it." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const title = verbatim(input.title, ctx.text)?.trim();
+    if (!title) return { status: "invalid", detail: "Couldn't tell what the recommendation is." };
+    const recommendedBy = verbatim(input.recommended_by, ctx.text)?.trim() || null;
+    const completed = input.completed === true;
+    const category = expCategory(input.category);
+    // Already on the list and now done: check that one off rather than add a second.
+    if (completed) {
+      const hit = pickPending(title, await pendingExperiences(ctx.db));
+      if (hit.kind === "one") {
+        const o = completeOption(hit.item);
+        return { status: "ready", ...o, warnings: [] };
+      }
+    }
+    const resolved: Resolved = { mode: "add", title, category, recommended_by: recommendedBy, completed };
+    if (!category) {
+      return { status: "missing", resolved, title: completed ? `Experience: ${title}` : `Recommendation: ${title}`,
+        missing: [{ name: "category", label: "Category", type: "select", options: [...EXPERIENCE_CATEGORIES] }] };
+    }
+    const fields: [string, string][] = [[completed ? "Done" : "To try", title], ["Category", category]];
+    if (recommendedBy) fields.push(["Recommended by", recommendedBy]);
+    return { status: "ready", resolved, fields, warnings: [] };
+  },
+  fill(r, values) {
+    const category = expCategory(values.category);
+    return category ? { ...r, category } : "Pick a category.";
+  },
+  commit: commitExperience,
+};
+
+const completeExperience: ToolDef = {
+  name: "complete_experience",
+  display: "Experience",
+  definition: {
+    name: "complete_experience",
+    description:
+      "The owner finished or did something from their recommendations list: 'I finished Atomic Habits', 'checked off the Japan trip', " +
+      "'watched Severance', 'went to Joe's Pizza finally'. Code matches it to the list.",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "confidence"],
+      properties: {
+        title: { type: "string", description: "What they finished, copied as the owner wrote it ('Atomic Habits', 'the Japan trip')." },
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const title = verbatim(input.title, ctx.text)?.trim();
+    if (!title) return { status: "invalid", detail: "Couldn't tell what was finished." };
+    const hit = pickPending(title, await pendingExperiences(ctx.db));
+    if (hit.kind === "one") {
+      const o = completeOption(hit.item);
+      return { status: "ready", ...o, warnings: [] };
+    }
+    if (hit.kind === "ambiguous") return { status: "ambiguous", title: "Which one?", options: hit.items.map(completeOption) };
+    // Not on the list: offer to log it straight to Experiences.
+    return {
+      status: "missing",
+      resolved: { mode: "add", title, category: null, recommended_by: null, completed: true },
+      title: `"${title}" isn't on your list. Log it as an experience?`,
+      missing: [{ name: "category", label: "Category", type: "select", options: [...EXPERIENCE_CATEGORIES] }],
+    };
+  },
+  fill: (r, values) => addExperience.fill!(r, values),
+  commit: commitExperience,
+};
+
+async function commitExperience(r: Resolved, db: Db): Promise<Commit> {
+  if (r.mode === "complete") {
+    const out = await rpc(db, "complete_experience", { p_id: r.id, p_tool: "complete_experience" });
+    if (out?.status === "not_found") return { status: "failed", detail: `"${r.title}" was already checked off.` };
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    return { status: "saved", label: `Done: ${String(out.row.title)} (${String(out.row.category)}). Add a note or rating in Recommendations.`, actionId: out.action_id ?? null };
+  }
+  if (!expCategory(r.category)) return { status: "failed", detail: "Pick a category." };
+  const out = await rpc(db, "add_experience", {
+    p_title: r.title, p_category: r.category, p_recommended_by: r.recommended_by, p_completed: r.completed === true, p_tool: "add_experience",
+  });
+  if (out?.status === "conflict") return { status: "failed", detail: `"${String(out.existing?.title ?? r.title)}" is already on your list.` };
+  if (out?.status !== "saved" || !out.row) return { status: "failed" };
+  const row = out.row;
+  const by = row.recommended_by ? `, from ${String(row.recommended_by)}` : "";
+  return { status: "saved", label: `${row.status === "completed" ? "Experience" : "To try"}: ${String(row.title)} (${String(row.category)}${by})`, actionId: out.action_id ?? null };
+}
+
 const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
   "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_long_term_reminder", "add_event",
   "portfolio_add_project", "portfolio_set_timeline_month", "portfolio_add_card", "portfolio_set_hidden",
-  "add_subscription", "cancel_subscription", "log_spending",
+  "add_subscription", "cancel_subscription", "log_spending", "add_experience", "complete_experience",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -2374,10 +2556,10 @@ export const NO_MATCH: Anthropic.Tool = {
 
 export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
   [
-    addReminder, addLongTermReminder, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
+    addReminder, addLongTermReminder, importLiftoff, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
-    addSubscription, cancelSubscription, logSpending, saveEod,
+    addSubscription, cancelSubscription, logSpending, saveEod, addExperience, completeExperience,
   ].map((t) => [t.name, t]),
 );
 

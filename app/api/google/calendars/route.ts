@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ownerDb } from "@/lib/agent/server";
-import { canSendMail, canWrite, googleConfigured, listCalendars } from "@/lib/google/calendar";
+import { canReadMail, canSendMail, canWrite, googleConfigured, listCalendars } from "@/lib/google/calendar";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 /** Whether Google is connected, as whom, and the account's calendars (for picking which to show). */
@@ -15,15 +15,13 @@ export async function GET() {
 
   const admin = createAdminClient();
   if (!admin) return NextResponse.json({ error: "SUPABASE_SECRET_KEY is not set" }, { status: 500 });
+  const grants = {
+    canWrite: canWrite(account.scope), canSendMail: canSendMail(account.scope), canReadMail: canReadMail(account.scope),
+  };
   try {
-    return NextResponse.json({
-      configured: true, connected: true, email: account.email, canWrite: canWrite(account.scope), canSendMail: canSendMail(account.scope), calendars: await listCalendars(admin),
-    });
+    return NextResponse.json({ configured: true, connected: true, email: account.email, ...grants, calendars: await listCalendars(admin) });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({
-      configured: true, connected: true, email: account.email, canWrite: canWrite(account.scope), canSendMail: canSendMail(account.scope),
-      calendars: [], error: message.slice(0, 300),
-    });
+    return NextResponse.json({ configured: true, connected: true, email: account.email, ...grants, calendars: [], error: message.slice(0, 300) });
   }
 }

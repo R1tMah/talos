@@ -1,9 +1,6 @@
-import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { FLAGS } from "@/lib/flags";
 
-/** Workout screens are behind FLAGS.workout; while it's off they send you to Tabs. */
-export default function WorkoutFlag({ children }: { children: ReactNode }) {
-  if (!FLAGS.workout) redirect("/tabs");
+/** Lifts (Liftoff imports) is always on. The retired in-app logger's screens stay behind FLAGS.workout. */
+export default function LiftsLayout({ children }: { children: ReactNode }) {
   return children;
 }

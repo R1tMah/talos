@@ -3,10 +3,13 @@ import type { ChatResponse } from "@/lib/agent/cards";
 import { MODEL, run } from "@/lib/agent/run";
 import { loadCtx, ownerDb, proposer } from "@/lib/agent/server";
 import { isChatTab, type ChatTab } from "@/lib/tabs";
+import { isLiftoffCsv } from "@/lib/liftoff";
 import type { Json } from "@/lib/database.types";
 
 const PER_MINUTE = 20; // a front-end bug can't loop and burn credits
 const MAX_LENGTH = 2000;
+// A pasted Liftoff export (lib/liftoff.ts) can be a few weeks of sets; it's parsed by code, never sent to the model.
+const MAX_CSV_LENGTH = 200_000;
 
 const failed = (status = 200): NextResponse<ChatResponse> => NextResponse.json({ cards: [{ kind: "failed" }] }, { status });
 
@@ -23,7 +26,7 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   }
   const text = typeof body.text === "string" ? body.text : "";
   const clientMsgId = typeof body.clientMsgId === "string" ? body.clientMsgId : "";
-  if (!text.trim() || text.length > MAX_LENGTH || !clientMsgId) return failed(400);
+  if (!text.trim() || text.length > (isLiftoffCsv(text) ? MAX_CSV_LENGTH : MAX_LENGTH) || !clientMsgId) return failed(400);
   // Optional tab chip; anything that isn't a known tab is rejected rather than ignored.
   if (body.tab != null && !isChatTab(body.tab)) return failed(400);
   const tab = body.tab as ChatTab | undefined;

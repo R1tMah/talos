@@ -18,8 +18,14 @@ type Admin = SupabaseClient<Database>;
 export const WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 /** Lets Talos send the weekly email from the owner's Gmail (send only: it can't read mail). */
 export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
-export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly", WRITE_SCOPE, GMAIL_SEND_SCOPE];
+/**
+ * Lets Talos read the owner's Gmail, for Inbox updates (job application emails). Read
+ * only: it can't change, label or delete mail. Asked for on the next (re)connect.
+ */
+export const GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const CALENDAR_SCOPES = ["openid", "email", "https://www.googleapis.com/auth/calendar.readonly", WRITE_SCOPE, GMAIL_SEND_SCOPE, GMAIL_READ_SCOPE];
 export const canSendMail = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(GMAIL_SEND_SCOPE);
+export const canReadMail = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(GMAIL_READ_SCOPE);
 /** True when the stored grant includes writing. Connections made before writes existed don't. */
 export const canWrite = (scope: string | null | undefined) => (scope ?? "").split(" ").includes(WRITE_SCOPE);
 

@@ -198,12 +198,18 @@ export default function SettingsPage() {
       <span className="label group-title">Talos</span>
       <div className="card list">
         <Row label="About Talos" href="/settings/about" />
+        <Row label="Home cards" href="/settings/cards" />
         <Row label="Talos Improvements" href="/settings/talos" />
       </div>
 
       <span className="label group-title">End of day</span>
       <div className="card list">
         <Row label="EOD questions" href="/settings/eod" />
+      </div>
+
+      <span className="label group-title">Applications</span>
+      <div className="card list">
+        <Row label="Inbox updates" href="/settings/inbox" />
       </div>
 
       <MockModelSettings />

@@ -1,6 +1,7 @@
 import { groupTab } from "@/lib/tabGroups";
-import { Recruiting } from "./Recruiting";
+import { INTERVIEWS_TAB, Recruiting } from "./Recruiting";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
-  return <Recruiting initial={groupTab("recruiting", (await searchParams).tab)} />;
+  const { tab } = await searchParams;
+  return <Recruiting initial={groupTab("recruiting", tab)} interviews={tab === INTERVIEWS_TAB} />;
 }

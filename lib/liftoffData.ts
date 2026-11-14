@@ -9,27 +9,34 @@ import { useDataChanged } from "./undo";
 
 const PAGE = 1000; // PostgREST returns at most this many rows per request
 
+/** Every live set, oldest first; null when the read fails. The Lifts tab and Weight's export use it. */
+export async function loadLiftSets(): Promise<LiftSet[] | null> {
+  const db = createClient();
+  const out: LiftSet[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db.from("workout_log").select("*").is("deleted_at", null)
+      .order("logical_date").order("started").order("set_order").range(from, from + PAGE - 1);
+    if (error) return null;
+    for (const r of data) {
+      out.push({
+        date: r.logical_date, started: r.started, duration: r.duration, workout: r.workout_name, exercise: r.exercise, order: r.set_order,
+        weight: r.weight == null ? null : Number(r.weight), reps: r.reps, distance: r.distance == null ? null : Number(r.distance),
+        seconds: r.seconds == null ? null : Number(r.seconds), rpe: r.rpe == null ? null : Number(r.rpe), notes: r.notes,
+      });
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
 /** Every live set, oldest first. Reloads after any write anywhere (an import from chat included). */
 export function useWorkoutLog() {
   const [sets, setSets] = useState<LiftSet[] | null>(null);
   const [failed, setFailed] = useState(false);
 
   const reload = useCallback(async () => {
-    const db = createClient();
-    const out: LiftSet[] = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data, error } = await db.from("workout_log").select("*").is("deleted_at", null)
-        .order("logical_date").order("started").order("set_order").range(from, from + PAGE - 1);
-      if (error) return setFailed(true);
-      for (const r of data) {
-        out.push({
-          date: r.logical_date, started: r.started, duration: r.duration, workout: r.workout_name, exercise: r.exercise, order: r.set_order,
-          weight: r.weight == null ? null : Number(r.weight), reps: r.reps, distance: r.distance == null ? null : Number(r.distance),
-          seconds: r.seconds == null ? null : Number(r.seconds), rpe: r.rpe == null ? null : Number(r.rpe), notes: r.notes,
-        });
-      }
-      if (data.length < PAGE) break;
-    }
+    const out = await loadLiftSets();
+    if (!out) return setFailed(true);
     setFailed(false);
     setSets(out);
   }, []);

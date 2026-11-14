@@ -53,6 +53,16 @@ export interface Ctx {
   archived?: ReadonlySet<string>;
   /** The tab chip the owner picked for this message, if any: only its tools apply. */
   tab?: import("@/lib/tabs").ChatTab;
+  /** Saved spendings (Finances > Spending), for log_saved_spend. */
+  savedSpends?: SavedSpendRow[];
+}
+
+export interface SavedSpendRow {
+  id: string;
+  name: string;
+  aliases: string[];
+  amount: number | null; // null: asked each time
+  category: string;
 }
 
 /** Arguments after code checks: everything a commit needs. Stored in pending_proposals. */
@@ -76,6 +86,11 @@ export type Commit =
       also?: { label: string; actionId: string | null }[];
       /** A Google Calendar event this commit created: Undo deletes it there (it isn't in the actions log). */
       googleEvent?: { calendarId: string; eventId: string };
+      /**
+       * Writes to make after this one, each through the normal commit path (its own Undo,
+       * confirm card or failure). Save EOD uses it for tab entries (a run, a weigh-in).
+       */
+      then?: { tool: string; resolved: Resolved }[];
     }
   | { status: "confirm"; title: string; changes: Change[]; tool: string; resolved: Resolved }
   | { status: "failed"; detail?: string };
@@ -349,6 +364,80 @@ const logSpending: ToolDef = {
   },
 };
 
+// ---- Saved spendings (Finances > Spending) -----------------------------------------------
+
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+const logSavedSpend: ToolDef = {
+  name: "log_saved_spend",
+  display: "Saved spending",
+  definition: {
+    name: "log_saved_spend",
+    description:
+      "One of the owner's saved spendings (see the saved spendings list), named in the message: 'chipotle', 'got my usual latte', " +
+      "'2 day passes'. Use only when the owner names a saved spending or one of its other names; any other purchase is log_spending. " +
+      "amount only when the owner typed a price for this purchase ('latte, 6.25 today').",
+    strict: false,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "count", "amount", "days_ago", "confidence"],
+      properties: {
+        name: { type: "string", description: "The saved spending's name or other name, as the owner wrote it." },
+        count: { type: ["number", "null"], description: "How many, if said ('2 lattes' = 2). Null if not said." },
+        amount: { type: ["number", "null"], description: "A price the owner typed for this purchase, unchanged. Null if not said." },
+        days_ago: daysAgo,
+        confidence,
+      },
+    },
+  },
+  async check(input, ctx) {
+    const list = ctx.savedSpends ?? [];
+    const q = norm(String(input.name ?? ""));
+    if (!q) return { status: "invalid", detail: "No saved spending named." };
+    const count = typeof input.count === "number" && input.count > 0 && input.count <= 20 ? input.count : 1;
+    // Only a price the owner actually typed overrides the saved one; never an estimate.
+    const typedAmount = typed(input.amount, ctx.text) && (input.amount as number) > 0 ? Math.round((input.amount as number) * 100) / 100 : null;
+    const date = dateFor(input, ctx.today);
+    const resolvedFor = (s: SavedSpendRow): Resolved => ({ saved_id: s.id, name: s.name, category: s.category, count, amount: typedAmount, date });
+    const fieldsFor = (s: SavedSpendRow, each: number): [string, string][] => [
+      ["What", s.name], ["Amount", count === 1 ? money(each) : `${money(each * count)} (${count} × ${money(each)})`], ["Category", s.category], ["Date", fmtDay(date)],
+    ];
+
+    const names = (s: SavedSpendRow) => [s.name, ...s.aliases].map(norm);
+    const exact = list.filter((s) => names(s).includes(q));
+    if (exact.length === 1) {
+      const s = exact[0];
+      const each = typedAmount ?? s.amount;
+      if (each == null) return { status: "missing", resolved: resolvedFor(s), title: `Spending: ${s.name}`, missing: [{ name: "amount", label: "Amount ($)" }] };
+      return { status: "ready", resolved: resolvedFor(s), fields: fieldsFor(s, each), warnings: each * count > 1000 ? [`${money(each * count)} is a lot for one purchase.`] : [] };
+    }
+    // Not one exact name: offer the closest (never log on a guess). Ones with no amount
+    // can't be offered without a price, so they need the price typed.
+    const partial = list.filter((s) => names(s).some((n) => n.length >= 3 && (n.includes(q) || q.includes(n))));
+    const fuzzy = closest(q, list, (s) => [s.name, ...s.aliases]).map((x) => x.item);
+    const score = (s: SavedSpendRow) => Math.max(...[s.name, ...s.aliases].map((n) => nameScore(q, n)));
+    const pool = exact.length ? exact : [...new Map([...partial, ...fuzzy].map((s) => [s.id, s])).values()].sort((a, b) => score(b) - score(a));
+    const options = pool.slice(0, 3).filter((s) => (typedAmount ?? s.amount) != null)
+      .map((s) => ({ resolved: resolvedFor(s), fields: fieldsFor(s, (typedAmount ?? s.amount)!) }));
+    if (!pool.length) return { status: "invalid", detail: `No saved spending like "${input.name}".` };
+    if (!options.length) return { status: "invalid", detail: `${pool[0].name} has no saved amount. Say how much it was.` };
+    return { status: "ambiguous", title: "Did you mean…", options };
+  },
+  fill(r, values) {
+    const v = Number(values.amount);
+    if (!Number.isFinite(v) || v <= 0) return "Amount must be more than 0.";
+    return { ...r, amount: Math.round(v * 100) / 100 };
+  },
+  async commit(r, db) {
+    const out = await rpc(db, "log_saved_spend", { p_date: r.date, p_id: r.saved_id, p_count: r.count ?? 1, p_amount: r.amount ?? null, p_tool: "log_saved_spend" });
+    if (out?.status === "missing_amount") return { status: "failed", detail: "Say how much it was." };
+    if (out?.status === "not_found") return { status: "failed", detail: "That saved spending was deleted." };
+    if (out?.status !== "saved" || !out.row) return { status: "failed" };
+    return { status: "saved", label: `Spent $${num(out.row.amount).toFixed(2)}, ${String(out.row.what)} (${String(out.row.category)})`, actionId: out.action_id ?? null };
+  },
+};
+
 // ---- End of day (EOD) ------------------------------------------------------------------
 // Never offered to the model: /api/eod builds the proposal from the owner's answers, and
 // "Save EOD" commits it here, every entry in one database transaction (save_eod).
@@ -360,6 +449,7 @@ type EodSaved = { status?: string; saved?: { table: string; row: Record<string, 
 const eodLabel = (x: NonNullable<EodSaved["saved"]>[number]) => {
   if (x.table === "notes") return `${NOTE_LABEL[String(x.row.kind)] ?? "Note"}: ${clip(String(x.row.body))}`;
   if (x.table === "reminders") return `Done: ${clip(String(x.row.body))}`;
+  if (x.table === "eod_answers") return `${clip(String(x.row.prompt))}: ${clip(String(x.row.body))}`;
   return `Spent $${num(x.row.amount).toFixed(2)}, ${String(x.row.what)} (${String(x.row.category)})`;
 };
 
@@ -373,14 +463,22 @@ const saveEod: ToolDef = {
     const done = String(values.done ?? "").split(",").map((s) => s.trim()).filter((id) => offered.has(id));
     return { ...r, done: [...new Set(done)] };
   },
+  // Journals, notes, spending, own-log answers and ticked reminders: one transaction. Tab
+  // entries (a run, a weigh-in) follow, each through that tab's own tool (Commit.then).
   async commit(r, db) {
+    const then = ((r.entries ?? []) as { tool: string; resolved: Resolved }[]).filter((e) => TOOLS[e.tool]);
+    const own = [r.notes, r.spending, r.answers, r.done].some((x) => Array.isArray(x) && x.length > 0);
+    if (!own) {
+      if (!then.length) return { status: "failed", detail: "Nothing to save: no entries and no reminders ticked." };
+      return { status: "saved", label: `End of day: ${then.length} ${then.length === 1 ? "entry" : "entries"}`, actionId: null, then };
+    }
     const out = (await rpc(db, "save_eod", {
-      p_date: r.date, p_notes: r.notes ?? [], p_spending: r.spending ?? [], p_done: r.done ?? [], p_tool: "eod",
+      p_date: r.date, p_notes: r.notes ?? [], p_spending: r.spending ?? [], p_done: r.done ?? [], p_answers: r.answers ?? [], p_tool: "eod",
     })) as EodSaved | null;
     if (out?.status === "empty") return { status: "failed", detail: "Nothing to save: no entries and no reminders ticked." };
     if (out?.status !== "saved" || !out.saved?.length) return { status: "failed", detail: "Nothing was saved. Try again." };
     const cards = out.saved.map((x) => ({ label: eodLabel(x), actionId: x.action_id ?? null }));
-    return { status: "saved", label: cards[0].label, actionId: cards[0].actionId, also: cards.slice(1) };
+    return { status: "saved", label: cards[0].label, actionId: cards[0].actionId, also: cards.slice(1), ...(then.length ? { then } : {}) };
   },
 };
 
@@ -2522,7 +2620,7 @@ const WRITE_TOOLS = [
   "log_weight", "log_saved_meal", "log_food", "log_leetcode", "add_note",
   "save_meal", "save_food", "add_application", "plan_application", "update_application", "log_callback", "log_run", "add_reminder", "add_long_term_reminder", "add_event",
   "portfolio_add_project", "portfolio_set_timeline_month", "portfolio_add_card", "portfolio_set_hidden",
-  "add_subscription", "cancel_subscription", "log_spending", "add_experience", "complete_experience",
+  "add_subscription", "cancel_subscription", "log_spending", "log_saved_spend", "add_experience", "complete_experience",
 ] as const;
 
 /** Returned when nothing fits confidently. Its candidates become the "Where does this go?" options. */
@@ -2559,7 +2657,7 @@ export const TOOLS: Record<string, ToolDef> = Object.fromEntries(
     addReminder, addLongTermReminder, importLiftoff, addEvent, portfolioAddProject, portfolioSetMonth, portfolioAddCard, portfolioSetHidden,
     logWeight, updateWeight, logRun, logSavedMeal, logFood, logLeetcode, addNote,
     saveMeal, updateMeal, saveFood, applyFoodUpdate, addApplication, planApplication, updateApplication, applyApplicationUpdate, logCallback,
-    addSubscription, cancelSubscription, logSpending, saveEod, addExperience, completeExperience,
+    addSubscription, cancelSubscription, logSpending, logSavedSpend, saveEod, addExperience, completeExperience,
   ].map((t) => [t.name, t]),
 );
 

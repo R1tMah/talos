@@ -3,7 +3,6 @@
 // shows its defaults, which are what each card showed before this was customizable.
 // Archiving still decides whether a tab's rows can show at all. Pure: no React, no Supabase.
 
-import { CLASSES } from "./chess";
 import { GROUPS } from "./tabGroups";
 
 export interface CardRowDef {
@@ -22,11 +21,11 @@ export const HOME_CARDS = [
   { key: "weight", title: "Weight", rows: [
     { key: "thisWeek", label: "This week's average", on: true },
     { key: "lastWeek", label: "Last week's average", on: true },
+    { key: "lifts", label: "Workouts this week (Lifts)", on: true },
   ] },
   { key: "nutrition", title: "Nutrition", rows: [
     { key: "target", label: "Calorie target", on: true },
     { key: "protein", label: "Protein vs target", on: true },
-    { key: "lifts", label: "Workouts this week (Lifts)", on: true },
   ] },
   { key: "runs", title: "Runs", rows: [
     { key: "count", label: "Runs this week", on: true },
@@ -48,7 +47,11 @@ export const HOME_CARDS = [
     { key: "latest", label: "Latest experience", on: true },
     { key: "done", label: "Experiences logged", on: true },
   ] },
-  { key: "chess", title: "Chess", rows: CLASSES.map((c) => ({ key: c.key, label: `${c.label} rating`, on: true })) },
+  { key: "chess", title: "Chess", rows: [
+    { key: "rapid", label: "Rapid rating", on: true },
+    { key: "blitz", label: "Blitz rating", on: true },
+    { key: "rapidChange", label: "Rapid rating change today", on: true },
+  ] },
   { key: "longterm", title: "Long Term", rows: [{ key: "current", label: "Current season", on: true }] },
   { key: "reminders", title: "Long-Term Reminders", rows: [{ key: "next", label: "Next one to show up", on: true }] },
   { key: "letters", title: "Future Letters", rows: [{ key: "next", label: "Next to unlock", on: true }] },

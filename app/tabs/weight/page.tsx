@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
 import { ChangeList } from "@/components/ChangeList";
 import { DataTable, type DividerRow } from "@/components/DataTable";
-import { ExportButton } from "@/components/ExportButton";
+import { ExportButton, type ExportAddon } from "@/components/ExportButton";
+import { LiftsScreen } from "@/components/LiftsScreen";
+import { loadLiftSets } from "@/lib/liftoffData";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
 import { PhasesSheet } from "@/components/PhasesSheet";
 import { PageSkeleton } from "@/components/Skeleton";
@@ -14,7 +17,7 @@ import { WeightChart } from "@/components/WeightChart";
 import { WeightLog } from "@/components/WeightLog";
 import { breakEnd, fmtRange, overlaps } from "@/lib/breaks";
 import { addDays, fmtDay, fmtDow, logicalToday, weekStart } from "@/lib/date";
-import { weightExport } from "@/lib/screenExports";
+import { liftsExport, weightExport } from "@/lib/screenExports";
 import type { Break, WeightEntry } from "@/lib/types";
 import { notesApi } from "@/lib/notesData";
 import { useWeightData, weightApi, type WriteResult } from "@/lib/weightData";
@@ -57,7 +60,49 @@ interface Conflict {
 
 /** The log as a spreadsheet, oldest first: every weigh-in with its week, plus trips and notes. */
 
+/** Weight's export can add every Lifts set, fetched only when switched on. */
+const LIFTS_ADDON: ExportAddon = {
+  label: "Lifts",
+  file: "lifts",
+  load: async () => {
+    const sets = await loadLiftSets();
+    return sets ? liftsExport(sets) : null;
+  },
+};
+
+/**
+ * Weight | Lifts, switched at the top. The pick is kept in the URL (?tab=lifts) so back and
+ * refresh return to it; Lifts is components/LiftsScreen.tsx.
+ */
+function WeightOrLifts() {
+  const params = useSearchParams();
+  const [tab, setTab] = useState<"weight" | "lifts">(params.get("tab") === "lifts" ? "lifts" : "weight");
+  const switcher = (
+    <Segmented
+      options={[
+        { value: "weight", label: "Weight" },
+        { value: "lifts", label: "Lifts" },
+      ]}
+      value={tab}
+      onChange={(t) => {
+        setTab(t);
+        window.history.replaceState(null, "", t === "lifts" ? "/tabs/weight?tab=lifts" : "/tabs/weight");
+        window.scrollTo({ top: 0 });
+      }}
+    />
+  );
+  return tab === "lifts" ? <LiftsScreen switcher={switcher} /> : <WeightScreen switcher={switcher} />;
+}
+
 export default function WeightPage() {
+  return (
+    <Suspense>
+      <WeightOrLifts />
+    </Suspense>
+  );
+}
+
+function WeightScreen({ switcher }: { switcher: ReactNode }) {
   const { data, failed, reload } = useWeightData();
   const [sheet, setSheet] = useState<WeightEntry | "new" | null>(null);
   const [view, setView] = useState<"log" | "weekly" | "daily">("log");
@@ -129,6 +174,7 @@ export default function WeightPage() {
     return failed ? (
       <main className="screen">
         <ScreenHeader title="Weight" back="/tabs" />
+        {switcher}
         <p role="alert" className="muted">
           Failed.{" "}
           <button type="button" className="btn btn-sm" onClick={reload}>
@@ -143,7 +189,12 @@ export default function WeightPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Weight" back="/tabs" right={<ExportButton tab="weight" source={weightExport(log)} text={weightLogText(log)} order="oldest first" />} />
+      <ScreenHeader
+        title="Weight"
+        back="/tabs"
+        right={<ExportButton tab="weight" source={weightExport(log)} text={weightLogText(log)} order="oldest first" addon={LIFTS_ADDON} />}
+      />
+      {switcher}
 
       <SummaryStrip
         items={[

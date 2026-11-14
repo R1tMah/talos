@@ -13,6 +13,28 @@ export async function loadEodQuestions(): Promise<EodQuestion[] | null> {
   return data.filter((q) => isEodTarget(q.target)).map((q) => ({ ...q, target: q.target as EodTarget }));
 }
 
+export interface PastAnswer {
+  id: string;
+  date: string;
+  prompt: string;
+  body: string;
+}
+
+/** Own-log answers by question id, newest first. Null when the read fails. */
+export async function loadEodAnswers(): Promise<Map<string, PastAnswer[]> | null> {
+  const { data, error } = await createClient().from("eod_answers").select("id, logical_date, question_id, prompt, body")
+    .is("deleted_at", null).not("question_id", "is", null).order("logical_date", { ascending: false }).order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) return null;
+  const out = new Map<string, PastAnswer[]>();
+  for (const a of data) {
+    const list = out.get(a.question_id!) ?? [];
+    list.push({ id: a.id, date: a.logical_date, prompt: a.prompt, body: a.body });
+    out.set(a.question_id!, list);
+  }
+  return out;
+}
+
 export const eodApi = {
   async add(position: number, prompt: string, target: EodTarget) {
     const { data, error } = await createClient().from("eod_questions").insert({ position, prompt, target }).select("id").single();

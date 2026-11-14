@@ -1,9 +1,12 @@
 -- Behavioral mocks: the tables' rules, the model picks, and archiving the tab.
 
-select pg_temp.put('s', (select id::text from (insert into public.mock_sessions (company, role) values ('Stripe', 'Product Engineer') returning id) x));
+-- An insert ... returning can't sit in a subquery, so each one is a CTE.
+with x as (insert into public.mock_sessions (company, role) values ('Stripe', 'Product Engineer') returning id)
+select pg_temp.put('s', id::text) from x;
 
-select pg_temp.put('q', (select id::text from (insert into public.mock_questions (session_id, position, area, question, rubric, target_time_seconds, model)
-  values (pg_temp.get('s')::uuid, 1, 'Navigating Ambiguity', 'Tell me about a pivot.', '{"requirements":["STAR"]}', 120, 'claude-sonnet-5-5') returning id) x));
+with x as (insert into public.mock_questions (session_id, position, area, question, rubric, target_time_seconds, model)
+  values (pg_temp.get('s')::uuid, 1, 'Navigating Ambiguity', 'Tell me about a pivot.', '{"requirements":["STAR"]}', 120, 'claude-sonnet-5-5') returning id)
+select pg_temp.put('q', id::text) from x;
 select pg_temp.ok('a question needs one of the seven areas',
   pg_temp.err(format($$insert into public.mock_questions (session_id, position, area, question, rubric, target_time_seconds, model) values (%L, 2, 'Vibes', 'Q', '{}', 120, 'm')$$, pg_temp.get('s'))) = '23514');
 select pg_temp.ok('two questions can''t share a place in the mock',

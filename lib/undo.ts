@@ -71,6 +71,8 @@ export function describeRow(table: string, r: Row | null): string {
       return str(r.title);
     case "callbacks":
       return `${str(r.company)} ${str(r.kind)}`;
+    case "callback_updates":
+      return r.parent_id ? "callback reply" : "callback update";
     case "notes":
       return { journal: "work journal entry", personal: "personal journal entry", talos: "Talos improvement", sysdesign: "system design mock summary", aiassisted: "AI-assisted mock summary", weight: "weight note" }[str(r.kind)] ?? "content idea";
     case "breaks":
@@ -99,6 +101,8 @@ export function describeRow(table: string, r: Row | null): string {
       return `spending $${Number(r.amount).toFixed(2)}, ${str(r.what)}`;
     case "life_experiences":
       return `${r.status === "completed" ? "experience" : "recommendation"} "${str(r.title)}"`;
+    case "chess_notes":
+      return "chess game note";
     default:
       return table;
   }

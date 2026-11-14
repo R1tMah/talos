@@ -64,7 +64,7 @@ describe("old addresses redirect", () => {
     expect(readFileSync("components/watch/Jobs.tsx", "utf8")).toContain('`/tabs/recruiting?${new URLSearchParams({ tab: "applications", add: "1"');
     const debrief = readFileSync("app/tabs/callbacks/[id]/page.tsx", "utf8");
     expect(debrief).not.toContain('"/tabs/callbacks"');
-    expect(debrief).toContain('router.push("/tabs/recruiting?tab=callbacks")');
+    expect(debrief).toContain('const LIST = "/tabs/recruiting?tab=callbacks"');
   });
 
   it("Talos Improvements lives in Settings", () => {

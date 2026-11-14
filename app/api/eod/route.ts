@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import type { ChatCard, ChatResponse } from "@/lib/agent/cards";
-import { draftFromAnswers, draftFromOneShot, extract, needsModel, spendingText } from "@/lib/agent/eod";
-import { ownerDb, proposer } from "@/lib/agent/server";
+import { draftFromAnswers, draftFromOneShot, extract, needsModel, readTabAnswers, spendingText } from "@/lib/agent/eod";
+import { loadCtx, ownerDb, proposer } from "@/lib/agent/server";
 import { logicalDateIn } from "@/lib/date";
-import { isEodTarget, targetLabel, targetTab, type EodAnswer, type EodReminder, type EodTarget } from "@/lib/eod";
+import { isEodTarget, isToolTarget, targetLabel, targetTab, type EodAnswer, type EodReminder, type EodTarget } from "@/lib/eod";
 import type { Json } from "@/lib/database.types";
 
 const PER_MINUTE = 20; // shared with /api/chat: both count message_log rows
@@ -17,7 +17,8 @@ const failed = (status = 200, detail?: string): NextResponse<ChatResponse> =>
  * out. Nothing is written here; the card's Save EOD commits the stored proposal through
  * /api/confirm, every entry in one transaction.
  *
- * Body: { clientMsgId, answers: [{ target, text }] } or { clientMsgId, text }.
+ * Body: { clientMsgId, answers: [{ target, text, questionId? }] } or { clientMsgId, text }.
+ * questionId names the question for an own-log ("custom") answer.
  */
 export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   const db = await ownerDb();
@@ -32,14 +33,14 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
   const clientMsgId = typeof body.clientMsgId === "string" ? body.clientMsgId : "";
   const oneShot = typeof body.text === "string" ? body.text.trim() : null;
   const answers: EodAnswer[] | null = Array.isArray(body.answers)
-    ? body.answers.filter((a): a is EodAnswer => isEodTarget(a?.target) && typeof a?.text === "string").map((a) => ({ target: a.target, text: a.text }))
+    ? body.answers.filter((a): a is EodAnswer => isEodTarget(a?.target) && typeof a?.text === "string").map((a) => ({ target: a.target, text: a.text, ...(typeof a.questionId === "string" ? { questionId: a.questionId } : {}) }))
     : null;
   // Every question skipped still sends an empty list: the card can be just reminders.
   if (!clientMsgId || (!oneShot && !answers)) return failed(400);
   // What chat history shows for this message.
   const logText = oneShot
     ? `EOD: ${oneShot}`
-    : answers!.length ? `EOD\n${answers!.map((a) => `${targetLabel(a.target)}: ${a.text.trim()}`).join("\n")}` : "EOD (all skipped)";
+    : answers!.length ? `EOD\n${answers!.map((a) => `${a.target === "custom" ? "Own log" : targetLabel(a.target)}: ${a.text.trim()}`).join("\n")}` : "EOD (all skipped)";
   if (logText.length > MAX_LENGTH) return failed(400);
 
   // The same message sent twice gets the first answer back, not a second proposal.
@@ -54,13 +55,15 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
 
   const [settings, questions] = await Promise.all([
     db.from("settings").select("timezone, archived_tabs").eq("id", 1).single(),
-    db.from("eod_questions").select("target").eq("enabled", true),
+    db.from("eod_questions").select("id, prompt, target, enabled"),
   ]);
   if (settings.error) return failed();
   const archived = new Set(settings.data.archived_tabs);
   const today = logicalDateIn(settings.data.timezone);
   // A one-shot keeps only what the questions ask about (all of it when none are set up).
-  const asked = new Set<EodTarget>((questions.data ?? []).map((q) => q.target).filter(isEodTarget));
+  const asked = new Set<EodTarget>((questions.data ?? []).filter((q) => q.enabled).map((q) => q.target).filter(isEodTarget));
+  // Own-log answers are saved under the question's wording as stored, never the client's.
+  const prompts = new Map((questions.data ?? []).filter((q) => q.target === "custom").map((q) => [q.id, q.prompt]));
   const allowed = new Set<EodTarget>(
     (asked.size ? [...asked] : (["journal", "personal", "content", "talos", "spending"] as EodTarget[])).filter((t) => !archived.has(targetTab(t))),
   );
@@ -75,17 +78,27 @@ export async function POST(req: Request): Promise<NextResponse<ChatResponse>> {
     const kept = answers?.filter((a) => !archived.has(targetTab(a.target))) ?? null;
     const draft = oneShot
       ? draftFromOneShot(oneShot, await extract(db, oneShot), allowed)
-      : draftFromAnswers(kept!, needsModel(kept!) ? await extract(db, spendingText(kept!)) : null);
-    if (!draft.notes.length && !draft.spending.length && !reminders.length) {
+      : draftFromAnswers(kept!, needsModel(kept!) ? await extract(db, spendingText(kept!)) : null, prompts);
+    // Answers for other tabs (weight, runs, LeetCode…) are read with that tab's chat tools.
+    const base = !oneShot && kept!.some((a) => isToolTarget(a.target)) ? await loadCtx(db, "") : null;
+    const tab = base
+      ? await readTabAnswers(kept!, async (text) => ({ ...base.ctx, text }))
+      : { entries: [], unclear: [] as string[] };
+    draft.unclear.push(...tab.unclear);
+    if (!draft.notes.length && !draft.spending.length && !draft.answers.length && !tab.entries.length && !reminders.length) {
       cards = [{ kind: "failed", detail: draft.unclear.length ? draft.unclear.join(" ") : "Nothing to save for today." }];
     } else {
       // The reminders go in the proposal too: Save EOD can only tick ones offered here.
       const proposalId = await proposer(db, logged.data.id)("save_eod", {
         date: today, notes: draft.notes as unknown as Json, spending: draft.spending as unknown as Json,
-        reminders: reminders as unknown as Json,
+        answers: draft.answers as unknown as Json, reminders: reminders as unknown as Json,
+        // Each tab entry is the checked write itself; Save EOD hands it to its tool.
+        entries: tab.entries.map((e) => ({ tool: e.tool, resolved: e.resolved })) as unknown as Json,
       });
       cards = [{
         kind: "eod", date: today, notes: draft.notes, spending: draft.spending, proposalId,
+        ...(draft.answers.length ? { answers: draft.answers } : {}),
+        ...(tab.entries.length ? { entries: tab.entries.map((e) => e.card) } : {}),
         ...(reminders.length ? { reminders } : {}), ...(draft.unclear.length ? { unclear: draft.unclear } : {}),
       }];
     }

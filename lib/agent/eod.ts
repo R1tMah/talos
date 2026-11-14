@@ -8,9 +8,11 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { isSpendCategory, SPEND_CATEGORIES } from "@/lib/spending";
-import { isSkip, type EodAnswer, type EodDraft, type EodNoteKind, type EodSpend, type EodTarget } from "@/lib/eod";
-import { anthropic, logUsage, MODEL } from "./run";
-import { typed, verbatim, type Db } from "./tools";
+import { isSkip, isToolTarget, targetLabel, type EodAnswer, type EodDraft, type EodEntry, type EodNoteKind, type EodSpend, type EodTarget, type EodToolTarget } from "@/lib/eod";
+import type { ChatTab } from "@/lib/tabs";
+import { anthropic, callModel, logUsage, MODEL, settleApplications } from "./run";
+import { TAB_TOOLS } from "./scope";
+import { TOOLS, typed, verbatim, type Check, type Ctx, type Db, type Resolved } from "./tools";
 
 /** What the model hands back. Every field is checked before it reaches the card. */
 export interface Extraction {
@@ -107,14 +109,22 @@ export const spendingText = (answers: EodAnswer[]) =>
   answers.filter((a) => a.target === "spending" && !isSkip(a.text)).map((a) => a.text.trim()).join("\n");
 
 /**
- * The card's entries from interview answers. Notes are the owner's answer as typed;
- * spending is what the model found in the spending answers, checked against them.
+ * The card's entries from interview answers. Notes and own-log answers are the owner's
+ * answer as typed; spending is what the model found in the spending answers, checked
+ * against them. `prompts`: the own-log questions' wording by id, read from the database.
  */
-export function draftFromAnswers(answers: EodAnswer[], ex: Extraction | null): EodDraft {
-  const draft: EodDraft = { notes: [], spending: [], unclear: [] };
+export function draftFromAnswers(answers: EodAnswer[], ex: Extraction | null, prompts: ReadonlyMap<string, string> = new Map()): EodDraft {
+  const draft: EodDraft = { notes: [], spending: [], answers: [], unclear: [] };
   for (const a of answers) {
     const text = a.text.trim();
-    if (!text || isSkip(text) || a.target === "spending") continue;
+    // Spending is read below; a tab's answer is read with that tab's tools (readTabAnswers).
+    if (!text || isSkip(text) || a.target === "spending" || isToolTarget(a.target)) continue;
+    if (a.target === "custom") {
+      const prompt = a.questionId ? prompts.get(a.questionId) : undefined;
+      if (prompt) draft.answers.push({ questionId: a.questionId!, prompt, body: text });
+      else draft.unclear.push(`That question was removed, so "${text}" isn't saved.`);
+      continue;
+    }
     draft.notes.push({ kind: a.target, body: text });
   }
   const spend = spendingText(answers);
@@ -130,7 +140,8 @@ export function draftFromAnswers(answers: EodAnswer[], ex: Extraction | null): E
  * targets that are asked about (and not archived) are kept.
  */
 export function draftFromOneShot(text: string, ex: Extraction | null, allowed: ReadonlySet<EodTarget>): EodDraft {
-  const draft: EodDraft = { notes: [], spending: [], unclear: [] };
+  // Own-log questions are only asked in the interview: a one-shot can't tell which part answers them.
+  const draft: EodDraft = { notes: [], spending: [], answers: [], unclear: [] };
   for (const [kind, field] of Object.entries(FIELD) as [EodNoteKind, keyof Omit<Extraction, "spending">][]) {
     if (!allowed.has(kind)) continue;
     const body = verbatim(ex?.[field], text);
@@ -139,4 +150,60 @@ export function draftFromOneShot(text: string, ex: Extraction | null, allowed: R
   if (allowed.has("spending")) draft.spending = spendingFrom(ex, text);
   if (!draft.notes.length && !draft.spending.length) draft.unclear.push(`Couldn't sort "${text}" into entries.`);
   return draft;
+}
+
+// ---- Tab answers: read with that tab's chat tools ------------------------------------------
+
+/** The chat tools an answer for each tab may use (its chip's tools; reminders aren't a chip). */
+export const toolsFor = (t: EodToolTarget): readonly string[] =>
+  t === "reminders" ? ["add_reminder", "add_long_term_reminder"] : TAB_TOOLS[t as ChatTab];
+
+/** A tab entry ready for Save EOD: the checked write, and how the card shows it. */
+export interface TabEntry {
+  tool: string;
+  resolved: Resolved;
+  card: EodEntry;
+}
+
+/** What one checked call adds to the card: an entry, or a line saying why it can't be saved yet. Pure, for tests. */
+export function fromCheck(target: EodTarget, tool: string, check: Check): { entry?: TabEntry; unclear?: string } {
+  const label = targetLabel(target);
+  const inChat = `Log it in Chat with the ${label} chip.`;
+  if (check.status === "invalid") return { unclear: `${label}: ${check.detail}` };
+  if (check.status === "missing") return { unclear: `${label}: ${check.title} needs ${check.missing.map((m) => m.label.toLowerCase()).join(", ")}. ${inChat}` };
+  if (check.status === "ambiguous") {
+    const q = check.title?.trim() || "Couldn't tell which one you meant.";
+    return { unclear: `${label}: ${/[.?!]$/.test(q) ? q : `${q}.`} ${inChat}` };
+  }
+  const entry: TabEntry = { tool, resolved: check.resolved, card: { target, title: TOOLS[tool]?.display ?? label, fields: check.fields } };
+  return { entry, ...(check.warnings.length ? { unclear: `${label}: ${check.warnings.join(" ")}` } : {}) };
+}
+
+/**
+ * Reads each tab answer the way Chat reads a message with that tab's chip: one model call,
+ * limited to the tab's tools, then the same checks. Nothing is written; ready entries go on
+ * the card, and anything that needs more (a missing amount, which meal?) says so instead.
+ */
+export async function readTabAnswers(answers: EodAnswer[], ctxFor: (text: string) => Promise<Ctx | null>): Promise<{ entries: TabEntry[]; unclear: string[] }> {
+  const entries: TabEntry[] = [];
+  const unclear: string[] = [];
+  for (const a of answers) {
+    const text = a.text.trim();
+    if (!isToolTarget(a.target) || !text || isSkip(text)) continue;
+    const label = targetLabel(a.target);
+    const allowed = toolsFor(a.target);
+    const ctx = await ctxFor(text);
+    const calls = ctx ? await callModel({ ...ctx, tab: a.target === "reminders" ? undefined : (a.target as ChatTab) }, allowed) : null;
+    const usable = settleApplications(calls ?? [], text).filter((c) => c.name !== "no_match" && TOOLS[c.name]?.check);
+    if (!ctx || !usable.length) {
+      unclear.push(`${label}: couldn't read "${text}". Log it in Chat with the ${label} chip.`);
+      continue;
+    }
+    for (const c of usable) {
+      const out = fromCheck(a.target, c.name, await TOOLS[c.name].check!(c.input, ctx));
+      if (out.entry) entries.push(out.entry);
+      if (out.unclear) unclear.push(out.unclear);
+    }
+  }
+  return { entries, unclear };
 }

@@ -47,7 +47,7 @@ describe("what gets saved", () => {
 
   it("defaults are what each card showed before", () => {
     expect([...shownRows("recruiting", {})]).toEqual(["interviews", "oas", "recruiter"]);
-    expect([...shownRows("weight", {})]).toEqual(["thisWeek", "lastWeek"]);
+    expect([...shownRows("weight", {})]).toEqual(["thisWeek", "lastWeek", "lifts"]);
     expect(shownRows("recruiting", {}).has("statuses")).toBe(false);
   });
 });

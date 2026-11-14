@@ -27,6 +27,9 @@ select pg_temp.ok('a letter that unlocks in the past cannot be sealed',
 select pg_temp.ok('an empty letter cannot be sealed',
   pg_temp.err('insert into public.future_letters (body, deliver_at) values (''  '', now() + interval ''1 day'')') is not null);
 
+-- Delete in one statement and look in the next: a statement keeps the snapshot it
+-- started with, so a check in the same statement would still see the row.
+select pg_temp.put('del', coalesce(pg_temp.err(format('delete from public.future_letters where id = %L', pg_temp.get('id'))), 'ok'));
 select pg_temp.ok('a sealed letter can be deleted',
-  pg_temp.err(format('delete from public.future_letters where id = %L', pg_temp.get('id'))) is null
-  and not exists (select 1 from public.future_letters where id = pg_temp.get('id')::uuid));
+  pg_temp.get('del') = 'ok' and not exists (select 1 from public.future_letters where id = pg_temp.get('id')::uuid),
+  pg_temp.get('del'));

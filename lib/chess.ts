@@ -6,9 +6,9 @@ export const CHESS_PROFILE = `https://www.chess.com/member/${CHESS_USERNAME}`;
 
 /** The time controls the tab tracks, in the order shown. */
 export const CLASSES = [
-  { key: "bullet", label: "Bullet" },
-  { key: "blitz", label: "Blitz" },
   { key: "rapid", label: "Rapid" },
+  { key: "blitz", label: "Blitz" },
+  { key: "bullet", label: "Bullet" },
 ] as const;
 export type ChessClass = (typeof CLASSES)[number]["key"];
 export const isChessClass = (v: unknown): v is ChessClass => CLASSES.some((c) => c.key === v);
@@ -117,6 +117,22 @@ export function daySummary(games: ChessGame[], start: number, end: number): Reco
   }
   return out;
 }
+
+export interface WinLossDraw {
+  win: number;
+  loss: number;
+  draw: number;
+}
+
+/** Wins, losses and draws across every tracked time control for games ending in [start, end). */
+export function dayRecord(games: ChessGame[], start: number, end: number): WinLossDraw {
+  const out: WinLossDraw = { win: 0, loss: 0, draw: 0 };
+  for (const g of games) if (g.end >= start && g.end < end && isChessClass(g.cls)) out[g.outcome]++;
+  return out;
+}
+
+/** "4-2" (wins, losses), or "4-2-1" with draws. Home leaves draws out; the Chess tab shows them. */
+export const fmtRecord = (r: WinLossDraw, draws = false) => `${r.win}-${r.loss}${draws ? `-${r.draw}` : ""}`;
 
 /** "+12", "−8", "±0". */
 export const fmtChange = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "±0");

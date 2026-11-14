@@ -1,10 +1,14 @@
 "use client";
 
 // The Chess tab's data: /api/chess, refetched when the app comes back to the foreground
-// (games played on chess.com show up without a reload).
+// (games played on chess.com show up without a reload), plus the owner's notes on games
+// (public.chess_notes, keyed by the game's chess.com URL since games aren't stored).
 
 import { useCallback, useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
 import type { ChessData } from "./chess";
+import type { Json } from "./database.types";
+import { announceWrite, useDataChanged } from "./undo";
 
 export function useChess() {
   const [data, setData] = useState<ChessData | null>(null);
@@ -34,3 +38,42 @@ export function useChess() {
 
   return { data, failed, loading, reload: () => load(true) };
 }
+
+/**
+ * Live notes on these games: game URL -> note. `loaded` is true once the notes for exactly
+ * these games have been read, so a missing note means there is none (not "not read yet").
+ * Call `reload` after a write.
+ */
+export function useChessNotes(urls: string[]) {
+  const [read, setRead] = useState<{ key: string; notes: Record<string, string> } | null>(null);
+  const key = urls.join("\n");
+
+  const reload = useCallback(async () => {
+    const list = key ? key.split("\n") : [];
+    if (!list.length) return setRead({ key, notes: {} });
+    const res = await createClient().from("chess_notes").select("game_url, body").in("game_url", list).is("deleted_at", null);
+    if (res.error) return; // keep what's shown; the games still work without notes
+    setRead({ key, notes: Object.fromEntries(res.data.map((r) => [r.game_url, r.body])) });
+  }, [key]);
+
+  useDataChanged(reload);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { notes: read?.notes ?? {}, loaded: read?.key === key, reload };
+}
+
+export type NoteResult = { status: "saved" } | { status: "failed" };
+
+/** One write: blank text removes the note; anything else adds or replaces it, saved as typed. */
+export const chessNotesApi = {
+  set: async (url: string, body: string): Promise<NoteResult> => {
+    const res = await createClient().rpc("set_chess_note", { p_url: url, p_body: body });
+    const out = res.data as { status?: string; row?: Json; action_id?: string | null } | null;
+    if (res.error || !out) return { status: "failed" };
+    announceWrite("chess_notes", out);
+    return out.status === "saved" || out.status === "not_found" ? { status: "saved" } : { status: "failed" };
+  },
+};

@@ -8,6 +8,7 @@ import { ExportButton } from "@/components/ExportButton";
 import { FormSheet } from "@/components/FormSheet";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
+import { IconChat } from "@/components/Icons";
 import { Fab, ScreenHeader, StatusPill } from "@/components/ui";
 import { fmtDay, logicalToday } from "@/lib/date";
 import { callbacksApi, useCallbacks } from "@/lib/callbacksData";
@@ -37,7 +38,12 @@ export function CallbacksScreen({ switcher }: { switcher?: ReactNode }) {
     );
   }
 
-  const { rows, counts } = data;
+  const { rows, counts, threads } = data;
+  // The newest update when there is one, else the debrief's first line.
+  const subline = (r: (typeof rows)[number]) => {
+    const latest = threads[r.id]?.latest?.body.split("\n").find((l) => l.trim());
+    return latest ?? (r.debrief ? r.debrief.split("\n").find((l) => l.trim()) : "No debrief");
+  };
   const other = Object.entries(counts).filter(([k]) => k !== "Interview" && k !== "OA");
 
   return (
@@ -76,7 +82,15 @@ export function CallbacksScreen({ switcher }: { switcher?: ReactNode }) {
             render: (r) => (
               <>
                 <div className="cell-main">{r.company}</div>
-                <div className="cell-sub">{r.debrief ? r.debrief.split("\n").find((l) => l.trim()) : "No debrief"}</div>
+                <div className="cell-sub">
+                  {threads[r.id] && (
+                    <span className="cb-count" aria-label={`${threads[r.id].count} updates`}>
+                      <IconChat size={12} />
+                      {threads[r.id].count}
+                    </span>
+                  )}
+                  {subline(r)}
+                </div>
               </>
             ),
           },

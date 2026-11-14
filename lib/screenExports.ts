@@ -5,6 +5,7 @@ import type { AppEntry } from "./applicationsData";
 import { fmtDuration } from "./duration";
 import type { TabExport } from "./exportTab";
 import type { Transaction } from "./finances";
+import type { LiftSet } from "./liftoff";
 import type { Season } from "./seasonsData";
 import { paceOf, type Run } from "./runsData";
 import { weightLogRows, type LogItem } from "./weightLog";
@@ -60,6 +61,23 @@ export function weightExport(log: LogItem[]): TabExport {
       { key: "week_avg", label: "Week average" }, { key: "note", label: "Note" }, { key: "break", label: "Break" },
     ],
     rows: weightLogRows(log),
+  };
+}
+
+/** Every Lifts set, oldest first, as Liftoff exported it: one row per set. */
+export function liftsExport(sets: LiftSet[]): TabExport {
+  const n = (v: number | null) => (v == null ? "" : String(v));
+  return {
+    title: "Lifts",
+    columns: [
+      { key: "date", label: "Date" }, { key: "workout", label: "Workout" }, { key: "exercise", label: "Exercise" }, { key: "set", label: "Set" },
+      { key: "weight", label: "Weight" }, { key: "reps", label: "Reps" }, { key: "distance", label: "Distance" }, { key: "seconds", label: "Seconds" },
+      { key: "rpe", label: "RPE" }, { key: "duration", label: "Workout length" }, { key: "notes", label: "Notes" },
+    ],
+    rows: sets.map((s) => ({
+      date: s.date, workout: s.workout, exercise: s.exercise, set: String(s.order), weight: n(s.weight), reps: n(s.reps),
+      distance: n(s.distance), seconds: n(s.seconds), rpe: n(s.rpe), duration: s.duration ?? "", notes: s.notes ?? "",
+    })),
   };
 }
 

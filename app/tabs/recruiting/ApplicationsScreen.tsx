@@ -48,11 +48,21 @@ export function ApplicationsScreen({ switcher }: { switcher?: ReactNode }) {
     window.history.replaceState(null, "", `${window.location.pathname}${q.size ? `?${q}` : ""}`);
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const rows = useMemo(() => data ?? [], [data]);
   const counts = countBy(rows, (a) => a.status);
   // Base statuses first, then any other status already used, in first-seen order.
   const statuses = [...BASE_STATUSES, ...Object.keys(counts).filter((s) => !BASE_STATUSES.includes(s))];
+  // Every word must appear somewhere in company, position, status or resume.
+  const visible = useMemo(() => {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return rows;
+    return rows.filter((a) => {
+      const hay = [a.company, a.position, a.status, a.resume ?? ""].join(" ").toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+  }, [rows, query]);
 
   /** Runs a write, reloads, and turns anything but success into a plain message. */
   const run = async (write: Promise<WriteResult>) => {
@@ -106,10 +116,21 @@ export function ApplicationsScreen({ switcher }: { switcher?: ReactNode }) {
         </p>
       )}
 
+      {rows.length > 0 && (
+        <input
+          className="input"
+          type="search"
+          placeholder="Search company, role, status or resume"
+          aria-label="Search applications"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
+
       <DataTable
-        rows={rows}
-        empty="No applications."
-        onAdd={() => setSheet("new")}
+        rows={visible}
+        empty={query.trim() ? `No applications match “${query.trim()}”.` : "No applications."}
+        onAdd={query.trim() ? undefined : () => setSheet("new")}
         onRowClick={(r) => setSheet(r)}
         onDelete={(r) => run(applicationsApi.remove(r.id))}
         columns={[

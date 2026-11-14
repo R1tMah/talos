@@ -12,12 +12,12 @@ import type { Database } from "./database.types";
 const TABLES = [
   "settings", "home_cards", "weights", "phases", "breaks",
   "food_log", "foods", "saved_meals", "saved_meal_items",
-  "leetcode_log", "applications", "application_reminders", "reminders", "callbacks", "notes",
+  "leetcode_log", "applications", "application_reminders", "reminders", "callbacks", "callback_updates", "notes",
   "runs", "workouts", "sets", "exercises", "plans", "plan_exercises", "workout_log",
   "finance_transactions", "checking_balances", "vanguard_holdings", "net_worth_snapshots", "spending",
   "curriculums", "curriculum_modules", "module_messages",
   "mock_sessions", "mock_questions", "mock_answers",
-  "life_experiences",
+  "life_experiences", "chess_notes",
 ] as const satisfies readonly (keyof Database["public"]["Tables"])[];
 
 const PAGE = 1000; // PostgREST returns at most this many rows per request

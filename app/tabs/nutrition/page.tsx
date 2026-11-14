@@ -1,12 +1,11 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { DataTable } from "@/components/DataTable";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
 import { IconBack, IconChevron } from "@/components/Icons";
-import { LiftsScreen } from "@/components/LiftsScreen";
 import { IngredientsSheet, itemsSummary, LogMealSheet, MealSheet } from "@/components/MealSheets";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
@@ -577,34 +576,21 @@ function Nutrition({ switcher }: { switcher: ReactNode }) {
   );
 }
 
-/**
- * Nutrition | Lifts, switched at the top. The pick is kept in the URL (?tab=lifts) so back
- * and refresh return to it; Lifts is components/LiftsScreen.tsx.
- */
-function NutritionOrLifts() {
+/** Lifts moved to Weight (Weight | Lifts); the old ?tab=lifts link goes there. */
+function NutritionOrMoved() {
   const params = useSearchParams();
-  const [tab, setTab] = useState<"nutrition" | "lifts">(params.get("tab") === "lifts" ? "lifts" : "nutrition");
-  const switcher = (
-    <Segmented
-      options={[
-        { value: "nutrition", label: "Nutrition" },
-        { value: "lifts", label: "Lifts" },
-      ]}
-      value={tab}
-      onChange={(t) => {
-        setTab(t);
-        window.history.replaceState(null, "", t === "lifts" ? "/tabs/nutrition?tab=lifts" : "/tabs/nutrition");
-        window.scrollTo({ top: 0 });
-      }}
-    />
-  );
-  return tab === "lifts" ? <LiftsScreen switcher={switcher} /> : <Nutrition switcher={switcher} />;
+  const router = useRouter();
+  const moved = params.get("tab") === "lifts";
+  useEffect(() => {
+    if (moved) router.replace("/tabs/weight?tab=lifts");
+  }, [moved, router]);
+  return moved ? null : <Nutrition switcher={null} />;
 }
 
 export default function NutritionPage() {
   return (
     <Suspense>
-      <NutritionOrLifts />
+      <NutritionOrMoved />
     </Suspense>
   );
 }

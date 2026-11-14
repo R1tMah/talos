@@ -16,8 +16,17 @@ const LIVE_TITLES: Record<LiveTab, string> = {
  * Header button that exports just this tab, from Supabase: either the screen's rows
  * (`source`), or the full history fetched when the sheet opens (`live`).
  */
+/** Another tab the owner can add to this export (Weight's can include Lifts). Off until switched on. */
+export interface ExportAddon {
+  label: string;
+  /** Names the second CSV: talos-<file>-<date>.csv. */
+  file: ExportTab;
+  /** Fetched only when switched on; null when the read fails. */
+  load: () => Promise<TabExport | null>;
+}
+
 export function ExportButton({
-  tab, text, order = "newest first", variant = "icon", ...from
+  tab, text, order = "newest first", variant = "icon", addon, ...from
 }: {
   tab: ExportTab;
   /** "icon" for a header, "button" for a full-width Export button at the bottom of a screen. */
@@ -26,12 +35,24 @@ export function ExportButton({
   text?: string;
   /** How the rows are ordered, shown under the buttons. */
   order?: string;
+  addon?: ExportAddon;
 } & ({ source: TabExport; live?: never } | { live: LiveTab; source?: never })) {
   const given = from.source;
   const live = from.live;
   const [open, setOpen] = useState(false);
   const [copy, setCopy] = useState<"" | "Copied" | "Failed">("");
   const [fetched, setFetched] = useState<TabExport | "loading" | "failed" | null>(null);
+  const [include, setInclude] = useState(false);
+  const [extra, setExtra] = useState<TabExport | "loading" | "failed" | null>(null);
+
+  const toggleAddon = async () => {
+    const on = !include;
+    setInclude(on);
+    if (!on || !addon || (extra && extra !== "failed")) return;
+    setExtra("loading");
+    setExtra((await addon.load().catch(() => null)) ?? "failed");
+  };
+  const added = include && extra && typeof extra === "object" ? extra : null;
 
   useEffect(() => {
     if (!open || !live) return;
@@ -47,10 +68,13 @@ export function ExportButton({
   }, [open, live]);
 
   const source = given ?? (fetched && typeof fetched === "object" ? fetched : undefined);
-  const waiting = !!live && !source;
+  const waiting = (!!live && !source) || (include && extra === "loading");
   const title = source?.title ?? (live ? LIVE_TITLES[live] : "");
   const count = source?.rows.length ?? 0;
-  const markdown = () => text ?? (source ? toMarkdown(source) : "");
+  const markdown = () => {
+    const own = text ?? (source ? toMarkdown(source) : "");
+    return added ? `${own}\n\n${toMarkdown(added)}` : own;
+  };
   const csv = () => (source ? toCsv(source) : "");
 
   const copyMarkdown = async () => {
@@ -63,14 +87,19 @@ export function ExportButton({
     setTimeout(() => setCopy(""), 2000);
   };
 
-  const downloadCsv = () => {
+  const save = (body: string, name: ExportTab) => {
     // Leading BOM so Excel and Numbers read non-ASCII text correctly.
-    const blob = new Blob(["﻿" + csv()], { type: "text/csv" });
+    const blob = new Blob(["﻿" + body], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `talos-${tab}-${todayISO()}.csv`;
+    a.download = `talos-${name}-${todayISO()}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  // The added tab has different columns, so it's its own file rather than more rows.
+  const downloadCsv = () => {
+    save(csv(), tab);
+    if (added && addon) setTimeout(() => save(toCsv(added), addon.file), 300);
   };
 
   return (
@@ -86,6 +115,14 @@ export function ExportButton({
       )}
       {open && (
         <Sheet title={`Export ${title}`} onClose={() => setOpen(false)}>
+          {addon && (
+            <div className="card list" style={{ marginBottom: "var(--s-3)" }}>
+              <div className="row">
+                <span className="row-label">Include {addon.label}</span>
+                <button type="button" role="switch" className="switch" aria-checked={include} aria-label={`Include ${addon.label}`} onClick={toggleAddon} />
+              </div>
+            </div>
+          )}
           <div className="card list">
             <button type="button" className="row" onClick={copyMarkdown} disabled={waiting}>
               <span className="row-label">Copy as markdown</span>
@@ -95,7 +132,7 @@ export function ExportButton({
             </button>
             <button type="button" className="row" onClick={downloadCsv} disabled={waiting}>
               <span className="row-label">Download CSV</span>
-              <span className="row-value">Spreadsheet</span>
+              <span className="row-value">{added ? "2 spreadsheets" : "Spreadsheet"}</span>
             </button>
           </div>
           <p className="faint num" style={{ fontSize: "var(--t-xs)", margin: "var(--s-3) var(--s-1) 0" }}>
@@ -106,6 +143,8 @@ export function ExportButton({
             ) : (
               `${count} ${count === 1 ? "entry" : "entries"}, ${order}`
             )}
+            {include && extra === "failed" && <span style={{ color: "var(--danger)" }}> · Couldn&rsquo;t load {addon?.label}</span>}
+            {added && ` · plus ${added.rows.length} ${addon?.label} ${added.rows.length === 1 ? "row" : "rows"}`}
           </p>
         </Sheet>
       )}

@@ -5,8 +5,9 @@
 // made, so the next "EOD" uses them.
 
 import { useCallback, useEffect, useState } from "react";
-import { EOD_TARGETS, isEodTarget, type EodQuestion } from "@/lib/eod";
-import { eodApi, loadEodQuestions } from "@/lib/eodData";
+import { DEFAULT_PROMPT, EOD_TARGETS, isEodTarget, type EodQuestion } from "@/lib/eod";
+import { eodApi, loadEodAnswers, loadEodQuestions, type PastAnswer } from "@/lib/eodData";
+import { fmtDay } from "@/lib/date";
 
 const MAX_PROMPT = 200;
 
@@ -14,11 +15,13 @@ export function EodSettings() {
   const [qs, setQs] = useState<EodQuestion[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [notice, setNotice] = useState("");
+  const [past, setPast] = useState<Map<string, PastAnswer[]>>(new Map());
 
   const load = useCallback(async () => {
-    const data = await loadEodQuestions();
+    const [data, answers] = await Promise.all([loadEodQuestions(), loadEodAnswers()]);
     if (data) setQs(data);
     else setFailed(true);
+    if (answers) setPast(answers);
   }, []);
   useEffect(() => {
     load();
@@ -50,6 +53,10 @@ export function EodSettings() {
       <p className="faint eod-help">
         Type <b>EOD</b> in chat and Talos asks these one at a time. Answer each, or type <b>skip</b>; <b>stop</b> ends it. You see everything on
         one card before anything is saved. Typing <b>EOD:</b> followed by your whole day skips the questions.
+      </p>
+      <p className="faint eod-help">
+        Ask anything: write your own question and set it to <b>Its own log</b> to keep its answers here, under the question, instead of
+        in a journal. Those are only asked in the questions, not in an <b>EOD:</b> one-liner.
       </p>
 
       <span className="label group-title">
@@ -95,6 +102,7 @@ export function EodSettings() {
               if (prompt !== q.prompt) run(set(q.id, { prompt }), () => eodApi.update(q.id, { prompt }));
             }}
           />
+          {q.target === "custom" && <PastAnswers list={past.get(q.id) ?? []} prompt={q.prompt} />}
           <div className="rc-actions">
             <button type="button" className="btn btn-sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move question ${i + 1} up`}>
               Up
@@ -112,19 +120,49 @@ export function EodSettings() {
         </div>
       ))}
 
-      <button
-        type="button"
-        className="btn"
-        onClick={async () => {
-          const prompt = "What else happened today?";
-          const id = await eodApi.add(qs.length, prompt, "journal");
-          if (id) setQs([...qs, { id, position: qs.length, prompt, target: "journal", enabled: true }]);
-          else setNotice("Failed to add.");
-        }}
-      >
-        Add a question
-      </button>
+      {/* Any tab or log: picking one adds its starter question, ready to reword above. */}
+      <label className="eod-add">
+        <span className="label">Add a question for</span>
+        <select
+          className="row-select"
+          value=""
+          onChange={async (e) => {
+            const target = e.target.value;
+            if (!isEodTarget(target)) return;
+            const prompt = DEFAULT_PROMPT[target];
+            const id = await eodApi.add(qs.length, prompt, target);
+            if (id) setQs([...qs, { id, position: qs.length, prompt, target, enabled: true }]);
+            else setNotice("Failed to add.");
+          }}
+        >
+          <option value="" disabled>Pick a tab…</option>
+          {EOD_TARGETS.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}{t.key !== "custom" && qs.some((q) => q.target === t.key) ? " (already asked)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
       {notice && <p role="alert" className="muted">{notice}</p>}
     </>
+  );
+}
+
+/** An own-log question's answers, newest first. Shows the wording asked, if it has changed since. */
+function PastAnswers({ list, prompt }: { list: PastAnswer[]; prompt: string }) {
+  if (!list.length) return <p className="faint eod-past-empty">No answers yet.</p>;
+  return (
+    <details className="eod-past">
+      <summary>Answers ({list.length})</summary>
+      {list.map((a) => (
+        <div key={a.id} className="eod-line">
+          <span className="eod-key">
+            {fmtDay(a.date)}
+            {a.prompt !== prompt && <span className="faint"> · asked: {a.prompt}</span>}
+          </span>
+          <span className="eod-val">{a.body}</span>
+        </div>
+      ))}
+    </details>
   );
 }

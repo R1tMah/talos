@@ -158,6 +158,7 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
+          job_description: string | null
           position: string
           resume_name: string | null
           status: string
@@ -168,6 +169,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          job_description?: string | null
           position: string
           resume_name?: string | null
           status: string
@@ -178,6 +180,7 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
+          job_description?: string | null
           position?: string
           resume_name?: string | null
           status?: string
@@ -1400,6 +1403,118 @@ export type Database = {
         Update: { aliases?: string[]; amount?: number | null; category?: string; created_at?: string; deleted_at?: string | null; id?: string; name?: string }
         Relationships: []
       }
+      bm_sessions: {
+        Row: {
+          application_id: string | null
+          company: string | null
+          created_at: string
+          deleted_at: string | null
+          feedback_text: string | null
+          id: string
+          job_description: string | null
+          questions_raw: string | null
+          role: string
+          started_on: string
+          updated_at: string
+        }
+        Insert: {
+          application_id?: string | null
+          company?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          feedback_text?: string | null
+          id?: string
+          job_description?: string | null
+          questions_raw?: string | null
+          role: string
+          started_on: string
+          updated_at?: string
+        }
+        Update: {
+          application_id?: string | null
+          company?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          feedback_text?: string | null
+          id?: string
+          job_description?: string | null
+          questions_raw?: string | null
+          role?: string
+          started_on?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bm_sessions_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bm_questions: {
+        Row: {
+          actual_seconds: number | null
+          area: string
+          content_score: number | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          note: string | null
+          position: number
+          question_text: string
+          retries: number
+          rubric_text: string | null
+          session_id: string
+          target_seconds: number
+          timer_started_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          actual_seconds?: number | null
+          area: string
+          content_score?: number | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          note?: string | null
+          position: number
+          question_text: string
+          retries?: number
+          rubric_text?: string | null
+          session_id: string
+          target_seconds: number
+          timer_started_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actual_seconds?: number | null
+          area?: string
+          content_score?: number | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          note?: string | null
+          position?: number
+          question_text?: string
+          retries?: number
+          rubric_text?: string | null
+          session_id?: string
+          target_seconds?: number
+          timer_started_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bm_questions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bm_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_meals: {
         Row: {
           aliases: string[]
@@ -1571,6 +1686,9 @@ export type Database = {
       settings: {
         Row: {
           archived_tabs: string[]
+          bm_prompt_grader: string | null
+          bm_prompt_interviewer: string | null
+          bm_prompt_questions: string | null
           calorie_target: number
           confidence_threshold: number
           context_blurb: string | null
@@ -1581,6 +1699,9 @@ export type Database = {
         }
         Insert: {
           archived_tabs?: string[]
+          bm_prompt_grader?: string | null
+          bm_prompt_interviewer?: string | null
+          bm_prompt_questions?: string | null
           calorie_target?: number
           confidence_threshold?: number
           context_blurb?: string | null
@@ -1591,6 +1712,9 @@ export type Database = {
         }
         Update: {
           archived_tabs?: string[]
+          bm_prompt_grader?: string | null
+          bm_prompt_interviewer?: string | null
+          bm_prompt_questions?: string | null
           calorie_target?: number
           confidence_threshold?: number
           context_blurb?: string | null
@@ -2129,6 +2253,29 @@ export type Database = {
       }
     }
     Views: {
+      bm_question_scores: {
+        Row: {
+          actual_seconds: number | null
+          area: string | null
+          content_score: number | null
+          final_score: number | null
+          id: string | null
+          position: number | null
+          retries: number | null
+          session_id: string | null
+          target_seconds: number | null
+          yap_penalty: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bm_questions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bm_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       callback_counts: {
         Row: {
           kind: string | null
@@ -2296,6 +2443,66 @@ export type Database = {
       }
     }
     Functions: {
+      set_application_job_description: { Args: { p_id: string; p_text: string | null; p_tool?: string }; Returns: Json }
+      set_bm_prompt: { Args: { p_which: string; p_text: string | null; p_tool?: string }; Returns: Json }
+      bm_session_overall: { Args: { p_session: string }; Returns: number | null }
+      bm_sessions_overview: {
+        Args: never
+        Returns: {
+          application_id: string | null
+          company: string | null
+          created_at: string
+          id: string
+          overall: number | null
+          questions: number
+          role: string
+          started_on: string
+        }[]
+      }
+      bm_trends_by_area: {
+        Args: never
+        Returns: {
+          area: string
+          avg_content: number | null
+          avg_final: number | null
+          avg_retries: number | null
+          avg_time_ratio: number | null
+          over_target: number
+          scored: number
+          timed: number
+        }[]
+      }
+      bm_trends_overall: {
+        Args: never
+        Returns: {
+          avg_retries_per_mock: number | null
+          avg_time_ratio: number | null
+          mocks: number
+          over_target: number
+          timed: number
+        }[]
+      }
+      bm_json_number: { Args: { p: Json; p_lo: number; p_hi: number; p_step: number }; Returns: number | null }
+      start_bm_session: {
+        Args: {
+          p_application_id: string | null
+          p_role: string
+          p_company: string | null
+          p_job_description: string | null
+          p_save_to_application?: boolean
+          p_started_on?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      save_bm_questions: { Args: { p_session: string; p_questions: Json; p_questions_raw: string | null; p_tool?: string }; Returns: Json }
+      update_bm_session: { Args: { p_id: string; p_changes: Json; p_tool?: string }; Returns: Json }
+      update_bm_question: { Args: { p_id: string; p_changes: Json; p_tool?: string }; Returns: Json }
+      delete_bm_session: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      delete_bm_question: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      start_bm_timer: { Args: { p_id: string }; Returns: Json }
+      stop_bm_timer: { Args: { p_id: string }; Returns: Json }
+      retry_bm_question: { Args: { p_id: string }; Returns: Json }
       import_liftoff: { Args: { p_sets: Json; p_tool?: string }; Returns: Json }
       owner_today: { Args: never; Returns: string }
       add_callback_update: {

@@ -304,11 +304,13 @@ function EodCard({ card, on }: { card: Extract<ChatCard, { kind: "eod" }>; on?: 
       else next.add(id);
       return next;
     });
-  const nothing = !card.notes.length && !card.spending.length && done.size === 0;
+  const answers = card.answers ?? [];
+  const entries = card.entries ?? [];
+  const nothing = !card.notes.length && !card.spending.length && !answers.length && !entries.length && done.size === 0;
   return (
     <div className={`rc${card.resolved ? " resolved" : ""}`}>
       <span className="label">End of day · {fmtDay(card.date)}</span>
-      {(card.notes.length > 0 || card.spending.length > 0) && (
+      {(card.notes.length > 0 || card.spending.length > 0 || answers.length > 0 || entries.length > 0) && (
         <div className="eod-lines">
           {card.notes.map((n, i) => (
             <div key={`n${i}`} className="eod-line">
@@ -316,11 +318,26 @@ function EodCard({ card, on }: { card: Extract<ChatCard, { kind: "eod" }>; on?: 
               <span className="eod-val">{n.body}</span>
             </div>
           ))}
+          {answers.map((a, i) => (
+            <div key={`a${i}`} className="eod-line">
+              <span className="eod-key">{a.prompt}</span>
+              <span className="eod-val">{a.body}</span>
+            </div>
+          ))}
           {card.spending.map((s, i) => (
             <div key={`s${i}`} className="eod-line">
               <span className="eod-key">Spending</span>
               <span className="eod-val num">
                 ${s.amount.toFixed(2)} · {s.what} <span className="faint">({s.category})</span>
+              </span>
+            </div>
+          ))}
+          {/* Other tabs' entries, shown the way Chat shows them before saving. */}
+          {entries.map((e, i) => (
+            <div key={`e${i}`} className="eod-line">
+              <span className="eod-key">{targetLabel(e.target)}</span>
+              <span className="eod-val num">
+                {e.fields.map(([k, v]) => `${k} ${v}`).join(" · ") || e.title}
               </span>
             </div>
           ))}

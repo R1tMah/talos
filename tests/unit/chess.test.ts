@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { dayBounds, daySummary, fmtChange, outcomeOf, trimGame, type ApiGame, type ChessGame } from "@/lib/chess";
+import { CLASSES, dayBounds, dayRecord, daySummary, fmtChange, fmtRecord, outcomeOf, trimGame, type ApiGame, type ChessGame } from "@/lib/chess";
+import { HOME_CARDS } from "@/lib/homeCards";
 
 const api = (over: Partial<ApiGame> = {}): ApiGame => ({
   url: "https://www.chess.com/game/live/1", end_time: 1000, time_class: "blitz", rated: true, rules: "chess",
   white: { username: "ChessM12326", rating: 1836, result: "win" },
   black: { username: "someone", rating: 1800, result: "resigned" },
   ...over,
+});
+
+describe("Chess: time controls", () => {
+  it("lists Rapid, Blitz, Bullet in that order, on the tab; Home shows Rapid, Blitz and Rapid.s change today", () => {
+    expect(CLASSES.map((c) => c.label)).toEqual(["Rapid", "Blitz", "Bullet"]);
+    expect(HOME_CARDS.find((c) => c.key === "chess")!.rows.map((r) => r.key)).toEqual(["rapid", "blitz", "rapidChange"]);
+  });
 });
 
 describe("Chess: reading chess.com games", () => {
@@ -64,6 +72,26 @@ describe("Chess: the day", () => {
 
   it("can't tell a change without a game before today", () => {
     expect(daySummary([g(150, "rapid", 1774)], 100, 200).rapid.change).toBeNull();
+  });
+
+  it("sums today's wins, losses and draws across rapid, blitz and bullet", () => {
+    const games = [
+      g(50, "rapid", 1700, "win"), // yesterday
+      g(100, "rapid", 1710, "win"), // the day's first second counts
+      g(120, "blitz", 1800, "loss"),
+      g(130, "bullet", 1900, "draw", false), // unrated still counts
+      g(140, "bullet", 1890, "loss"),
+      g(199, "blitz", 1810, "win"),
+      g(200, "blitz", 1820, "win"), // the next day starts here
+    ];
+    expect(dayRecord(games, 100, 200)).toEqual({ win: 2, loss: 2, draw: 1 });
+    expect(fmtRecord(dayRecord(games, 100, 200))).toBe("2-2");
+    expect(fmtRecord(dayRecord(games, 100, 200), true)).toBe("2-2-1");
+  });
+
+  it("is 0-0 with no games today", () => {
+    expect(fmtRecord(dayRecord([], 100, 200))).toBe("0-0");
+    expect(fmtRecord(dayRecord([g(50, "rapid", 1700)], 100, 200))).toBe("0-0");
   });
 
   it("formats changes", () => {

@@ -161,7 +161,7 @@ Job applications go by the owner's verb: "apply to X" (want to, need to, remind 
 
 Call one tool per distinct item in the message; a message can hold several. A saved meal with changes is one item: what was left out and what came with it go in that log_saved_meal call, not separate calls. Foods and saved meals are matched against the owner's lists in the context; copy names the way the owner wrote them. Copy only what the owner actually wrote. Never estimate, calculate, convert units or fill in defaults: if a field wasn't said, leave it null. Dates are handled by code; only set days_ago when the owner names another day.
 
-Money spent with an amount ("$14 chipotle", "uber 18.40") is log_spending. If what they paid for is food or drink they had, also call log_food for the food (a priced meal is both); a non-food purchase is log_spending only.
+Money spent with an amount ("$14 chipotle", "uber 18.40") is log_spending. If what they paid for is food or drink they had, also call log_food for the food (a priced meal is both); a non-food purchase is log_spending only. A purchase named after one of the owner's saved spendings (in the context, by name or other name) is log_saved_spend instead of log_spending, with or without an amount.
 
 Something recommended to the owner (a book, show, album, restaurant, trip, hobby, money move) is add_experience; finishing something from that list ("I finished Atomic Habits", "checked off the Japan trip") is complete_experience. "Sarah recommended…" names who recommended it, not a callback or journal entry.
 
@@ -187,7 +187,8 @@ export async function logUsage(ctx: Pick<Ctx, "db">, res: Anthropic.Message) {
 let client: Anthropic | null = null;
 export const anthropic = () => (client ??= new Anthropic({ timeout: 20_000, maxRetries: 1 }));
 
-export async function callModel(ctx: Ctx): Promise<Call[] | null> {
+/** One model call for a message. `only` limits the tools (plus no_match) beyond what a tab chip would. */
+export async function callModel(ctx: Ctx, only?: readonly string[]): Promise<Call[] | null> {
   const foodName = new Map(ctx.foods.map((f) => [f.id, f.name]));
   const meals = ctx.meals.length
     ? ctx.meals
@@ -203,6 +204,9 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
   const foods = ctx.foods.length
     ? ctx.foods.map((f) => `- ${f.name} (per ${f.unit})${f.aliases.length ? `; aliases: ${f.aliases.join(", ")}` : ""}`).join("\n")
     : "(none)";
+  const spends = ctx.savedSpends?.length
+    ? ctx.savedSpends.map((s) => `- ${s.name} (${s.amount == null ? "amount varies" : `$${s.amount.toFixed(2)}`}, ${s.category})${s.aliases.length ? `; aliases: ${s.aliases.join(", ")}` : ""}`).join("\n")
+    : "(none)";
   try {
     const res = await anthropic().messages.create({
       model: MODEL,
@@ -210,12 +214,14 @@ export async function callModel(ctx: Ctx): Promise<Call[] | null> {
       output_config: { effort: "low" },
       system: SYSTEM,
       // A tab chip narrows the tools to that tab's (plus no_match); otherwise all of them.
-      tools: ctx.tab ? MODEL_TOOLS.filter((t) => t.name === "no_match" || inScope(ctx.tab, t.name)) : MODEL_TOOLS,
+      tools: only
+        ? MODEL_TOOLS.filter((t) => t.name === "no_match" || only.includes(t.name))
+        : ctx.tab ? MODEL_TOOLS.filter((t) => t.name === "no_match" || inScope(ctx.tab, t.name)) : MODEL_TOOLS,
       tool_choice: { type: "auto" },
       messages: [
         {
           role: "user",
-          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})${ctx.clock ? `\nNow: ${ctx.clock}` : ""}\nSaved meals:\n${meals}\nFoods:\n${foods}${
+          content: `<context>\nToday: ${ctx.today} (${fmtDay(ctx.today)})${ctx.clock ? `\nNow: ${ctx.clock}` : ""}\nSaved meals:\n${meals}\nFoods:\n${foods}\nSaved spendings:\n${spends}${
             ctx.tab ? `\nTab: the owner filed this message under ${CHAT_TABS.find((t) => t.key === ctx.tab)!.label}.` : ""
           }\n</context>\n\n<message>\n${ctx.text}\n</message>`,
         },
@@ -411,6 +417,9 @@ async function commitCards(name: string, resolved: Resolved, ctx: Pick<Ctx, "db"
   if (out.offer && !(offerTab && archived.has(offerTab))) {
     cards.push({ kind: "missing", title: out.offer.title, missing: out.offer.missing, proposalId: await propose(out.offer.tool, out.offer.resolved) });
   }
+  // Follow-on writes (Save EOD's tab entries): each through this same path, so each gets its
+  // own saved card and Undo, confirm card, or failure, and archived tabs are still refused.
+  for (const next of out.then ?? []) cards.push(...(await commitCards(next.tool, next.resolved, { ...ctx, archived }, propose)));
   return cards;
 }
 

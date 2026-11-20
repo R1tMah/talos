@@ -17,13 +17,15 @@ export async function ownerDb(): Promise<Db | null> {
 }
 
 export async function loadCtx(db: Db, text: string): Promise<{ ctx: Ctx; threshold: number } | null> {
-  const [settings, meals, foods, items] = await Promise.all([
+  const [settings, meals, foods, items, spends] = await Promise.all([
     db.from("settings").select("timezone, confidence_threshold, archived_tabs").eq("id", 1).single(),
     db.from("saved_meals").select("id, name, aliases, portion_unit, price").is("deleted_at", null).order("name"),
     db.from("foods").select("id, name, aliases, serving_unit").is("deleted_at", null).order("name"),
     db.from("saved_meal_items").select("saved_meal_id, food_id, servings").is("deleted_at", null).order("created_at"),
+    db.from("saved_spends").select("id, name, aliases, amount, category").is("deleted_at", null).order("name"),
   ]);
   if (settings.error || meals.error || foods.error || items.error) return null;
+  // Saved spendings are a nice-to-have for chat: if they can't be read, chat still works without them.
   return {
     threshold: Number(settings.data.confidence_threshold),
     ctx: {
@@ -36,6 +38,7 @@ export async function loadCtx(db: Db, text: string): Promise<{ ctx: Ctx; thresho
         items: items.data.filter((i) => i.saved_meal_id === m.id).map((i) => ({ foodId: i.food_id, servings: Number(i.servings) })),
       })),
       foods: foods.data.map((f) => ({ id: f.id, name: f.name, aliases: f.aliases, unit: f.serving_unit })),
+      savedSpends: (spends.data ?? []).map((s) => ({ id: s.id, name: s.name, aliases: s.aliases, amount: s.amount == null ? null : Number(s.amount), category: s.category })),
       archived: new Set(settings.data.archived_tabs),
     },
   };

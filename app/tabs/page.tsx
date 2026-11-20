@@ -20,7 +20,7 @@ import { dueToday, useCurriculums } from "@/lib/learning/data";
 import { useExperiences } from "@/lib/experiencesData";
 import { GROUPS } from "@/lib/tabGroups";
 import { ARCHIVABLE, ONCE_IN_A_WHILE, type TabKey } from "@/lib/tabs";
-import { CLASSES, dayBounds } from "@/lib/chess";
+import { dayBounds, dayRecord, daySummary, fmtChange, fmtRecord } from "@/lib/chess";
 import { useChess } from "@/lib/chessData";
 
 /** The current season's name and how many seasons there are, for the Long Term card. */
@@ -81,10 +81,11 @@ export default function TabsPage() {
   const recs = useExperiences();
   const recPending = recs.rows ? recs.rows.filter((r) => r.status === "pending").length : 0;
   const recLatest = recs.rows?.find((r) => r.status === "completed");
-  // Chess: games played today (4 AM day) and the three ratings, live from chess.com.
+  // Chess: today's W-L record (4 AM day), rapid and blitz ratings, and rapid's change today, live from chess.com.
   const chess = useChess();
   const chessDay = dayBounds();
-  const chessToday = chess.data ? chess.data.games.filter((g) => g.end >= chessDay.start && g.end < chessDay.end).length : null;
+  const chessToday = chess.data ? fmtRecord(dayRecord(chess.data.games, chessDay.start, chessDay.end)) : null;
+  const rapidChange = chess.data ? daySummary(chess.data.games, chessDay.start, chessDay.end).rapid.change : null;
   const nextLesson = learning.rows?.filter((r) => r.status === "active" && r.next?.date).sort((a, b) => a.next!.date!.localeCompare(b.next!.date!))[0];
 
   return (
@@ -102,6 +103,8 @@ export default function TabsPage() {
           rows={pickRows("weight", cards, [
             { key: "thisWeek", label: `This wk${w?.thisWeek ? `, ${w.thisWeek.n}d` : ""}`, value: w?.thisWeek?.avg.toFixed(1) ?? "–" },
             { key: "lastWeek", label: "Last wk", value: w?.lastWeek?.avg.toFixed(1) ?? "–" },
+            // Lifts lives in Weight (Weight | Lifts).
+            { key: "lifts", label: "Workouts this wk", value: liftoff.data ? liftoff.data.week : "–" },
           ])}
         />
         <StatCard
@@ -112,8 +115,6 @@ export default function TabsPage() {
           rows={pickRows("nutrition", cards, [
             { key: "target", label: "Target", value: n ? fmtNum(n.calTarget) : "–" },
             { key: "protein", label: "Protein", value: n ? `${Number.isInteger(n.p) ? n.p : n.p.toFixed(1)} / ${n.pTarget} g` : "–" },
-            // Lifts lives in Nutrition now (Nutrition | Lifts).
-            { key: "lifts", label: "Workouts this wk", value: liftoff.data ? liftoff.data.week : "–" },
           ])}
         />
         {/* Interviews (LeetCode, System Design, AI-Assisted, Behavioral) live in Recruiting now, with no card of their own. */}
@@ -169,8 +170,12 @@ export default function TabsPage() {
           title="Chess"
           href="/tabs/chess"
           value={chessToday ?? (chess.failed ? "Failed" : "–")}
-          unit={chessToday != null ? (chessToday === 1 ? "game today" : "games today") : undefined}
-          rows={pickRows("chess", cards, CLASSES.map((c) => ({ key: c.key, label: c.label, value: chess.data?.stats[c.key].rating ?? "–" })))}
+          unit={chessToday != null ? "today" : undefined}
+          rows={pickRows("chess", cards, [
+            { key: "rapid", label: "Rapid", value: chess.data?.stats.rapid.rating ?? "–" },
+            { key: "blitz", label: "Blitz", value: chess.data?.stats.blitz.rating ?? "–" },
+            { key: "rapidChange", label: "Rapid today", value: rapidChange != null ? fmtChange(rapidChange) : "–" },
+          ])}
         />
       </div>
 

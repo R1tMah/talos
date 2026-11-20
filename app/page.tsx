@@ -144,7 +144,8 @@ export default function ChatPage() {
   const answerEod = (t: string | null) => {
     if (!eod) return;
     setCard(eod.askId, (c) => ({ ...c, resolved: t === null ? "skipped" : "answered" }) as ChatCard);
-    const answers = t === null ? eod.answers : [...eod.answers, { target: eod.qs[eod.i].target, text: t }];
+    const q = eod.qs[eod.i];
+    const answers = t === null ? eod.answers : [...eod.answers, { target: q.target, text: t, ...(q.target === "custom" ? { questionId: q.id } : {}) }];
     if (eod.i + 1 < eod.qs.length) return ask(eod.qs, eod.i + 1, answers);
     setEod(null);
     // Sent even when everything was skipped: the card still lists today's reminders.

@@ -7,7 +7,7 @@ import type { AppEntry } from "@/lib/applicationsData";
 import { toHM } from "@/lib/date";
 import { toCsv, toMarkdown, type TabExport } from "@/lib/exportTab";
 import type { Run } from "@/lib/runsData";
-import { applicationsExport, longTermExport, longTermText, runsExport, weightExport } from "@/lib/screenExports";
+import { applicationsExport, liftsExport, longTermExport, longTermText, runsExport, weightExport } from "@/lib/screenExports";
 import { buildWeightLog, weightLogText } from "@/lib/weightLog";
 
 // ---- A Supabase stand-in that records each query and answers with canned rows ----
@@ -327,4 +327,18 @@ describe("live exports", () => {
       await expect(loadExport(tab)).rejects.toThrow("export query failed");
     },
   );
+});
+
+describe("Lifts export (added to Weight's when switched on)", () => {
+  it("one row per set, blanks for what wasn't logged", () => {
+    const t = liftsExport([
+      { date: "2026-11-10", started: "2026-11-10 18:02", duration: "1h 5m", workout: "Push", exercise: "Bench Press", order: 1, weight: 185, reps: 5, distance: null, seconds: null, rpe: 8, notes: null },
+      { date: "2026-11-10", started: "2026-11-10 18:02", duration: "1h 5m", workout: "Push", exercise: "Plank", order: 2, weight: null, reps: null, distance: null, seconds: 60, rpe: null, notes: "felt good" },
+    ]);
+    expect(t.title).toBe("Lifts");
+    expect(t.rows[0]).toMatchObject({ date: "2026-11-10", workout: "Push", exercise: "Bench Press", set: "1", weight: "185", reps: "5", rpe: "8", seconds: "", notes: "" });
+    expect(t.rows[1]).toMatchObject({ exercise: "Plank", weight: "", seconds: "60", notes: "felt good" });
+    expect(toCsv(t).split("\n")[0]).toContain("Exercise");
+    expect(toMarkdown(t)).toContain("# Lifts, 2 entries");
+  });
 });

@@ -211,6 +211,51 @@ export type Database = {
         }
         Relationships: []
       }
+      callback_updates: {
+        Row: {
+          body: string
+          callback_id: string
+          created_at: string
+          deleted_at: string | null
+          edited_at: string | null
+          id: string
+          parent_id: string | null
+        }
+        Insert: {
+          body: string
+          callback_id: string
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          parent_id?: string | null
+        }
+        Update: {
+          body?: string
+          callback_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
+          id?: string
+          parent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "callback_updates_callback_id_fkey"
+            columns: ["callback_id"]
+            isOneToOne: false
+            referencedRelation: "callbacks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "callback_updates_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "callback_updates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       callbacks: {
         Row: {
           application_id: string | null
@@ -292,6 +337,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      chess_notes: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          game_url: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          game_url: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          game_url?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       curriculum_modules: {
         Row: {
@@ -385,6 +457,44 @@ export type Database = {
           topic?: string
         }
         Relationships: []
+      }
+      eod_answers: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          logical_date: string
+          prompt: string
+          question_id: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date: string
+          prompt: string
+          question_id?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          logical_date?: string
+          prompt?: string
+          question_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eod_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "eod_questions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       eod_questions: {
         Row: {
@@ -1284,6 +1394,12 @@ export type Database = {
           },
         ]
       }
+      saved_spends: {
+        Row: { aliases: string[]; amount: number | null; category: string; created_at: string; deleted_at: string | null; id: string; name: string }
+        Insert: { aliases?: string[]; amount?: number | null; category?: string; created_at?: string; deleted_at?: string | null; id?: string; name: string }
+        Update: { aliases?: string[]; amount?: number | null; category?: string; created_at?: string; deleted_at?: string | null; id?: string; name?: string }
+        Relationships: []
+      }
       saved_meals: {
         Row: {
           aliases: string[]
@@ -2182,6 +2298,23 @@ export type Database = {
     Functions: {
       import_liftoff: { Args: { p_sets: Json; p_tool?: string }; Returns: Json }
       owner_today: { Args: never; Returns: string }
+      add_callback_update: {
+        Args: {
+          p_body: string
+          p_callback_id: string
+          p_parent_id?: string
+          p_tool?: string
+        }
+        Returns: Json
+      }
+      edit_callback_update: {
+        Args: { p_body: string; p_id: string; p_tool?: string }
+        Returns: Json
+      }
+      delete_callback_update: {
+        Args: { p_id: string; p_tool?: string }
+        Returns: Json
+      }
       add_experience: {
         Args: {
           p_category: string
@@ -2211,6 +2344,10 @@ export type Database = {
         Returns: Json
       }
       apply_inbox_update: { Args: { p_id: string }; Returns: Json }
+      save_saved_spend: { Args: { p_name: string; p_aliases: string[]; p_amount: number | null; p_category: string; p_tool?: string }; Returns: Json }
+      update_saved_spend: { Args: { p_id: string; p_name: string; p_aliases: string[]; p_amount: number | null; p_category: string; p_tool?: string }; Returns: Json }
+      delete_saved_spend: { Args: { p_id: string; p_tool?: string }; Returns: Json }
+      log_saved_spend: { Args: { p_date: string; p_id: string; p_count?: number; p_amount?: number | null; p_tool?: string }; Returns: Json }
       opened_letters: {
         Args: never
         Returns: {
@@ -2649,6 +2786,10 @@ export type Database = {
       }
       set_checking_balance: {
         Args: { p_balance: number; p_date: string; p_tool?: string }
+        Returns: Json
+      }
+      set_chess_note: {
+        Args: { p_body: string; p_tool?: string; p_url: string }
         Returns: Json
       }
       set_debrief: {

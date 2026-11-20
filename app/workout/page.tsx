@@ -56,7 +56,7 @@ export default function WorkoutPage() {
 
   return (
     <main className="screen">
-      <ScreenHeader title="Workout" right={<Link href="/tabs/lifts" className="btn btn-sm">Progress</Link>} />
+      <ScreenHeader title="Workout" right={<Link href="/tabs/weight?tab=lifts" className="btn btn-sm">Progress</Link>} />
 
       {error && (
         <p role="alert" style={{ color: "var(--danger)", fontSize: "var(--t-sm)", margin: 0 }}>

@@ -14,7 +14,7 @@ export const TAB_TOOLS: Record<ChatTab, readonly string[]> = {
   personal: ["add_note"],
   talos: ["add_note"],
   subscriptions: ["add_subscription", "cancel_subscription"],
-  spending: ["log_spending"],
+  spending: ["log_spending", "log_saved_spend"],
   experiences: ["add_experience", "complete_experience"],
 };
 

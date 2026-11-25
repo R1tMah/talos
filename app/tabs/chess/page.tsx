@@ -115,7 +115,7 @@ export default function ChessPage() {
                           : `No games ${on}`}
                   </span>
                   <span className="faint num chess-sub">
-                    {d.played ? `${d.played} ${on} ·${d.win}W ${d.loss}L ${d.draw}D` : " "}
+                    {d.played ? `${d.played} ${on} · ${d.win}W ${d.loss}L ${d.draw}D` : " "}
                   </span>
                   {s.best != null && <span className="faint num chess-sub">Best {fmtNum(s.best)}</span>}
                 </section>

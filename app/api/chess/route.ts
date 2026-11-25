@@ -50,6 +50,25 @@ type Archive = { games: ApiGame[] };
 /** One entry per month count asked for (`?months=`), each fresh for a minute. */
 const cache = new Map<number, { at: number; data: ChessData }>();
 
+// Archives by month, shared across month counts and with requests in flight, so stepping
+// back a week (one more month) fetches one archive, not all of them again. This month and
+// last change as games finish and keep the minute; older months are finished.
+const OLD_MONTH_MS = 6 * 3_600_000;
+const archives = new Map<string, { at: number; ttl: number; p: Promise<Archive> }>();
+
+function archive(user: string, back: number, now: Date, force: boolean): Promise<Archive> {
+  const url = `${API}/${user}/games/${monthPath(back, now)}`;
+  const ttl = back <= 1 ? FRESH_MS : OLD_MONTH_MS;
+  const hit = archives.get(url);
+  // Refresh refetches the live months; finished months come from their cache.
+  if (hit && Date.now() - hit.at < hit.ttl && !(force && back <= 1)) return hit.p;
+  const p = getArchive(url);
+  const entry = { at: Date.now(), ttl, p };
+  archives.set(url, entry);
+  p.catch(() => archives.get(url) === entry && archives.delete(url));
+  return p;
+}
+
 /**
  * The owner's chess.com ratings and the games in the last `?months=` monthly archives:
  * 2 by default (this month and last, so a day's rating change has the rating it started
@@ -67,9 +86,9 @@ export async function GET(req: Request) {
   const user = CHESS_USERNAME.toLowerCase();
   const now = new Date();
   try {
-    const [stats, ...archives] = await Promise.all([
+    const [stats, ...monthly] = await Promise.all([
       getJson<ApiStats>(`${API}/${user}/stats`),
-      ...Array.from({ length: months }, (_, back) => getArchive(`${API}/${user}/games/${monthPath(back, now)}`)),
+      ...Array.from({ length: months }, (_, back) => archive(user, back, now, force)),
     ]);
     const data: ChessData = {
       username: CHESS_USERNAME,
@@ -79,7 +98,7 @@ export async function GET(req: Request) {
           return [key, { rating: s?.last?.rating ?? null, best: s?.best?.rating ?? null, record: s?.record ?? null }];
         }),
       ) as Record<ChessClass, ClassStats>,
-      games: (archives as Archive[])
+      games: (monthly as Archive[])
         .flatMap((a) => a.games ?? [])
         .map((g) => trimGame(g))
         .filter((g) => g !== null)

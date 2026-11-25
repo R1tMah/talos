@@ -1,7 +1,7 @@
 // Chess: the owner's chess.com games and ratings (public API, read only). Shared by
 // /api/chess (which fetches and trims) and the Chess tab (which sums up a day and a week).
 
-import { addDays, logicalToday } from "./date";
+import { addDays, logicalToday, weekStart } from "./date";
 
 export const CHESS_USERNAME = "ChessM12326";
 export const CHESS_PROFILE = `https://www.chess.com/member/${CHESS_USERNAME}`;
@@ -92,9 +92,8 @@ export const MONTHS_MAX = 24;
 
 /** The `?months=` param as a month count: decimal digits clamped to 2..24, else 2. */
 export function parseMonths(raw: string | null): number {
-  const n = raw != null && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
-  if (!Number.isFinite(n)) return MONTHS_DEFAULT;
-  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, n));
+  if (raw == null || !/^\d+$/.test(raw.trim())) return MONTHS_DEFAULT;
+  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, Number(raw.trim()))); // a huge number is Infinity: 24
 }
 
 /**
@@ -116,6 +115,18 @@ export function earliestDay(now = new Date()): string {
   const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (MONTHS_MAX - 1), 1) / 1000;
   const d = logicalToday(new Date(from * 1000));
   return dayBoundsOf(d).start < from ? addDays(d, 1) : d;
+}
+
+/**
+ * The day the Chess tab shows. Nothing picked (or a day not before today): today, so the
+ * view follows it past 4 AM. A picked day whose week starts before `min` (the tab left open
+ * into a new month, so the archives moved on): the first week starting at or after `min`.
+ */
+export function shownDay(picked: string | null, today: string, min: string): string {
+  if (picked == null || picked >= today) return today;
+  if (weekStart(picked) >= min) return picked;
+  const ws = weekStart(min);
+  return ws < min ? addDays(ws, 7) : ws;
 }
 
 // ---- Days and weeks (client) ----------------------------------------------------------

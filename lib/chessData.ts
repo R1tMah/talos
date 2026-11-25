@@ -57,24 +57,28 @@ export function useChess(months = MONTHS_DEFAULT) {
 export function useChessNotes(urls: string[]) {
   const [read, setRead] = useState<{ key: string; notes: Record<string, string> } | null>(null);
   const key = urls.join("\n");
-  // Only the latest read lands: a slow read for the previous day's games can't replace this day's.
+  // Every read is of the games shown now (a reload from a save started on another day reads
+  // this day's), and only the latest read lands, so a slow one can't replace a newer one.
+  const shown = useRef(key);
   const latest = useRef(0);
 
   const reload = useCallback(async () => {
     const id = ++latest.current;
-    const list = key ? key.split("\n") : [];
-    if (!list.length) return setRead({ key, notes: {} });
+    const k = shown.current;
+    const list = k ? k.split("\n") : [];
+    if (!list.length) return setRead({ key: k, notes: {} });
     const res = await createClient().from("chess_notes").select("game_url, body").in("game_url", list).is("deleted_at", null);
     if (id !== latest.current) return;
     if (res.error) return; // keep what's shown; the games still work without notes
-    setRead({ key, notes: Object.fromEntries(res.data.map((r) => [r.game_url, r.body])) });
-  }, [key]);
+    setRead({ key: k, notes: Object.fromEntries(res.data.map((r) => [r.game_url, r.body])) });
+  }, []);
 
   useDataChanged(reload);
 
   useEffect(() => {
+    shown.current = key;
     reload();
-  }, [reload]);
+  }, [key, reload]);
 
   return { notes: read?.notes ?? {}, loaded: read?.key === key, reload };
 }

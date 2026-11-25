@@ -76,14 +76,25 @@ describe("/api/chess ?months=", () => {
     expect(failed.status).toBe(502);
   });
 
-  it("caches per month count", async () => {
+  it("caches per month count, and each month's archive across counts", async () => {
     const calls = fakeChessCom({ stats: {} });
     await get();
     await get();
     expect(calls).toHaveLength(3); // the second came from the cache
     await get("?months=4");
-    expect(calls).toHaveLength(3 + 5); // a different count fetches
-    await get("?months=2&refresh");
-    expect(calls).toHaveLength(8 + 3); // refresh forces
+    expect(calls.slice(3).sort()).toEqual(["2026/08", "2026/09", "stats"]); // only the months not fetched yet
+    await get("?months=5");
+    expect(calls.slice(6).sort()).toEqual(["2026/07", "stats"]); // a week further back: one more archive
+    await get("?months=5&refresh");
+    expect(calls.slice(8).sort()).toEqual(["2026/10", "2026/11", "stats"]); // refresh refetches the live months
+    vi.setSystemTime(new Date("2026-11-25T22:00:00Z")); // 7 hours on: finished months are refetched too
+    await get("?months=3");
+    expect(calls.slice(11).sort()).toEqual(["2026/09", "2026/10", "2026/11", "stats"]);
+  });
+
+  it("shares an archive already being fetched", async () => {
+    const calls = fakeChessCom({ stats: {} });
+    await Promise.all([get(), get("?months=3")]);
+    expect(calls.filter((c) => c === "2026/11")).toHaveLength(1);
   });
 });

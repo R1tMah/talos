@@ -12,7 +12,7 @@ import { IconPlus } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { ScreenHeader, SectionTitle } from "@/components/ui";
-import { CHESS_PROFILE, CLASSES, dayBoundsOf, dayRecord, earliestDay, fmtChange, fmtRecord, monthsFor, rangeSummary, type ChessGame } from "@/lib/chess";
+import { CHESS_PROFILE, CLASSES, dayBoundsOf, dayRecord, earliestDay, fmtChange, fmtRecord, monthsFor, rangeSummary, shownDay, type ChessGame } from "@/lib/chess";
 import { chessNotesApi, useChess, useChessNotes } from "@/lib/chessData";
 import { addDays, fmtDay, fmtNum, logicalToday, weekStart } from "@/lib/date";
 import { showToast } from "@/lib/undo";
@@ -22,9 +22,9 @@ const OUTCOME = { win: "W", loss: "L", draw: "D" } as const;
 
 export default function ChessPage() {
   const todayIso = logicalToday();
-  // Unpicked, the day follows today (past 4 AM with the tab left open, too).
+  const min = earliestDay();
   const [picked, setPicked] = useState<string | null>(null);
-  const date = picked != null && picked < todayIso ? picked : todayIso;
+  const date = shownDay(picked, todayIso, min);
   const isToday = date === todayIso;
   const on = isToday ? "today" : `on ${fmtDay(date)}`;
   const ws = weekStart(date);
@@ -84,7 +84,7 @@ export default function ChessPage() {
         {data.username} on chess.com
       </a>
 
-      <DayPicker date={date} today={todayIso} onChange={setPicked} has={played} min={earliestDay()} />
+      <DayPicker date={date} today={todayIso} onChange={setPicked} has={played} min={min} />
 
       {missing ? (
         <p role="alert" className="muted">Couldn&rsquo;t load {fmtDay(date)}&rsquo;s games from chess.com. Try Refresh.</p>

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  CLASSES, dayBounds, dayBoundsOf, dayRecord, daySummary, earliestDay, fmtChange, fmtRecord, monthsFor, outcomeOf, parseMonths, rangeSummary, trimGame,
+  CLASSES, dayBounds, dayBoundsOf, dayRecord, daySummary, earliestDay, fmtChange, fmtRecord, monthsFor, outcomeOf, parseMonths, rangeSummary, shownDay, trimGame,
   type ApiGame, type ChessGame,
 } from "@/lib/chess";
 import { HOME_CARDS } from "@/lib/homeCards";
@@ -147,6 +147,17 @@ describe("Chess: any day's bounds, on a New York device", () => {
     expect(earliestDay(new Date("2026-11-25T15:00:00Z"))).toBe("2024-12-01");
     expect(monthsFor(dayBoundsOf("2024-12-01").start, new Date("2026-11-25T15:00:00Z"))).toBe(24);
   });
+
+  it("shows today until a day is picked, and moves a picked day up once its week ages out", () => {
+    const today = "2026-11-25";
+    expect(shownDay(null, today, "2024-12-01")).toBe(today);
+    expect(shownDay("2026-11-26", today, "2024-12-01")).toBe(today); // after 4 AM moved today past a stale pick
+    expect(shownDay("2025-03-12", today, "2024-12-01")).toBe("2025-03-12");
+    expect(shownDay("2024-12-03", today, "2024-12-01")).toBe("2024-12-03"); // week of Monday Dec 2: covered
+    // Into December 2026 the archives start at January 2025: Dec 3, 2024 moves to the first
+    // week starting on or after Jan 1, 2025 (Monday Jan 6).
+    expect(shownDay("2024-12-03", "2026-12-02", "2025-01-01")).toBe("2025-01-06");
+  });
 });
 
 describe("Chess: a range (a week)", () => {
@@ -199,6 +210,7 @@ describe("Chess: how many monthly archives", () => {
     expect(parseMonths(" 5 ")).toBe(5);
     expect(parseMonths("24")).toBe(24);
     expect(parseMonths("1000")).toBe(24);
+    expect(parseMonths("9".repeat(400))).toBe(24); // too big for a number: still the most
   });
 
   it("asks for the range's month and one before it, counted in UTC months", () => {

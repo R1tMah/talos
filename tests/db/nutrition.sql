@@ -31,9 +31,16 @@ select pg_temp.ok('#38 editing a saved meal does not change past food_log rows',
   (select calories from public.food_log where id = pg_temp.get('logged')::uuid) = 400);
 
 -- #44 The target for a past day comes from the phase covering it, else Settings.
-select pg_temp.ok('#44 9/1 uses the 2250 phase',
-  (select calorie_target from public.targets_for('2026-09-01')) = 2250);
-select pg_temp.ok('#44 8/20 (between phases) falls back to Settings',
-  (select calorie_target from public.targets_for('2026-08-20')) = (select calorie_target from public.settings where id = 1));
+-- Its own phases, so editing real phases or Settings can't break it: the real ones are
+-- set aside first (rolled back with the rest), since an open phase would cover 2099.
+update public.phases set deleted_at = now() where deleted_at is null;
+select public.add_phase('2099-06-01', '2099-06-30', 'ZZ cut', 2250, 175, null);
+select public.add_phase('2099-08-01', '2099-08-31', 'ZZ maintain', 2600, null, null);
+select pg_temp.ok('#44 a day in a phase uses its calorie and protein targets',
+  (select (calorie_target, protein_target_g) = (2250, 175) from public.targets_for('2099-06-15')));
+select pg_temp.ok('#44 a day between phases falls back to Settings',
+  (select (t.calorie_target, t.protein_target_g) is not distinct from (s.calorie_target, s.protein_target_g)
+     from public.targets_for('2099-07-15') t, public.settings s where s.id = 1));
 select pg_temp.ok('#44 a phase with no protein target falls back to Settings for protein',
-  (select protein_target_g from public.targets_for('2026-09-01')) = (select protein_target_g from public.settings where id = 1));
+  (select t.calorie_target = 2600 and t.protein_target_g is not distinct from s.protein_target_g
+     from public.targets_for('2099-08-15') t, public.settings s where s.id = 1));

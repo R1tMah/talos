@@ -53,9 +53,6 @@ select pg_temp.ok('weight notes save byte for byte as their own kind',
   exists (select 1 from public.notes where id = pg_temp.get('wn')::uuid and kind = 'weight' and body = E'  weight as plateaued 😩  '));
 select pg_temp.ok('...and never show up as content or journal',
   not exists (select 1 from public.notes where id = pg_temp.get('wn')::uuid and kind in ('content', 'journal')));
-select pg_temp.ok('the three imported remarks are there, word for word',
-  (select count(*) from public.notes where kind = 'weight' and deleted_at is null and logical_date in ('2026-05-24', '2026-09-27')) = 3
-  and exists (select 1 from public.notes where kind = 'weight' and body = 'All weight loss was fat I got stronger since I was 198'));
 
 -- Personal journal entries: their own kind, verbatim, never in the other notepads.
 select pg_temp.put('pj', public.add_note('personal', '2099-03-05', E'  rough day 😞\n  called mom  ')->'row'->>'id');

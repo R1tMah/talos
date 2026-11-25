@@ -54,19 +54,19 @@ const cache = new Map<number, { at: number; data: ChessData }>();
 // back a week (one more month) fetches one archive, not all of them again. This month and
 // last change as games finish and keep the minute; older months are finished.
 const OLD_MONTH_MS = 6 * 3_600_000;
-const archives = new Map<string, { at: number; ttl: number; p: Promise<Archive> }>();
+type ArchiveEntry = { at: number; ttl: number; p: Promise<Archive> };
+const archives = new Map<string, ArchiveEntry>();
 
-function archive(user: string, back: number, now: Date, force: boolean): Promise<Archive> {
+function archive(user: string, back: number, now: Date, force: boolean): ArchiveEntry {
   const url = `${API}/${user}/games/${monthPath(back, now)}`;
   const ttl = back <= 1 ? FRESH_MS : OLD_MONTH_MS;
   const hit = archives.get(url);
   // Refresh refetches the live months; finished months come from their cache.
-  if (hit && Date.now() - hit.at < hit.ttl && !(force && back <= 1)) return hit.p;
-  const p = getArchive(url);
-  const entry = { at: Date.now(), ttl, p };
+  if (hit && Date.now() - hit.at < hit.ttl && !(force && back <= 1)) return hit;
+  const entry = { at: Date.now(), ttl, p: getArchive(url) };
   archives.set(url, entry);
-  p.catch(() => archives.get(url) === entry && archives.delete(url));
-  return p;
+  entry.p.catch(() => archives.get(url) === entry && archives.delete(url));
+  return entry;
 }
 
 /**
@@ -86,10 +86,8 @@ export async function GET(req: Request) {
   const user = CHESS_USERNAME.toLowerCase();
   const now = new Date();
   try {
-    const [stats, ...monthly] = await Promise.all([
-      getJson<ApiStats>(`${API}/${user}/stats`),
-      ...Array.from({ length: months }, (_, back) => archive(user, back, now, force)),
-    ]);
+    const entries = Array.from({ length: months }, (_, back) => archive(user, back, now, force));
+    const [stats, ...monthly] = await Promise.all([getJson<ApiStats>(`${API}/${user}/stats`), ...entries.map((e) => e.p)]);
     const data: ChessData = {
       username: CHESS_USERNAME,
       stats: Object.fromEntries(
@@ -106,7 +104,8 @@ export async function GET(req: Request) {
       months,
       fetchedAt: new Date().toISOString(),
     };
-    cache.set(months, { at: Date.now(), data });
+    // Fresh only as long as its live months: a reused archive already counts toward the minute.
+    cache.set(months, { at: Math.min(...entries.slice(0, 2).map((e) => e.at)), data });
     return NextResponse.json(data);
   } catch (e) {
     console.error(`[chess] ${String((e as Error).message ?? e).slice(0, 200)}`);

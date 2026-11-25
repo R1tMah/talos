@@ -92,6 +92,17 @@ describe("/api/chess ?months=", () => {
     expect(calls.slice(11).sort()).toEqual(["2026/09", "2026/10", "2026/11", "stats"]);
   });
 
+  it("keeps a response fresh only as long as the live archives it reused", async () => {
+    const calls = fakeChessCom({ stats: {} });
+    await get(); // Home at t=0: this month and last
+    vi.setSystemTime(new Date("2026-11-25T15:00:55Z"));
+    await get("?months=3"); // Chess at 55 s reuses them
+    vi.setSystemTime(new Date("2026-11-25T15:01:05Z"));
+    calls.length = 0;
+    await get("?months=3"); // 65 s after this month was fetched: fetched again
+    expect(calls.sort()).toEqual(["2026/10", "2026/11", "stats"]);
+  });
+
   it("shares an archive already being fetched", async () => {
     const calls = fakeChessCom({ stats: {} });
     await Promise.all([get(), get("?months=3")]);

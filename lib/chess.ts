@@ -1,5 +1,7 @@
 // Chess: the owner's chess.com games and ratings (public API, read only). Shared by
-// /api/chess (which fetches and trims) and the Chess tab (which sums up the day).
+// /api/chess (which fetches and trims) and the Chess tab (which sums up a day and a week).
+
+import { logicalToday } from "./date";
 
 export const CHESS_USERNAME = "ChessM12326";
 export const CHESS_PROFILE = `https://www.chess.com/member/${CHESS_USERNAME}`;
@@ -37,7 +39,7 @@ export interface ClassStats {
 export interface ChessData {
   username: string;
   stats: Record<ChessClass, ClassStats>;
-  /** This month's and last month's games, oldest first. */
+  /** The games in the last N monthly archives (2 unless asked for more), oldest first. */
   games: ChessGame[];
   fetchedAt: string;
 }
@@ -80,43 +82,82 @@ export function trimGame(g: ApiGame, username = CHESS_USERNAME): ChessGame | nul
   };
 }
 
-// ---- The day (client) -----------------------------------------------------------------
+// ---- How much history (server and client) ---------------------------------------------
 
-/** The app's day on this device: 4 AM to 4 AM. Unix seconds. */
-export function dayBounds(now = new Date()): { start: number; end: number } {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 4);
-  if (now.getHours() < 4) d.setDate(d.getDate() - 1);
-  const start = Math.floor(d.getTime() / 1000);
-  return { start, end: start + 86_400 };
+/** chess.com serves one archive per month; /api/chess fetches the last N (this month included). */
+export const MONTHS_DEFAULT = 2;
+export const MONTHS_MAX = 24;
+
+/** The `?months=` param as a month count: a whole number clamped to 2..24, else 2. */
+export function parseMonths(raw: string | null): number {
+  const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return MONTHS_DEFAULT;
+  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, Math.floor(n)));
 }
 
-export interface DayClass {
+/**
+ * How many months to fetch so a range starting at `start` (unix seconds) has its games
+ * plus one earlier month (the first day's rating change needs a rating from before it).
+ * Months count in UTC, like chess.com's archives.
+ */
+export function monthsFor(start: number, now = new Date()): number {
+  const from = new Date(start * 1000);
+  const back = (now.getUTCFullYear() - from.getUTCFullYear()) * 12 + now.getUTCMonth() - from.getUTCMonth();
+  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, back + 2));
+}
+
+// ---- Days and weeks (client) ----------------------------------------------------------
+
+/**
+ * The app's day for a date ("YYYY-MM-DD") on this device: 04:00 local that day to 04:00
+ * local the next, in unix seconds. Built from wall-clock dates, so the days clocks change
+ * on run 23 or 25 hours.
+ */
+export function dayBoundsOf(iso: string): { start: number; end: number } {
+  const [y, m, d] = iso.split("-").map(Number);
+  return {
+    start: Math.floor(new Date(y, m - 1, d, 4).getTime() / 1000),
+    end: Math.floor(new Date(y, m - 1, d + 1, 4).getTime() / 1000),
+  };
+}
+
+/** Today on this device: 4 AM to 4 AM. Unix seconds. */
+export const dayBounds = (now = new Date()) => dayBoundsOf(logicalToday(now));
+
+export interface RangeClass {
   played: number;
   win: number;
   loss: number;
   draw: number;
-  /** Rated rating change today: last rating today minus the last one before today. Null if unknown. */
+  /** Rated rating change across the range: the last rating in it minus the last one before it. Null if unknown. */
   change: number | null;
+  /** The rating once the range is over: the last rated game's before `end`. Null if there's none. */
+  rating: number | null;
 }
+export type DayClass = RangeClass;
 
-/** Today's games per time control, with the rating change across the day's rated games. */
-export function daySummary(games: ChessGame[], start: number, end: number): Record<ChessClass, DayClass> {
-  const out = {} as Record<ChessClass, DayClass>;
+/** Games per time control ending in [start, end) (a day or a week), with the rated rating change across them. */
+export function rangeSummary(games: ChessGame[], start: number, end: number): Record<ChessClass, RangeClass> {
+  const out = {} as Record<ChessClass, RangeClass>;
   for (const { key } of CLASSES) {
     const mine = games.filter((g) => g.cls === key).sort((a, b) => a.end - b.end);
-    const today = mine.filter((g) => g.end >= start && g.end < end);
-    const ratedToday = today.filter((g) => g.rated);
+    const inRange = mine.filter((g) => g.end >= start && g.end < end);
+    const lastIn = inRange.filter((g) => g.rated).at(-1);
     const before = mine.filter((g) => g.rated && g.end < start).at(-1);
     out[key] = {
-      played: today.length,
-      win: today.filter((g) => g.outcome === "win").length,
-      loss: today.filter((g) => g.outcome === "loss").length,
-      draw: today.filter((g) => g.outcome === "draw").length,
-      change: ratedToday.length && before ? ratedToday.at(-1)!.rating - before.rating : null,
+      played: inRange.length,
+      win: inRange.filter((g) => g.outcome === "win").length,
+      loss: inRange.filter((g) => g.outcome === "loss").length,
+      draw: inRange.filter((g) => g.outcome === "draw").length,
+      change: lastIn && before ? lastIn.rating - before.rating : null,
+      rating: (lastIn ?? before)?.rating ?? null,
     };
   }
   return out;
 }
+
+/** One day's games per time control: rangeSummary over the day's bounds. */
+export const daySummary = rangeSummary;
 
 export interface WinLossDraw {
   win: number;

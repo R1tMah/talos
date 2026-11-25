@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { CLASSES, dayBounds, dayRecord, daySummary, fmtChange, fmtRecord, outcomeOf, trimGame, type ApiGame, type ChessGame } from "@/lib/chess";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  CLASSES, dayBounds, dayBoundsOf, dayRecord, daySummary, fmtChange, fmtRecord, monthsFor, outcomeOf, parseMonths, rangeSummary, trimGame,
+  type ApiGame, type ChessGame,
+} from "@/lib/chess";
 import { HOME_CARDS } from "@/lib/homeCards";
 
 const api = (over: Partial<ApiGame> = {}): ApiGame => ({
@@ -65,9 +68,9 @@ describe("Chess: the day", () => {
       g(300, "blitz", 1850), // tomorrow: not today
     ];
     const day = daySummary(games, 100, 200);
-    expect(day.blitz).toEqual({ played: 3, win: 1, loss: 1, draw: 1, change: 2 });
-    expect(day.bullet).toEqual({ played: 1, win: 1, loss: 0, draw: 0, change: null });
-    expect(day.rapid).toEqual({ played: 0, win: 0, loss: 0, draw: 0, change: null });
+    expect(day.blitz).toEqual({ played: 3, win: 1, loss: 1, draw: 1, change: 2, rating: 1802 });
+    expect(day.bullet).toEqual({ played: 1, win: 1, loss: 0, draw: 0, change: null, rating: null });
+    expect(day.rapid).toEqual({ played: 0, win: 0, loss: 0, draw: 0, change: null, rating: null });
   });
 
   it("can't tell a change without a game before today", () => {
@@ -96,5 +99,102 @@ describe("Chess: the day", () => {
 
   it("formats changes", () => {
     expect([fmtChange(12), fmtChange(-8), fmtChange(0)]).toEqual(["+12", "−8", "±0"]);
+  });
+});
+
+describe("Chess: any day's bounds, on a New York device", () => {
+  // The bounds use the device's wall clock; pin it so daylight saving is tested the same everywhere.
+  const tz = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "America/New_York";
+  });
+  afterAll(() => {
+    if (tz === undefined) delete process.env.TZ;
+    else process.env.TZ = tz;
+  });
+  const iso = (sec: number) => new Date(sec * 1000).toISOString();
+
+  it("runs 04:00 that day to 04:00 the next", () => {
+    const { start, end } = dayBoundsOf("2026-11-20");
+    expect(iso(start)).toBe("2026-11-20T09:00:00.000Z"); // 04:00 EST
+    expect(iso(end)).toBe("2026-11-21T09:00:00.000Z");
+  });
+
+  // Clocks fall back at 02:00 on Nov 1, 2026 and spring forward at 02:00 on Mar 8, 2026: inside
+  // the 4 AM days of Oct 31 and Mar 7.
+  it("runs 25 hours across the fall-back night (Nov 1, 2026) and 23 across spring forward (Mar 8, 2026)", () => {
+    const fall = dayBoundsOf("2026-10-31");
+    expect(iso(fall.start)).toBe("2026-10-31T08:00:00.000Z"); // 04:00 EDT
+    expect(iso(fall.end)).toBe("2026-11-01T09:00:00.000Z"); // 04:00 EST
+    expect(fall.end - fall.start).toBe(25 * 3600);
+    const nov1 = dayBoundsOf("2026-11-01");
+    expect(nov1.start).toBe(fall.end); // back to back
+    expect(iso(nov1.end)).toBe("2026-11-02T09:00:00.000Z");
+    expect(nov1.end - nov1.start).toBe(24 * 3600);
+    const spring = dayBoundsOf("2026-03-07");
+    expect(iso(spring.end)).toBe("2026-03-08T08:00:00.000Z"); // 04:00 EDT
+    expect(spring.end - spring.start).toBe(23 * 3600);
+  });
+
+  it("today's bounds are the logical day's: 03:30 after fall back is still Oct 31", () => {
+    expect(dayBounds(new Date("2026-11-01T08:30:00Z"))).toEqual(dayBoundsOf("2026-10-31")); // 03:30 EST
+    expect(dayBounds(new Date("2026-11-01T09:00:00Z"))).toEqual(dayBoundsOf("2026-11-01")); // 04:00 EST
+  });
+});
+
+describe("Chess: a range (a week)", () => {
+  const g = (end: number, cls: ChessGame["cls"], rating: number, outcome: ChessGame["outcome"] = "win", rated = true): ChessGame => ({
+    url: `u${end}${cls}`, end, cls, rated, color: "white", outcome, rating, opp: "x", oppRating: 1500,
+  });
+  const games = [
+    g(50, "rapid", 1700), // before the week: the baseline
+    g(60, "blitz", 1800),
+    g(150, "rapid", 1712, "win"), // Monday
+    g(400, "rapid", 1705, "loss"), // Thursday
+    g(500, "rapid", 1690, "draw", false), // unrated: counted, rating unchanged
+    g(650, "blitz", 1810, "win", false), // only unrated blitz this week
+    g(700, "rapid", 1750), // next week starts at 700
+  ];
+
+  it("counts the range's games per class and the rated change from before it to its last rated game", () => {
+    const week = rangeSummary(games, 100, 700);
+    expect(week.rapid).toEqual({ played: 3, win: 1, loss: 1, draw: 1, change: 5, rating: 1705 });
+    expect(week.blitz).toEqual({ played: 1, win: 1, loss: 0, draw: 0, change: null, rating: 1800 });
+    expect(week.bullet).toEqual({ played: 0, win: 0, loss: 0, draw: 0, change: null, rating: null });
+  });
+
+  it("gives the rating at the end of the range, carried from before it when it has no rated games", () => {
+    expect(rangeSummary(games, 100, 300).rapid.rating).toBe(1712);
+    expect(rangeSummary(games, 450, 600).rapid).toMatchObject({ played: 1, change: null, rating: 1705 });
+    expect(rangeSummary(games, 0, 40).rapid.rating).toBeNull(); // nothing yet
+    expect(rangeSummary(games, 100, 700).rapid.rating).toBe(1705); // a game at `end` is the next range's
+  });
+
+  it("is the same as daySummary for a day", () => {
+    expect(daySummary(games, 100, 700)).toEqual(rangeSummary(games, 100, 700));
+  });
+});
+
+describe("Chess: how many monthly archives", () => {
+  it("reads ?months= as a whole number from 2 to 24, defaulting to 2", () => {
+    expect(parseMonths(null)).toBe(2);
+    expect(parseMonths("")).toBe(2);
+    expect(parseMonths("abc")).toBe(2);
+    expect(parseMonths("0")).toBe(2);
+    expect(parseMonths("-5")).toBe(2);
+    expect(parseMonths("3")).toBe(3);
+    expect(parseMonths("7.9")).toBe(7);
+    expect(parseMonths("24")).toBe(24);
+    expect(parseMonths("1000")).toBe(24);
+  });
+
+  it("asks for the range's month and one before it, counted in UTC months", () => {
+    const now = new Date("2026-11-25T15:00:00Z");
+    const at = (s: string) => Date.parse(s) / 1000;
+    expect(monthsFor(at("2026-11-23T09:00:00Z"), now)).toBe(2); // this month
+    expect(monthsFor(at("2026-10-26T08:00:00Z"), now)).toBe(3); // last month
+    expect(monthsFor(at("2026-08-03T08:00:00Z"), now)).toBe(5);
+    expect(monthsFor(at("2025-12-29T09:00:00Z"), now)).toBe(13); // across a year
+    expect(monthsFor(at("2023-01-02T09:00:00Z"), now)).toBe(24); // capped
   });
 });

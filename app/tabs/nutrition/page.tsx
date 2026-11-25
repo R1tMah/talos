@@ -3,9 +3,10 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { DataTable } from "@/components/DataTable";
+import { DayPicker } from "@/components/DayPicker";
 import { ExportButton } from "@/components/ExportButton";
 import { FormSheet, Sheet, type Field } from "@/components/FormSheet";
-import { IconBack, IconChevron } from "@/components/Icons";
+import { IconChevron } from "@/components/Icons";
 import { IngredientsSheet, itemsSummary, LogMealSheet, MealSheet } from "@/components/MealSheets";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
@@ -201,36 +202,7 @@ function Nutrition({ switcher }: { switcher: ReactNode }) {
 
       {view === "log" && (
         <>
-          <div className="daypicker">
-            <button type="button" className="icon-btn" aria-label="Previous week" onClick={() => setDate(addDays(date, -7))}>
-              <IconBack size={18} />
-            </button>
-            <div className="days">
-              {Array.from({ length: 7 }, (_, i) => addDays(ws, i)).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  className={`day num${loggedDays.has(d) ? " has" : ""}`}
-                  aria-pressed={d === date}
-                  disabled={d > today}
-                  onClick={() => setDate(d)}
-                >
-                  <small>{fmtDow(d).slice(0, 1)}</small>
-                  <b>{fromISO(d).getDate()}</b>
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Next week"
-              disabled={addDays(ws, 7) > today}
-              style={{ opacity: addDays(ws, 7) > today ? 0.3 : 1 }}
-              onClick={() => setDate(addDays(date, 7) > today ? today : addDays(date, 7))}
-            >
-              <IconChevron width={18} height={18} />
-            </button>
-          </div>
+          <DayPicker date={date} today={today} onChange={setDate} has={loggedDays} />
 
           <div className="card pad macros">
             <div className="grid-2" style={{ gap: "var(--s-4)" }}>

@@ -4,30 +4,40 @@
 // (games played on chess.com show up without a reload), plus the owner's notes on games
 // (public.chess_notes, keyed by the game's chess.com URL since games aren't stored).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import type { ChessData } from "./chess";
+import { MONTHS_DEFAULT, type ChessData } from "./chess";
 import type { Json } from "./database.types";
 import { announceWrite, useDataChanged } from "./undo";
 
-export function useChess() {
+/**
+ * Ratings and the games in the last `months` monthly archives. When `months` changes, the
+ * data already loaded stays shown (with `loading` on) until the bigger range arrives; only
+ * the latest request's answer is kept.
+ */
+export function useChess(months = MONTHS_DEFAULT) {
   const [data, setData] = useState<ChessData | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const latest = useRef(0);
 
   const load = useCallback(async (refresh = false) => {
+    const id = ++latest.current;
     setLoading(true);
     try {
-      const res = await fetch(`/api/chess${refresh ? "?refresh" : ""}`, { cache: "no-store" });
+      const q = [months !== MONTHS_DEFAULT ? `months=${months}` : "", refresh ? "refresh" : ""].filter(Boolean).join("&");
+      const res = await fetch(`/api/chess${q ? `?${q}` : ""}`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
-      setData((await res.json()) as ChessData);
+      const next = (await res.json()) as ChessData;
+      if (id !== latest.current) return;
+      setData(next);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (id === latest.current) setFailed(true);
     } finally {
-      setLoading(false);
+      if (id === latest.current) setLoading(false);
     }
-  }, []);
+  }, [months]);
 
   useEffect(() => {
     load();

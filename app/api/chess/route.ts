@@ -9,10 +9,33 @@ const FRESH_MS = 60_000; // chess.com updates within minutes; a refresh every mi
 // chess.com asks API clients to identify themselves.
 const HEADERS = { "User-Agent": "TALOS personal tracker", Accept: "application/json" };
 
+class HttpError extends Error {
+  constructor(readonly status: number) {
+    super(`chess.com returned ${status}`);
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: HEADERS, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`chess.com returned ${res.status}`);
+  if (!res.ok) throw new HttpError(res.status);
   return res.json() as Promise<T>;
+}
+
+/**
+ * A month's games. A month with no games is a 404 (or an empty list): no games. Any other
+ * failure (rate limit, 5xx, timeout) is tried once more, then fails the whole response, so
+ * a month that's merely unreachable is never shown, or cached, as a month without games.
+ */
+async function getArchive(url: string): Promise<Archive> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await getJson<Archive>(url);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return { games: [] };
+      if (attempt >= 1) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
 }
 
 /** "2026/11" for this month (UTC, like chess.com's archives) and `back` months before. */
@@ -44,13 +67,9 @@ export async function GET(req: Request) {
   const user = CHESS_USERNAME.toLowerCase();
   const now = new Date();
   try {
-    const [stats, thisMonth, ...earlier] = await Promise.all([
+    const [stats, ...archives] = await Promise.all([
       getJson<ApiStats>(`${API}/${user}/stats`),
-      getJson<Archive>(`${API}/${user}/games/${monthPath(0, now)}`),
-      // A month with no games is a 404 or an empty list; either way, no games.
-      ...Array.from({ length: months - 1 }, (_, i) =>
-        getJson<Archive>(`${API}/${user}/games/${monthPath(i + 1, now)}`).catch((): Archive => ({ games: [] })),
-      ),
+      ...Array.from({ length: months }, (_, back) => getArchive(`${API}/${user}/games/${monthPath(back, now)}`)),
     ]);
     const data: ChessData = {
       username: CHESS_USERNAME,
@@ -60,11 +79,12 @@ export async function GET(req: Request) {
           return [key, { rating: s?.last?.rating ?? null, best: s?.best?.rating ?? null, record: s?.record ?? null }];
         }),
       ) as Record<ChessClass, ClassStats>,
-      games: [thisMonth as Archive, ...(earlier as Archive[])]
+      games: (archives as Archive[])
         .flatMap((a) => a.games ?? [])
         .map((g) => trimGame(g))
         .filter((g) => g !== null)
         .sort((a, b) => a.end - b.end),
+      months,
       fetchedAt: new Date().toISOString(),
     };
     cache.set(months, { at: Date.now(), data });

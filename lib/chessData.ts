@@ -57,11 +57,15 @@ export function useChess(months = MONTHS_DEFAULT) {
 export function useChessNotes(urls: string[]) {
   const [read, setRead] = useState<{ key: string; notes: Record<string, string> } | null>(null);
   const key = urls.join("\n");
+  // Only the latest read lands: a slow read for the previous day's games can't replace this day's.
+  const latest = useRef(0);
 
   const reload = useCallback(async () => {
+    const id = ++latest.current;
     const list = key ? key.split("\n") : [];
     if (!list.length) return setRead({ key, notes: {} });
     const res = await createClient().from("chess_notes").select("game_url, body").in("game_url", list).is("deleted_at", null);
+    if (id !== latest.current) return;
     if (res.error) return; // keep what's shown; the games still work without notes
     setRead({ key, notes: Object.fromEntries(res.data.map((r) => [r.game_url, r.body])) });
   }, [key]);

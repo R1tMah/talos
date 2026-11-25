@@ -12,32 +12,28 @@ import { IconPlus } from "@/components/Icons";
 import { PageSkeleton } from "@/components/Skeleton";
 import { SummaryStrip } from "@/components/StatCard";
 import { ScreenHeader, SectionTitle } from "@/components/ui";
-import { CHESS_PROFILE, CLASSES, dayBoundsOf, dayRecord, fmtChange, fmtRecord, monthsFor, rangeSummary, type ChessGame } from "@/lib/chess";
+import { CHESS_PROFILE, CLASSES, dayBoundsOf, dayRecord, earliestDay, fmtChange, fmtRecord, monthsFor, rangeSummary, type ChessGame } from "@/lib/chess";
 import { chessNotesApi, useChess, useChessNotes } from "@/lib/chessData";
-import { addDays, fmtDay, fmtNum, fromISO, logicalToday, toISO, weekStart } from "@/lib/date";
+import { addDays, fmtDay, fmtNum, logicalToday, weekStart } from "@/lib/date";
 import { showToast } from "@/lib/undo";
 
 const time = (sec: number) => new Date(sec * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const OUTCOME = { win: "W", loss: "L", draw: "D" } as const;
 
-/** How far back the day bar goes: weeks starting from the 1st of the month 22 months ago, so
- *  the 24 monthly archives /api/chess fetches at most hold the week and a month before it. */
-function earliest(today: string) {
-  const d = fromISO(today);
-  return toISO(new Date(d.getFullYear(), d.getMonth() - 22, 1));
-}
-
 export default function ChessPage() {
   const todayIso = logicalToday();
-  const [date, setDate] = useState(todayIso);
+  // Unpicked, the day follows today (past 4 AM with the tab left open, too).
+  const [picked, setPicked] = useState<string | null>(null);
+  const date = picked != null && picked < todayIso ? picked : todayIso;
   const isToday = date === todayIso;
   const on = isToday ? "today" : `on ${fmtDay(date)}`;
   const ws = weekStart(date);
   const { start, end } = dayBoundsOf(date);
   const weekFrom = dayBoundsOf(ws).start;
   const weekTo = Math.min(dayBoundsOf(addDays(ws, 7)).start, Math.floor(Date.now() / 1000));
+  const months = monthsFor(weekFrom);
 
-  const { data, failed, loading, reload } = useChess(monthsFor(weekFrom));
+  const { data, failed, loading, reload } = useChess(months);
   const day = useMemo(() => (data ? rangeSummary(data.games, start, end) : null), [data, start, end]);
   const shown = useMemo(() => (data ? data.games.filter((g) => g.end >= start && g.end < end).reverse() : []), [data, start, end]);
   const played = useMemo(() => new Set(data?.games.map((g) => logicalToday(new Date(g.end * 1000)))), [data]);
@@ -77,6 +73,9 @@ export default function ChessPage() {
   const week = rangeSummary(data.games, weekFrom, weekTo);
   const weekRecord = dayRecord(data.games, weekFrom, weekTo);
   const weekGames = weekRecord.win + weekRecord.loss + weekRecord.draw;
+  // The loaded games don't reach back to this week and loading them failed: say so rather
+  // than show an empty day. (While they load, what's loaded stays shown.)
+  const missing = data.months < months && failed && !loading;
 
   return (
     <main className="screen">
@@ -85,56 +84,68 @@ export default function ChessPage() {
         {data.username} on chess.com
       </a>
 
-      <DayPicker date={date} today={todayIso} onChange={setDate} has={played} min={earliest(todayIso)} />
+      <DayPicker date={date} today={todayIso} onChange={setPicked} has={played} min={earliestDay()} />
 
-      <SummaryStrip
-        items={[{ label: isToday ? "Record today" : `Record, ${fmtDay(date)}`, value: fmtRecord(record, true), sub: "W-L-D" }]}
-      />
-
-      <SectionTitle>Ratings</SectionTitle>
-      <div className="chess-classes">
-        {CLASSES.map(({ key, label }) => {
-          const s = data.stats[key];
-          const d = day![key];
-          // Today: the live rating. Another day: where that day's games left it.
-          const rating = isToday ? s.rating : d.rating;
-          return (
-            <section key={key} className="card chess-class">
-              <span className="label">{label}</span>
-              <span className="stat-value num">{rating != null ? fmtNum(rating) : "–"}</span>
-              <span className={`num chess-change${d.change == null ? "" : d.change > 0 ? " up" : d.change < 0 ? " down" : ""}`}>
-                {d.change != null ? `${fmtChange(d.change)} ${on}` : d.played ? `Unrated ${on}` : `No games ${on}`}
-              </span>
-              <span className="faint num chess-sub">
-                {d.played ? `${d.played} ${on} ·${d.win}W ${d.loss}L ${d.draw}D` : " "}
-              </span>
-              {s.best != null && <span className="faint num chess-sub">Best {fmtNum(s.best)}</span>}
-            </section>
-          );
-        })}
-      </div>
-
-      <SectionTitle>{ws === weekStart(todayIso) ? "This week" : `Week of ${fmtDay(ws)}`}</SectionTitle>
-      <SummaryStrip
-        items={[
-          { label: "Record", value: fmtRecord(weekRecord, true), sub: "W-L-D" },
-          { label: "Win %", value: weekGames ? `${Math.round((weekRecord.win / weekGames) * 100)}%` : "–", sub: weekGames === 1 ? "1 game" : `${weekGames} games` },
-          ...CLASSES.map(({ key, label }) => {
-            const c = week[key].change;
-            return { label, value: c != null ? fmtChange(c) : "–", sub: "Rated" };
-          }),
-        ]}
-      />
-
-      <SectionTitle>{isToday ? <>Today&rsquo;s games</> : `Games on ${fmtDay(date)}`}</SectionTitle>
-      {shown.length ? (
-        <section className="card list">
-          {shown.map((g) => (
-            <GameRow key={g.url} g={g} note={notes[g.url]} canAdd={notesLoaded} onNote={() => setSheet({ g })} />
-          ))}
-        </section>
+      {missing ? (
+        <p role="alert" className="muted">Couldn&rsquo;t load {fmtDay(date)}&rsquo;s games from chess.com. Try Refresh.</p>
       ) : (
-        <p className="muted">{isToday ? "No rapid, blitz or bullet games yet today." : `No rapid, blitz or bullet games on ${fmtDay(date)}.`}</p>
+        <>
+          <SummaryStrip
+            items={[{ label: isToday ? "Record today" : `Record, ${fmtDay(date)}`, value: fmtRecord(record, true), sub: "W-L-D" }]}
+          />
+
+          <SectionTitle>Ratings</SectionTitle>
+          <div className="chess-classes">
+            {CLASSES.map(({ key, label }) => {
+              const s = data.stats[key];
+              const d = day![key];
+              // Today: the live rating. Another day: where that day's games left it.
+              const rating = isToday ? s.rating : d.rating;
+              return (
+                <section key={key} className="card chess-class">
+                  <span className="label">{label}</span>
+                  <span className="stat-value num">{rating != null ? fmtNum(rating) : "–"}</span>
+                  <span className={`num chess-change${d.change == null ? "" : d.change > 0 ? " up" : d.change < 0 ? " down" : ""}`}>
+                    {d.change != null
+                      ? `${fmtChange(d.change)} ${on}`
+                      : d.rated
+                        ? `Change unknown ${on}` // rated, but no earlier rating loaded to compare with
+                        : d.played
+                          ? `Unrated ${on}`
+                          : `No games ${on}`}
+                  </span>
+                  <span className="faint num chess-sub">
+                    {d.played ? `${d.played} ${on} ·${d.win}W ${d.loss}L ${d.draw}D` : " "}
+                  </span>
+                  {s.best != null && <span className="faint num chess-sub">Best {fmtNum(s.best)}</span>}
+                </section>
+              );
+            })}
+          </div>
+
+          <SectionTitle>{ws === weekStart(todayIso) ? "This week" : `Week of ${fmtDay(ws)}`}</SectionTitle>
+          <SummaryStrip
+            items={[
+              { label: "Record", value: fmtRecord(weekRecord, true), sub: "W-L-D" },
+              { label: "Win %", value: weekGames ? `${Math.round((weekRecord.win / weekGames) * 100)}%` : "–", sub: weekGames === 1 ? "1 game" : `${weekGames} games` },
+              ...CLASSES.map(({ key, label }) => {
+                const c = week[key].change;
+                return { label, value: c != null ? fmtChange(c) : "–", sub: "Rated" };
+              }),
+            ]}
+          />
+
+          <SectionTitle>{isToday ? <>Today&rsquo;s games</> : `Games on ${fmtDay(date)}`}</SectionTitle>
+          {shown.length ? (
+            <section className="card list">
+              {shown.map((g) => (
+                <GameRow key={g.url} g={g} note={notes[g.url]} canAdd={notesLoaded} onNote={() => setSheet({ g })} />
+              ))}
+            </section>
+          ) : (
+            <p className="muted">{isToday ? "No rapid, blitz or bullet games yet today." : `No rapid, blitz or bullet games on ${fmtDay(date)}.`}</p>
+          )}
+        </>
       )}
 
       {sheet && (

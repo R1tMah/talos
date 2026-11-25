@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  CLASSES, dayBounds, dayBoundsOf, dayRecord, daySummary, fmtChange, fmtRecord, monthsFor, outcomeOf, parseMonths, rangeSummary, trimGame,
+  CLASSES, dayBounds, dayBoundsOf, dayRecord, daySummary, earliestDay, fmtChange, fmtRecord, monthsFor, outcomeOf, parseMonths, rangeSummary, trimGame,
   type ApiGame, type ChessGame,
 } from "@/lib/chess";
 import { HOME_CARDS } from "@/lib/homeCards";
@@ -68,9 +68,9 @@ describe("Chess: the day", () => {
       g(300, "blitz", 1850), // tomorrow: not today
     ];
     const day = daySummary(games, 100, 200);
-    expect(day.blitz).toEqual({ played: 3, win: 1, loss: 1, draw: 1, change: 2, rating: 1802 });
-    expect(day.bullet).toEqual({ played: 1, win: 1, loss: 0, draw: 0, change: null, rating: null });
-    expect(day.rapid).toEqual({ played: 0, win: 0, loss: 0, draw: 0, change: null, rating: null });
+    expect(day.blitz).toEqual({ played: 3, win: 1, loss: 1, draw: 1, rated: 3, change: 2, rating: 1802 });
+    expect(day.bullet).toEqual({ played: 1, win: 1, loss: 0, draw: 0, rated: 0, change: null, rating: null });
+    expect(day.rapid).toEqual({ played: 0, win: 0, loss: 0, draw: 0, rated: 0, change: null, rating: null });
   });
 
   it("can't tell a change without a game before today", () => {
@@ -140,6 +140,13 @@ describe("Chess: any day's bounds, on a New York device", () => {
     expect(dayBounds(new Date("2026-11-01T08:30:00Z"))).toEqual(dayBoundsOf("2026-10-31")); // 03:30 EST
     expect(dayBounds(new Date("2026-11-01T09:00:00Z"))).toEqual(dayBoundsOf("2026-11-01")); // 04:00 EST
   });
+
+  it("the day bar stops at the first day starting inside the oldest of the 24 archives", () => {
+    // Nov 2026 and 23 months back: December 2024 (UTC). Its first instant is 19:00 Nov 30 in
+    // New York, so the first whole 4 AM day inside it is Dec 1.
+    expect(earliestDay(new Date("2026-11-25T15:00:00Z"))).toBe("2024-12-01");
+    expect(monthsFor(dayBoundsOf("2024-12-01").start, new Date("2026-11-25T15:00:00Z"))).toBe(24);
+  });
 });
 
 describe("Chess: a range (a week)", () => {
@@ -158,16 +165,19 @@ describe("Chess: a range (a week)", () => {
 
   it("counts the range's games per class and the rated change from before it to its last rated game", () => {
     const week = rangeSummary(games, 100, 700);
-    expect(week.rapid).toEqual({ played: 3, win: 1, loss: 1, draw: 1, change: 5, rating: 1705 });
-    expect(week.blitz).toEqual({ played: 1, win: 1, loss: 0, draw: 0, change: null, rating: 1800 });
-    expect(week.bullet).toEqual({ played: 0, win: 0, loss: 0, draw: 0, change: null, rating: null });
+    expect(week.rapid).toEqual({ played: 3, win: 1, loss: 1, draw: 1, rated: 2, change: 5, rating: 1750 });
+    expect(week.blitz).toEqual({ played: 1, win: 1, loss: 0, draw: 0, rated: 0, change: null, rating: 1800 });
+    expect(week.bullet).toEqual({ played: 0, win: 0, loss: 0, draw: 0, rated: 0, change: null, rating: null });
   });
 
   it("gives the rating at the end of the range, carried from before it when it has no rated games", () => {
     expect(rangeSummary(games, 100, 300).rapid.rating).toBe(1712);
     expect(rangeSummary(games, 450, 600).rapid).toMatchObject({ played: 1, change: null, rating: 1705 });
     expect(rangeSummary(games, 0, 40).rapid.rating).toBeNull(); // nothing yet
-    expect(rangeSummary(games, 100, 700).rapid.rating).toBe(1705); // a game at `end` is the next range's
+    // Rated games with nothing before them: counted as rated, change unknown.
+    expect(rangeSummary(games, 0, 100).rapid).toMatchObject({ played: 1, rated: 1, change: null, rating: 1700 });
+    expect(rangeSummary(games, 100, 699).rapid.rating).toBe(1705);
+    expect(rangeSummary(games, 100, 700).rapid.rating).toBe(1750); // a game at exactly `end` counts: the rating at or before it
   });
 
   it("is the same as daySummary for a day", () => {
@@ -183,7 +193,10 @@ describe("Chess: how many monthly archives", () => {
     expect(parseMonths("0")).toBe(2);
     expect(parseMonths("-5")).toBe(2);
     expect(parseMonths("3")).toBe(3);
-    expect(parseMonths("7.9")).toBe(7);
+    expect(parseMonths("7.9")).toBe(2); // decimal digits only
+    expect(parseMonths("0x10")).toBe(2);
+    expect(parseMonths("1e2")).toBe(2);
+    expect(parseMonths(" 5 ")).toBe(5);
     expect(parseMonths("24")).toBe(24);
     expect(parseMonths("1000")).toBe(24);
   });

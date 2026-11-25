@@ -1,7 +1,7 @@
 // Chess: the owner's chess.com games and ratings (public API, read only). Shared by
 // /api/chess (which fetches and trims) and the Chess tab (which sums up a day and a week).
 
-import { logicalToday } from "./date";
+import { addDays, logicalToday } from "./date";
 
 export const CHESS_USERNAME = "ChessM12326";
 export const CHESS_PROFILE = `https://www.chess.com/member/${CHESS_USERNAME}`;
@@ -39,8 +39,10 @@ export interface ClassStats {
 export interface ChessData {
   username: string;
   stats: Record<ChessClass, ClassStats>;
-  /** The games in the last N monthly archives (2 unless asked for more), oldest first. */
+  /** The games in the last `months` monthly archives, oldest first. */
   games: ChessGame[];
+  /** How many monthly archives (this month and earlier, UTC) `games` covers. */
+  months: number;
   fetchedAt: string;
 }
 
@@ -88,11 +90,11 @@ export function trimGame(g: ApiGame, username = CHESS_USERNAME): ChessGame | nul
 export const MONTHS_DEFAULT = 2;
 export const MONTHS_MAX = 24;
 
-/** The `?months=` param as a month count: a whole number clamped to 2..24, else 2. */
+/** The `?months=` param as a month count: decimal digits clamped to 2..24, else 2. */
 export function parseMonths(raw: string | null): number {
-  const n = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  const n = raw != null && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
   if (!Number.isFinite(n)) return MONTHS_DEFAULT;
-  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, Math.floor(n)));
+  return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, n));
 }
 
 /**
@@ -104,6 +106,16 @@ export function monthsFor(start: number, now = new Date()): number {
   const from = new Date(start * 1000);
   const back = (now.getUTCFullYear() - from.getUTCFullYear()) * 12 + now.getUTCMonth() - from.getUTCMonth();
   return Math.min(MONTHS_MAX, Math.max(MONTHS_DEFAULT, back + 2));
+}
+
+/**
+ * The first day whose games the most /api/chess fetches (24 archives) still hold: the
+ * first 4 AM day starting inside the oldest of those UTC months. The day bar stops there.
+ */
+export function earliestDay(now = new Date()): string {
+  const from = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (MONTHS_MAX - 1), 1) / 1000;
+  const d = logicalToday(new Date(from * 1000));
+  return dayBoundsOf(d).start < from ? addDays(d, 1) : d;
 }
 
 // ---- Days and weeks (client) ----------------------------------------------------------
@@ -129,28 +141,34 @@ export interface RangeClass {
   win: number;
   loss: number;
   draw: number;
+  /** How many of the games were rated. */
+  rated: number;
   /** Rated rating change across the range: the last rating in it minus the last one before it. Null if unknown. */
   change: number | null;
-  /** The rating once the range is over: the last rated game's before `end`. Null if there's none. */
+  /** The rating once the range is over: the last rated game's at or before `end`. Null if there's none. */
   rating: number | null;
 }
 export type DayClass = RangeClass;
 
-/** Games per time control ending in [start, end) (a day or a week), with the rated rating change across them. */
+/**
+ * Games per time control ending in [start, end) (a day or a week), with the rated rating
+ * change across them and the rating at `end`.
+ */
 export function rangeSummary(games: ChessGame[], start: number, end: number): Record<ChessClass, RangeClass> {
   const out = {} as Record<ChessClass, RangeClass>;
   for (const { key } of CLASSES) {
     const mine = games.filter((g) => g.cls === key).sort((a, b) => a.end - b.end);
     const inRange = mine.filter((g) => g.end >= start && g.end < end);
-    const lastIn = inRange.filter((g) => g.rated).at(-1);
+    const ratedIn = inRange.filter((g) => g.rated);
     const before = mine.filter((g) => g.rated && g.end < start).at(-1);
     out[key] = {
       played: inRange.length,
       win: inRange.filter((g) => g.outcome === "win").length,
       loss: inRange.filter((g) => g.outcome === "loss").length,
       draw: inRange.filter((g) => g.outcome === "draw").length,
-      change: lastIn && before ? lastIn.rating - before.rating : null,
-      rating: (lastIn ?? before)?.rating ?? null,
+      rated: ratedIn.length,
+      change: ratedIn.length && before ? ratedIn.at(-1)!.rating - before.rating : null,
+      rating: mine.filter((g) => g.rated && g.end <= end).at(-1)?.rating ?? null,
     };
   }
   return out;

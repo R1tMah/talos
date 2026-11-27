@@ -8,3 +8,6 @@ next-env.d.ts
 
 # Personal history used for one-time imports
 data/
+
+# Claude Code agent worktrees (each is its own checkout)
+.claude/worktrees/

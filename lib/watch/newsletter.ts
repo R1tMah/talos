@@ -153,13 +153,45 @@ function marketsOf(card: El): Market[] {
   }).filter((m) => m.name && m.value);
 }
 
+/**
+ * The issue's own HTML. Until Nov 2026 the latest-issue page served it as plain markup.
+ * Since then the sites render it in the browser: the page's markup has no story cards,
+ * and the issue's full email HTML travels in the Next.js data scripts instead, as a text
+ * row `<id>:T<byte length in hex>,<!DOCTYPE html>…`. Either way, this returns the HTML
+ * that holds the cards; a page with neither comes back unchanged (and fails as before).
+ */
+export function issueHtml(page: string): string {
+  if (/<td[^>]*style="[^"]*border-radius:\s*15px;\s*border:\s*1px solid #e6e6e6/i.test(page)) return page;
+
+  // The data scripts: self.__next_f.push([1,"…"]), each a JS string; together they make the stream.
+  let stream = "";
+  for (const m of page.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g)) {
+    try {
+      stream += JSON.parse(m[1]) as string;
+    } catch {
+      // not a plain JSON string literal; skip it
+    }
+  }
+
+  // A text row's length counts UTF-8 bytes, so slice bytes, not characters.
+  for (const m of stream.matchAll(/(?:^|\n)[0-9a-f]+:T([0-9a-f]+),/g)) {
+    const from = m.index + m[0].length;
+    const text = Buffer.from(stream.slice(from), "utf8").subarray(0, parseInt(m[1], 16)).toString("utf8");
+    if (CARD.test(text)) return text;
+  }
+  return page;
+}
+
 export function parseNewsletter(html: string, opts: { name: string; url: string; markets: boolean }): NewsletterSnap {
-  const root = parseHtml(html);
+  const issue = issueHtml(html);
+  const root = parseHtml(issue);
   const cards = findAll(root, (e) => e.tag === "td" && CARD.test(e.attrs.style ?? ""));
   if (!cards.length) throw new Error("the issue's layout wasn't recognized");
 
-  const h6 = find(root, (e) => e.tag === "h6");
-  const subject = h6 ? clean(textOf(h6)).replace(/^☕\s*/, "") || null : null;
+  // The subject line: an <h6> on the old page; on the new one, the page's own <h1>,
+  // outside the issue's HTML.
+  const heading = find(root, (e) => e.tag === "h6") ?? (issue === html ? undefined : find(parseHtml(html), (e) => e.tag === "h1"));
+  const subject = heading ? clean(textOf(heading)).replace(/^☕\s*/, "") || null : null;
   const viewOnline = find(root, (e) => e.tag === "a" && /view online/i.test(textOf(e)));
   const dateCell = find(cards[0], (e) => e.tag === "td" && /^[A-Z][a-z]+ \d{1,2}, \d{4}$/.test(clean(textOf(e))));
 

@@ -31,7 +31,13 @@ export interface CalendarConfig {
   timezone: string; // days start and end here
   days: number; // how far ahead the week view goes, today included
 }
-export interface WeatherConfig { place: string; lat: number; lon: number; timezone: string }
+/** A place to show weather for. timezone: an IANA name, or "auto" for the place's own. */
+export interface WeatherPlace { place: string; lat: number; lon: number; timezone: string }
+/**
+ * The default place (what the Watch card shows and the refresh job fetches), plus the
+ * other places saved on this card, which its page fetches live when opened.
+ */
+export interface WeatherConfig extends WeatherPlace { others?: WeatherPlace[] }
 
 export interface CommuteLeg { label: string; board_stop: string; destination: string }
 export interface TransitConfig {
@@ -137,12 +143,16 @@ export interface CalendarSnap {
   link: string;
 }
 
+/** A place found by the weather search, with what the forecast needs. */
+export interface PlaceHit { name: string; detail: string; lat: number; lon: number }
+
 export interface WeatherHour { at: string; temp: number; code: number; precip: number | null }
 /** One day of the week's forecast; `date` is the local "YYYY-MM-DD". */
 export interface WeatherDay { date: string; hi: number; lo: number; code: number; precip: number | null }
 
 export interface WeatherSnap {
   place: string;
+  timezone?: string; // the place's own (Open-Meteo works it out when asked for "auto"); absent in older snapshots
   current: { temp: number; feels: number; code: number; at: string };
   today: { hi: number; lo: number; code: number; precip: number | null; sunrise: string; sunset: string };
   hours: WeatherHour[]; // local times ("2026-10-23T14:00"), from midnight today, 48 of them

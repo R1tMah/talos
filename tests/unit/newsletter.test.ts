@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNewsletter } from "@/lib/watch/newsletter";
+import { issueHtml, parseNewsletter } from "@/lib/watch/newsletter";
 
 // The shape of a Morning Brew issue page, cut down: header card, markets, a story,
 // a sponsored card, and an editorial card with one ad-tracked link in it.
@@ -61,5 +61,34 @@ describe("Newsletter parsing", () => {
 
   it("refuses a page it doesn't recognize instead of showing nothing", () => {
     expect(() => parseNewsletter("<html><body><p>Moved</p></body></html>", { name: "x", url: "https://x", markets: true })).toThrow();
+  });
+});
+
+// Since Nov 2026 the issue page renders in the browser: no story cards in the markup, and
+// the issue's email HTML rides in the Next.js data scripts as a text row whose length is
+// in UTF-8 bytes (the issue has ☕, ’ and & in it, so bytes ≠ characters).
+describe("Newsletter parsing: the page that renders in the browser", () => {
+  const email = html.replace(/<h6>.*?<\/h6>/, "").replace(/<script>.*?<\/script>/, "");
+  const stream = `53:["$","div",null,{}]\n54:T${Buffer.byteLength(email, "utf8").toString(16)},${email}55:["$","p",null,{"children":"after"}]\n`;
+  const cut = Math.floor(stream.length / 2); // the stream arrives in more than one script
+  const page = `<html><head><title>Latest Issue | Morning Brew</title></head><body>
+<h1 class="font-heading"><span>☕</span> <span>Very vulnerable</span></h1><p>To: Brew Readers</p>
+<script>self.__next_f.push([1,${JSON.stringify(stream.slice(0, cut))}])</script>
+<script>self.__next_f.push([1,${JSON.stringify(stream.slice(cut))}])</script></body></html>`;
+
+  it("finds the issue in the data scripts and reads it the same way", () => {
+    expect(issueHtml(page)).toBe(email); // exactly the row: no more, no less
+    const fromPage = parseNewsletter(page, { name: "Morning Brew", url: "https://www.morningbrew.com/issues/latest", markets: true });
+    const plain = parseNewsletter(html, { name: "Morning Brew", url: "https://www.morningbrew.com/issues/latest", markets: true });
+    expect(fromPage).toEqual(plain);
+  });
+
+  it("takes the subject from the page's heading", () => {
+    expect(parseNewsletter(page, { name: "Morning Brew", url: "https://x", markets: true }).subject).toBe("Very vulnerable");
+  });
+
+  it("still refuses a browser-rendered page with no issue in it", () => {
+    const empty = `<html><body><h1>Latest</h1><script>self.__next_f.push([1,"1:[\\"$\\",\\"div\\",null,{}]\\n"])</script></body></html>`;
+    expect(() => parseNewsletter(empty, { name: "x", url: "https://x", markets: true })).toThrow("layout wasn't recognized");
   });
 });

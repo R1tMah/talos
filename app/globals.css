@@ -5034,3 +5034,114 @@ button.cal-day:active {
   text-align: left;
   min-width: 0;
 }
+
+/* ============================================================
+   Weather search (a weather source's page)
+   ============================================================ */
+.wx-search {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.wx-hit .row-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--s-2) 0;
+}
+
+.wx-search-note {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+}
+
+.wx-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.wx-preview-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.wx-preview-title > * {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wx-preview-title .faint {
+  font-size: var(--t-xs);
+}
+
+/* A weather card's places: one page each, swiped between; hold one for its menu */
+.wx-page {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.wx-place-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.wx-place-name b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wx-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.wx-dots button {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-3);
+  opacity: 0.35;
+}
+
+/* A bigger target than the dot itself. */
+.wx-dots button {
+  box-sizing: content-box;
+  border: 6px solid transparent;
+  background-clip: padding-box;
+}
+
+.wx-dots button[aria-selected="true"] {
+  opacity: 1;
+}
+
+.wx-searching {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.wx-hits {
+  margin: 0 calc(-1 * var(--s-4));
+  border-top: 1px solid var(--border);
+}
+
+.wx-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}

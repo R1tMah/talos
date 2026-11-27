@@ -7,7 +7,7 @@
 
 import type {
   Departure, Game, Headline, HeadlinesConfig, JobData, JobsConfig, NewsConfig, NewsSnap, TeamConfig, TeamSnap,
-  NewsletterConfig, NewsletterSnap, PlayerSnap, StatLine, TransitAlert, TransitConfig, TransitSnap, WeatherConfig, WeatherSnap,
+  NewsletterConfig, NewsletterSnap, PlaceHit, PlayerSnap, StatLine, TransitAlert, TransitConfig, TransitSnap, WeatherConfig, WeatherSnap,
 } from "./types";
 import { fallbackLink } from "./types";
 import { jobMatches, postedRecently } from "./match";
@@ -275,12 +275,14 @@ export async function fetchWeather(c: WeatherConfig): Promise<WeatherSnap> {
     forecast_days: "7",
   });
   const r = await getJson<{
+    timezone: string;
     current: { time: string; temperature_2m: number; apparent_temperature: number; weather_code: number };
     hourly: { time: string[]; temperature_2m: number[]; precipitation_probability: (number | null)[]; weather_code: number[] };
     daily: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; weather_code: number[]; precipitation_probability_max: (number | null)[]; sunrise: string[]; sunset: string[] };
   }>(`https://api.open-meteo.com/v1/forecast?${q}`);
   return {
     place: c.place,
+    timezone: r.timezone,
     current: { temp: r.current.temperature_2m, feels: r.current.apparent_temperature, code: r.current.weather_code, at: r.current.time },
     today: {
       hi: r.daily.temperature_2m_max[0], lo: r.daily.temperature_2m_min[0], code: r.daily.weather_code[0],
@@ -293,6 +295,44 @@ export async function fetchWeather(c: WeatherConfig): Promise<WeatherSnap> {
     })),
     link: fallbackLink("weather", { ...c }),
   };
+}
+
+interface PhotonFeature {
+  geometry: { coordinates: [number, number] };
+  properties: { name?: string; housenumber?: string; street?: string; city?: string; district?: string; county?: string; state?: string; country?: string; postcode?: string; osm_value?: string };
+}
+
+/**
+ * Places matching what was typed: cities, neighborhoods, airports, landmarks, addresses
+ * and postcodes, from Photon (OpenStreetMap search; free, no key, built for search as you type),
+ * leaning toward places near `near` when given.
+ */
+export async function searchPlaces(q: string, near?: { lat: number; lon: number }): Promise<PlaceHit[]> {
+  const params = new URLSearchParams({ q, limit: "10", lang: "en" });
+  // A light pull toward the card's place, at country scale: "Logan Airport" finds Boston's
+  // first and "Springfield" the one in Massachusetts, while "Paris" is still Paris, France.
+  if (near) {
+    params.set("lat", String(near.lat));
+    params.set("lon", String(near.lon));
+    params.set("zoom", "4");
+    params.set("location_bias_scale", "0.2");
+  }
+  const url = `https://photon.komoot.io/api/?${params}`;
+  const r = await getJson<{ features: PhotonFeature[] }>(url, { headers: { "User-Agent": "TALOS personal dashboard" } });
+  const seen = new Set<string>();
+  return r.features.flatMap((f) => {
+    const p = f.properties;
+    const street = [p.housenumber, p.street].filter(Boolean).join(" ");
+    const name = p.name ?? (street || p.city || p.postcode);
+    if (!name) return [];
+    const detail = [p.name ? street : "", p.city !== name ? p.city : "", p.state !== name ? p.state : "", p.country !== name ? p.country : ""]
+      .filter(Boolean).join(", ");
+    const [lon, lat] = f.geometry.coordinates;
+    const key = `${name}|${detail}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ name, detail, lat: +lat.toFixed(4), lon: +lon.toFixed(4) }];
+  });
 }
 
 // ---- Jobs: SimplifyJobs new-grad list ------------------------------------------------------

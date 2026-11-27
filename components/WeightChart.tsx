@@ -8,6 +8,53 @@ import type { Break, Phase } from "@/lib/types";
 
 const H = 200;
 const PAD = { t: 18, r: 34, b: 26, l: 4 };
+// Label sizes for 10px text: a rough average glyph width (uppercase phase names also get
+// 0.06em letter spacing), so labels can be placed without measuring the DOM.
+const PHASE_CH = 7;
+const DATE_W = 40; // "Sep 30"
+const GAP = 6;
+
+/**
+ * Phase names that fit: each inside its own band (from 6px in) and clear of the previous
+ * name. A name too long for its band falls back to its first word ("2250 cal" → "2250");
+ * if that doesn't fit either, the phase goes unlabeled here, and the header names the
+ * selected week's phase.
+ */
+export function placePhaseLabels(bands: { id: string; name: string; x0: number; x1: number }[], right: number) {
+  const out: { id: string; name: string; x: number }[] = [];
+  let lastEnd = -Infinity;
+  for (const b of [...bands].sort((p, q) => p.x0 - q.x0)) {
+    const x = b.x0 + GAP;
+    if (x < lastEnd + GAP) continue;
+    const full = b.name.trim().toUpperCase();
+    const name = [full, full.split(/\s+/)[0]].find((n) => n && x + n.length * PHASE_CH <= Math.min(b.x1, right) - 2);
+    if (!name) continue;
+    out.push({ id: b.id, name, x });
+    lastEnd = x + name.length * PHASE_CH;
+  }
+  return out;
+}
+
+/**
+ * Which points get a date under the axis: up to one per ~70px, evenly spread, never two
+ * that touch. The first is drawn rightward from its point, the last leftward, the rest
+ * centred; if the first and last would touch, only the last (the newest) is kept.
+ */
+export function dateLabelIndexes(xs: number[], width: number) {
+  const n = xs.length;
+  if (n < 2) return n ? [0] : [];
+  const span = (i: number): [number, number] =>
+    i === 0 ? [xs[i], xs[i] + DATE_W] : i === n - 1 ? [xs[i] - DATE_W, xs[i]] : [xs[i] - DATE_W / 2, xs[i] + DATE_W / 2];
+  const clear = (i: number, kept: number[]) => kept.every((k) => span(i)[0] >= span(k)[1] + GAP || span(k)[0] >= span(i)[1] + GAP);
+
+  const kept = clear(0, [n - 1]) ? [0, n - 1] : [n - 1];
+  const want = Math.max(2, Math.min(6, Math.floor(width / (DATE_W * 1.75))));
+  for (let j = 1; j < want - 1; j++) {
+    const i = Math.round((j * (n - 1)) / (want - 1));
+    if (!kept.includes(i) && clear(i, kept)) kept.push(i);
+  }
+  return kept.sort((p, q) => p - q);
+}
 
 /**
  * Weekly averages over phase bands. Breaks are thinner bands on top, placed by
@@ -60,6 +107,8 @@ export function WeightChart({
   const path = px.map((p, i) => `${i ? "L" : "M"}${p.cx.toFixed(1)},${p.cy.toFixed(1)}`).join("");
   const active = sel ?? px.length - 1;
   const a = px[active];
+  const mid = addDays(a.week, 3);
+  const activePhase = phases.find((ph) => ph.start <= mid && mid <= ph.end && ph.name);
 
   // Break bands in pixels, clipped to the chart's date range.
   const today = todayISO();
@@ -70,6 +119,15 @@ export function WeightChart({
       return s > e ? null : { b, x0: x(s), x1: x(addDays(e, 1)) };
     })
     .filter((v): v is { b: Break; x0: number; x1: number } => v !== null);
+  // Phase bands in pixels, clipped the same way; `i` keeps the alternating shade.
+  const phaseBands = phases
+    .map((ph, i) => {
+      const s = ph.start < d0 ? d0 : ph.start;
+      const e = ph.end > d1 ? d1 : ph.end;
+      return s > e ? null : { id: ph.id, name: ph.name, x0: x(s), x1: x(addDays(e, 1)), i };
+    })
+    .filter((v): v is { id: string; name: string; x0: number; x1: number; i: number } => v !== null);
+
   const breakAt = (mx: number) => bands.find((v) => mx >= v.x0 - 4 && mx <= v.x1 + 4)?.b ?? null;
 
   const pick = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -88,7 +146,10 @@ export function WeightChart({
       <div className="chart-head">
         <span className="label">Weekly average</span>
         <span className="num" style={{ fontSize: "var(--t-sm)" }}>
-          <span className="faint">Week of {fmtDay(a.week)} </span>
+          <span className="faint">
+            Week of {fmtDay(a.week)}
+            {activePhase && ` · ${activePhase.name}`}{" "}
+          </span>
           <span style={{ color: "var(--accent)", fontWeight: 600 }}>{a.avg.toFixed(1)}</span>
           <span className="faint"> lb</span>
         </span>
@@ -108,21 +169,14 @@ export function WeightChart({
         role="img"
         aria-label="Weekly average weight chart"
       >
-        {phases.map((ph, i) => {
-          const s = ph.start < d0 ? d0 : ph.start;
-          const e = ph.end > d1 ? d1 : ph.end;
-          if (s > e) return null;
-          const x0 = x(s);
-          const x1 = x(addDays(e, 1));
-          return (
-            <g key={ph.id}>
-              <rect x={x0} y={0} width={Math.max(0, x1 - x0)} height={H - PAD.b} fill={i % 2 ? "var(--band-b)" : "var(--band-a)"} />
-              <text x={x0 + 6} y={11} fontSize={10} fill="var(--text-3)" letterSpacing="0.06em">
-                {ph.name.toUpperCase()}
-              </text>
-            </g>
-          );
-        })}
+        {phaseBands.map(({ id, x0, x1, i }) => (
+          <rect key={id} x={x0} y={0} width={Math.max(0, x1 - x0)} height={H - PAD.b} fill={i % 2 ? "var(--band-b)" : "var(--band-a)"} />
+        ))}
+        {placePhaseLabels(phaseBands, w - PAD.r).map((l) => (
+          <text key={l.id} x={l.x} y={11} fontSize={10} fill="var(--text-3)" letterSpacing="0.06em">
+            {l.name}
+          </text>
+        ))}
 
         {bands.map(({ b, x0, x1 }) => (
           <g key={b.id} className={`break-band${brk?.id === b.id ? " active" : ""}`}>
@@ -165,16 +219,16 @@ export function WeightChart({
             </circle>
           ))}
 
-        {[px[0], px[Math.floor(px.length / 2)], px[px.length - 1]].map((p, i) => (
+        {dateLabelIndexes(px.map((p) => p.cx), w - PAD.l - PAD.r).map((i) => (
           <text
-            key={p.week}
-            x={p.cx}
+            key={px[i].week}
+            x={px[i].cx}
             y={H - 8}
             fontSize={10}
             fill="var(--text-3)"
-            textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}
+            textAnchor={i === 0 ? "start" : i === px.length - 1 ? "end" : "middle"}
           >
-            {fmtDay(p.week)}
+            {fmtDay(px[i].week)}
           </text>
         ))}
       </svg>

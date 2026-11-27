@@ -9,7 +9,8 @@ import { CalendarCard } from "@/components/watch/Calendar";
 import { JobsView } from "@/components/watch/Jobs";
 import { NewsletterView } from "@/components/watch/Newsletter";
 import { SourceForm } from "@/components/watch/SourceForm";
-import { Fallback, Headlines, SourceFooter, TeamView, TransitCard, WeatherCard } from "@/components/watch/Views";
+import { Fallback, Headlines, SourceFooter, TeamView, TransitCard } from "@/components/watch/Views";
+import { WeatherCard } from "@/components/watch/Weather";
 import { loadSource, watchApi, type WatchSource } from "@/lib/watch/data";
 import type { NewsSnap } from "@/lib/watch/types";
 
@@ -78,7 +79,7 @@ export default function WatchSourcePage() {
       {!s.enabled && <p className="faint">Hidden from Watch. Turn on “Show on Watch” in settings to bring it back.</p>}
 
       {s.kind === "transit" && <TransitCard s={s} full />}
-      {s.kind === "weather" && <WeatherCard s={s} full />}
+      {s.kind === "weather" && <WeatherCard s={s} full onChanged={reload} />}
       {s.kind === "calendar" && <CalendarCard s={s} full />}
       {s.kind === "espn_team" && (
         <>

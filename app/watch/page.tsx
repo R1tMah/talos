@@ -88,7 +88,7 @@ export default function WatchPage() {
           <IconChevron />
         </Link>
       ))}
-      {shown.map((s) => <WatchCard key={s.id} s={s} />)}
+      {shown.map((s) => <WatchCard key={s.id} s={s} onChanged={reload} />)}
       {!shown.length && <p className="muted">Nothing to watch. Add a source with +.</p>}
 
       {hidden.length > 0 && (

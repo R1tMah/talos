@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { commuteLeg, parseFeed } from "@/lib/watch/adapters";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { commuteLeg, parseFeed, searchPlaces } from "@/lib/watch/adapters";
 import { jobMatches, postedRecently } from "@/lib/watch/match";
 import { companyKey } from "@/lib/watch/data";
 import type { TransitConfig } from "@/lib/watch/types";
@@ -131,5 +131,29 @@ describe("weather icons", () => {
     expect(isNight("2026-10-24T12:00", rise, set)).toBe(false);
     expect(isNight("2026-10-24T18:00", rise, set)).toBe(true);
     expect(isNight("2026-10-25T03:00", rise, set)).toBe(true); // tomorrow's early hours
+  });
+});
+
+describe("Watch: weather place search", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const feature = (coordinates: [number, number], properties: Record<string, string>) => ({ geometry: { coordinates }, properties });
+
+  it("names each place with where it is, drops repeats, and leans toward the card's place", async () => {
+    const fetch = vi.fn(async () => Response.json({ features: [
+      feature([-71.01364, 42.36318], { name: "Logan International Airport", street: "Harborside Dr", housenumber: "1", city: "Boston", state: "MA", country: "United States" }),
+      feature([2.3484, 48.8535], { name: "Paris", state: "Île-de-France", country: "France" }),
+      feature([2.35, 48.85], { name: "Paris", state: "Île-de-France", country: "France" }),
+      feature([-71.1, 42.36], { housenumber: "77", street: "Mass Ave", city: "Cambridge", country: "United States" }),
+      feature([0, 0], {}),
+    ] }));
+    vi.stubGlobal("fetch", fetch);
+    expect(await searchPlaces("x", { lat: 42.36, lon: -71.06 })).toEqual([
+      { name: "Logan International Airport", detail: "1 Harborside Dr, Boston, MA, United States", lat: 42.3632, lon: -71.0136 },
+      { name: "Paris", detail: "Île-de-France, France", lat: 48.8535, lon: 2.3484 },
+      { name: "77 Mass Ave", detail: "Cambridge, United States", lat: 42.36, lon: -71.1 },
+    ]);
+    const url = new URL(String((fetch.mock.calls[0] as unknown[])[0]));
+    expect(url.searchParams.get("lat")).toBe("42.36");
+    expect(url.searchParams.get("location_bias_scale")).toBe("0.2");
   });
 });
